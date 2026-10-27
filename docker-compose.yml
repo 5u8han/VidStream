@@ -1,0 +1,70 @@
+services:
+  stream:
+    build: .
+    # Or, once published: image: yourname/stream:latest
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./media:/media/original
+      - stream-cache:/app/.cache
+    env_file:
+      - .env
+    # A hard ceiling so a leak (or just a big library under heavy
+    # processing) degrades as "container restarts" instead of "host
+    # runs out of memory" -- paired with restart: unless-stopped above,
+    # and with the timeouts in lib/exec.js that stop hung ffmpeg/
+    # OpenCV/tesseract subprocesses from accumulating in the first
+    # place. Raise this if you have the headroom and a large library.
+    # 2g covers PyTorch/YOLO object detection plus ffmpeg; with
+    # ENABLE_OBJECT_DETECTION=false, 1g is plenty.
+    mem_limit: ${STREAM_MEM_LIMIT:-2g}
+    memswap_limit: ${STREAM_MEM_LIMIT:-2g}
+
+  # --- Optional: expose this on a subdomain via Cloudflare, no open
+  # firewall ports needed. See "Deploying with Cloudflare" in the
+  # README for the one-time setup in the Cloudflare dashboard.
+  # Run with: docker compose --profile tunnel up -d
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    depends_on:
+      - stream
+    restart: unless-stopped
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
+    profiles: ["tunnel"]
+
+  # --- Optional: mount remote storage (Google Drive, Dropbox, etc.) as
+  # a local-looking folder that Stream scans normally, instead of
+  # paying for local disk space for your whole library. See "Remote
+  # storage" in the README for the one-time `rclone config` setup.
+  # Run with: docker compose --profile remote up -d
+  rclone:
+    image: rclone/rclone:latest
+    restart: unless-stopped
+    cap_add: ["SYS_ADMIN"]
+    devices: ["/dev/fuse"]
+    security_opt: ["apparmor:unconfined"]
+    volumes:
+      - ./rclone.conf:/config/rclone/rclone.conf:ro
+      - ./media:/data:shared
+      - rclone-vfs-cache:/cache
+    # remote:path -> replace with what you named it in `rclone config`
+    # (e.g. gdrive:Photos). --vfs-cache-mode full + a max-size keeps
+    # only recently-viewed originals on local disk, evicting the rest,
+    # which is the actual point: the library lives on the remote, not
+    # in this container.
+    command: >
+      mount remote:path /data
+      --allow-other
+      --vfs-cache-mode full
+      --vfs-cache-max-size 20G
+      --vfs-cache-max-age 72h
+      --dir-cache-time 1h
+      --read-only
+    profiles: ["remote"]
+
+volumes:
+  stream-cache:
+  rclone-vfs-cache:

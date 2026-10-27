@@ -1,0 +1,10 @@
+.env
+.cache/
+node_modules/
+*.log
+
+# Your media library stays out of git -- that's the whole point.
+# Point MEDIA_DIR at a folder or mounted volume outside the repo
+# instead of committing photos/videos here.
+media/original/*
+!media/original/.gitkeep

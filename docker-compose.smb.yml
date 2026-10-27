@@ -1,0 +1,32 @@
+# Use a NAS / SMB share as the media library -- read-only -- while keeping
+# *everything Stream writes* (thumbnails, posters, the index, the session
+# secret) in its own Docker volume, so nothing is ever written to the share.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.smb.yml up -d --build
+#
+# Set SMB_HOST, SMB_SHARE, SMB_USER, SMB_PASS (and optionally SMB_VERSION)
+# in .env. Notes:
+#  * The Docker *host* needs cifs-utils installed (`apt install cifs-utils`):
+#    Docker's local volume driver shells out to `mount -t cifs` on the host.
+#  * Use a dedicated read-only SMB account, and avoid commas in its password
+#    (they separate mount options).
+#  * If Docker runs on the Synology itself, you don't need SMB at all --
+#    bind-mount the shared folder directly (see README, "Running on a NAS").
+services:
+  stream:
+    volumes:
+      - smb-media:/media/original:ro
+      - stream-cache:/app/.cache
+    environment:
+      # Changes made by *other* machines on an SMB share don't raise inotify
+      # events here, so watching can't see them -- poll on a timer instead.
+      - WATCH_FOR_CHANGES=0
+      - RESCAN_INTERVAL_MINUTES=${SMB_RESCAN_MINUTES:-15}
+
+volumes:
+  smb-media:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: "//${SMB_HOST}/${SMB_SHARE}"
+      o: "addr=${SMB_HOST},username=${SMB_USER},password=${SMB_PASS},vers=${SMB_VERSION:-3.0},ro,file_mode=0444,dir_mode=0555"

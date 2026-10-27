@@ -1,0 +1,135 @@
+#!/usr/bin/env node
+'use strict';
+const http = require('http');
+const path = require('path');
+const { URL } = require('url');
+
+const { loadConfig } = require('./lib/config');
+const { Db } = require('./lib/db');
+const { Scanner } = require('./lib/scanner');
+const { Router } = require('./lib/router');
+const { serveFile } = require('./lib/serve-file');
+const { isAdmin, authConfigured } = require('./lib/auth');
+const { renderShell } = require('./lib/template');
+
+const { pageHandler } = require('./lib/handlers/page');
+const { mediaHandler } = require('./lib/handlers/media');
+const {
+  itemsHandler, itemHandler, rescanHandler, healthHandler, libraryStatusHandler,
+  setItemVisibilityHandler, setAlbumVisibilityHandler, duplicatesHandler,
+} = require('./lib/handlers/api');
+const { feedHandler } = require('./lib/feed');
+const { loginHandler, logoutHandler } = require('./lib/handlers/auth');
+const { downloadZipHandler } = require('./lib/handlers/download');
+
+const ROOT = __dirname;
+const cfg = loadConfig(ROOT);
+
+const db = new Db(path.join(cfg.cacheDir, 'index.json'));
+const scanner = new Scanner(cfg, db, {
+  onLog: (msg) => console.log(`[stream] ${msg}`),
+});
+
+const router = new Router();
+router.get('/health', healthHandler(cfg, db));
+router.get('/feed.xml', feedHandler(cfg, db));
+router.post('/api/login', loginHandler(cfg));
+router.post('/api/logout', logoutHandler());
+router.get('/api/items', itemsHandler(cfg, db));
+router.get('/api/item/:id', itemHandler(cfg, db));
+router.get('/api/library-status', libraryStatusHandler(cfg, scanner));
+router.post('/api/items/:id/visibility', setItemVisibilityHandler(cfg, db));
+router.post('/api/albums/visibility', setAlbumVisibilityHandler(cfg, db));
+router.get('/api/duplicates', duplicatesHandler(cfg, db));
+router.post('/api/download-zip', downloadZipHandler(cfg, db));
+router.post('/api/rescan', rescanHandler(cfg, db, scanner));
+router.get('/media/:id/:variant', mediaHandler(cfg, db));
+router.get('/', pageHandler(cfg, db));
+router.get('/:id', pageHandler(cfg, db));
+
+const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/social-preview.png']);
+const PUBLIC_DIR = path.join(ROOT, 'public');
+
+const server = http.createServer(async (req, res) => {
+  let pathname;
+  try {
+    pathname = new URL(req.url, 'http://x').pathname;
+  } catch {
+    res.writeHead(400);
+    res.end('Bad request');
+    return;
+  }
+
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+
+  if (STATIC_ASSETS.has(pathname)) {
+    serveFile(req, res, path.join(PUBLIC_DIR, pathname), { cacheForever: false });
+    return;
+  }
+
+  // REQUIRE_LOGIN: signed-out visitors can reach only the login endpoint
+  // and a login-only page shell -- no gallery UI, media, API, or feed.
+  if (cfg.requireLogin && authConfigured(cfg) && !isAdmin(req, cfg)) {
+    const open = pathname === '/api/login' || pathname === '/health';
+    if (!open) {
+      if (pathname.startsWith('/api/') || pathname.startsWith('/media/') || pathname === '/feed.xml') {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Sign-in required' }));
+        return;
+      }
+      if (req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+        res.end(renderShell(cfg, { locked: true }));
+        return;
+      }
+    }
+  }
+
+  const match = router.match(req.method, pathname);
+  if (!match) {
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not found');
+    return;
+  }
+
+  try {
+    await match.handler(req, res, match.params);
+  } catch (err) {
+    console.error(`[stream] Error handling ${req.method} ${pathname}:`, err);
+    if (!res.headersSent) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Internal server error' }));
+    }
+  }
+});
+
+async function main() {
+  console.log(`[stream] Media folder: ${cfg.mediaDir}`);
+  console.log(`[stream] Scanning...`);
+  await scanner.scan();
+  scanner.startWatching();
+
+  if (cfg.rescanIntervalMinutes > 0) {
+    setInterval(() => {
+      scanner.scan().catch((err) => console.error('[stream] Interval scan failed:', err));
+    }, cfg.rescanIntervalMinutes * 60 * 1000);
+  }
+
+  server.listen(cfg.port, cfg.host, () => {
+    console.log(`[stream] ${cfg.title} listening on http://${cfg.host}:${cfg.port}`);
+  });
+}
+
+main().catch((err) => {
+  console.error('[stream] Fatal startup error:', err);
+  process.exit(1);
+});
+
+process.on('SIGTERM', () => {
+  scanner.stopWatching();
+  server.close(() => process.exit(0));
+});
+process.on('SIGINT', () => {
+  scanner.stopWatching();
+  server.close(() => process.exit(0));
+});

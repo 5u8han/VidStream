@@ -1,0 +1,15 @@
+# Keep secrets, caches, and your library out of the image build context.
+# (Without this, `COPY . .` bakes your .env -- passwords included -- into
+# the image layers.) Configuration reaches the container at runtime via
+# env_file / environment in docker-compose.yml instead.
+.env
+.env.*
+!.env.example
+.cache
+media
+node_modules
+.git
+.github
+*.zip
+*.log
+test
