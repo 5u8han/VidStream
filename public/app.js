@@ -53,6 +53,8 @@
     edit: '<path d="M4 20l1-4.2L15.8 5 19 8.2 8.2 19 4 20z"/><path d="M13.2 6.6L17.4 10.8"/>',
     rotate: '<path d="M20 12a8 8 0 11-3-6.2"/><path d="M20 3v4h-4"/>',
     volume: '<path d="M4 9v6h4l5 5V4L8 9H4z"/><path d="M17 8.5a5 5 0 010 7" />',
+    chart: '<path d="M4 20V10M10 20V4M16 20v-8M22 20V7M2 20h21"/>',
+    expand: '<path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/>',
   };
   function icon(name, extraClass) {
     return '<svg class="' + (extraClass || '') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICONS[name] + '</svg>';
@@ -100,6 +102,10 @@
 
   var currentTheme = storageGet('stream-theme', 'system');
   var currentDensity = storageGet('stream-density', 'medium');
+  var videoScale = storageGet('stream-video-scale', '1');
+  var MAX_PREVIEWS = dataSaverMode ? 0 : Math.max(4, Math.min(64, Number(storageGet('stream-max-previews', '8')) || 8));
+  var tileSize = Math.max(120, Math.min(460, Number(storageGet('stream-tile-size', '0')) || 0));
+  if (tileSize) document.documentElement.style.setProperty('--tile-min', tileSize + 'px');
 
   function applyTheme(theme) {
     currentTheme = theme;
@@ -109,6 +115,9 @@
   }
   function applyDensity(density) {
     currentDensity = density;
+    tileSize = 0;
+    document.documentElement.style.removeProperty('--tile-min');
+    storageSet('stream-tile-size', '0');
     storageSet('stream-density', density);
     document.documentElement.setAttribute('data-density', density);
   }
@@ -121,6 +130,8 @@
   var state = {
     type: null,
     album: null,
+    creator: null,
+    dateField: 'created', dateFrom: null, dateTo: null, resolution: 0,
     has: null,
     q: '',
     sort: CONFIG.defaultReverseSort ? 'asc' : 'desc',
@@ -151,6 +162,7 @@
   var selectionBar = buildSelectionBar();
   var librarySummary = buildLibrarySummary();
   var filesModal = buildFilesModal();
+  var dashboardModal = buildDashboardModal();
 
   appEl.appendChild(header);
   appEl.appendChild(main);
@@ -159,6 +171,7 @@
   appEl.appendChild(lightbox.root);
   appEl.appendChild(signInModal.root);
   appEl.appendChild(filesModal.root);
+  appEl.appendChild(dashboardModal.root);
   appEl.appendChild(selectionBar.root);
   appEl.appendChild(toastEl);
 
@@ -191,6 +204,7 @@
       { id: 'name-asc', label: 'Name A–Z' },
       { id: 'name-desc', label: 'Name Z–A' },
       { id: 'random', label: 'Shuffle' },
+      { id: 'creator', label: 'Group by creator (folder)' },
     ];
     sortOptions.forEach(function (opt) {
       var item = el('button', { class: 'menu-item', 'data-sort': opt.id }, '<span>' + opt.label + '</span>');
@@ -246,6 +260,21 @@
       location.reload();
     });
     saverSection.appendChild(saverItem);
+    var maxPreviewSelect = el('select', { class: 'filter-select', 'aria-label': 'Maximum simultaneous video previews' });
+    [4, 8, 12, 16, 24, 64].forEach(function (number) {
+      maxPreviewSelect.add(new Option(number === 64 ? 'Up to 64 video previews (high-end)' : number + ' video previews at once', String(number)));
+    });
+    maxPreviewSelect.value = String(MAX_PREVIEWS);
+    maxPreviewSelect.addEventListener('change', function () {
+      MAX_PREVIEWS = Number(maxPreviewSelect.value);
+      storageSet('stream-max-previews', String(MAX_PREVIEWS));
+      if (runningPreviews.size > MAX_PREVIEWS) {
+        Array.from(runningPreviews).slice(MAX_PREVIEWS).forEach(pausePreview);
+      }
+      refillPreviews();
+    });
+    saverSection.appendChild(el('div', { class: 'menu-help' }, 'Simultaneously playing previews'));
+    saverSection.appendChild(maxPreviewSelect);
     panel.appendChild(saverSection);
 
     var densitySection = section('Grid size');
@@ -260,6 +289,54 @@
       densitySection.appendChild(item);
     });
     panel.appendChild(densitySection);
+
+    var layoutSection = section('Tile sizing');
+    var sizeCaption = el('div', { class: 'menu-help' }, 'Media width: drag to resize the grid');
+    var sizeSlider = el('input', { type: 'range', min: '120', max: '460', step: '10', value: String(tileSize || 240), class: 'wide-slider', 'aria-label': 'Media tile width' });
+    sizeSlider.addEventListener('input', function () {
+      tileSize = Number(sizeSlider.value);
+      document.documentElement.style.setProperty('--tile-min', tileSize + 'px');
+      storageSet('stream-tile-size', String(tileSize));
+      // One reflow per animation frame, not every intermediate pointer event.
+      if (!sizeSlider._raf) sizeSlider._raf = requestAnimationFrame(function () {
+        sizeSlider._raf = 0; remeasureAndReflow();
+      });
+    });
+    layoutSection.appendChild(sizeCaption);
+    layoutSection.appendChild(sizeSlider);
+    ['1', '2'].forEach(function (factor) {
+      var b = el('button', { class: 'menu-item', 'data-video-scale': factor }, factor === '1' ? 'Normal video tiles' : '2× video tiles');
+      b.classList.toggle('selected', videoScale === factor);
+      b.addEventListener('click', function () {
+        videoScale = factor;
+        storageSet('stream-video-scale', factor);
+        Array.prototype.forEach.call(grid.querySelectorAll('.tile.video-tile'), function (t) {
+          if (!t.dataset.manualScale) t.classList.toggle('tile-expanded', videoScale === '2');
+        });
+        remeasureAndReflow();
+        Array.prototype.forEach.call(layoutSection.querySelectorAll('[data-video-scale]'), function (button) {
+          button.classList.toggle('selected', button.dataset.videoScale === factor);
+        });
+      });
+      layoutSection.appendChild(b);
+    });
+    panel.appendChild(layoutSection);
+
+    var datesSection = section('Dates and resolution');
+    var dateFieldSelect = el('select', { class: 'filter-select', 'aria-label': 'Date filter field' },
+      '<option value="created">Media created/taken</option><option value="imported">Imported into Stream</option>');
+    dateFieldSelect.addEventListener('change', function () { state.dateField = dateFieldSelect.value; resetAndLoad(); });
+    datesSection.appendChild(dateFieldSelect);
+    var from = el('input', { type: 'date', class: 'menu-date', 'aria-label': 'From date' });
+    var to = el('input', { type: 'date', class: 'menu-date', 'aria-label': 'To date' });
+    from.addEventListener('change', function () { state.dateFrom = from.value || null; resetAndLoad(); });
+    to.addEventListener('change', function () { state.dateTo = to.value || null; resetAndLoad(); });
+    datesSection.appendChild(from); datesSection.appendChild(to);
+    var resolutionSelect = el('select', { class: 'filter-select', 'aria-label': 'Minimum resolution' },
+      '<option value="0">Any resolution</option><option value="720">720p+</option><option value="1080">1080p+</option><option value="2160">4K+</option>');
+    resolutionSelect.addEventListener('change', function () { state.resolution = Number(resolutionSelect.value); resetAndLoad(); });
+    datesSection.appendChild(resolutionSelect);
+    panel.appendChild(datesSection);
 
     var themeSection = section('Theme');
     THEMES.forEach(function (t) {
@@ -394,6 +471,14 @@
     controls.appendChild(albumSelect);
     header._albumSelect = albumSelect;
 
+    var creatorSelect = el('select', { class: 'filter-select', 'aria-label': 'Filter by creator', style: 'display:none' });
+    creatorSelect.addEventListener('change', function () {
+      state.creator = creatorSelect.value || null;
+      resetAndLoad();
+    });
+    controls.appendChild(creatorSelect);
+    header._creatorSelect = creatorSelect;
+
     controls.appendChild(buildSearch());
 
     var selectBtn = el('button', { class: 'icon-btn', title: 'Select', 'aria-label': 'Select photos and videos' }, icon('checkCircle'));
@@ -409,11 +494,17 @@
     rescanBtn.addEventListener('click', function () {
       rescanBtn.style.opacity = '0.4';
       fetch('/api/rescan', { method: 'POST' })
+        .then(function (r) { if (!r.ok) throw new Error('rescan failed'); return r.json(); })
         .then(function () { resetAndLoad(); fetchLibraryStatus(); showToast('Library rescanned'); })
         .catch(function () { showToast('Rescan failed'); })
         .finally(function () { rescanBtn.style.opacity = ''; });
     });
-    controls.appendChild(rescanBtn);
+    if (isAdmin) {
+      controls.appendChild(rescanBtn);
+      var dashboardBtn = el('button', { class: 'icon-btn', title: 'Library dashboard', 'aria-label': 'Library dashboard' }, icon('chart'));
+      dashboardBtn.addEventListener('click', function () { dashboardModal.open(); });
+      controls.appendChild(dashboardBtn);
+    }
 
     if (CONFIG.showRssFeed) {
       var rssLink = el('a', { class: 'icon-btn', href: '/feed.xml', title: 'RSS feed', 'aria-label': 'RSS feed' }, icon('rss'));
@@ -447,13 +538,20 @@
     var s = libraryStatus && libraryStatus.stats;
     var root = librarySummary.root;
     root.innerHTML = '';
-    if (!s || !s.total) return;
+    if (!s) return;
+    if (libraryStatus.scanning) root.appendChild(el('span', { class: 'scan-timing' }, 'Scanning…'));
     root.appendChild(el('span', {}, plural(s.photoCount, 'photo')));
     root.appendChild(el('span', {}, plural(s.videoCount, 'video')));
     if (s.unsupportedCount > 0) {
       var u = el('button', { type: 'button', title: 'See which files were not imported' }, s.unsupportedCount.toLocaleString() + ' unsupported');
       u.addEventListener('click', function () { filesModal.open(); });
       root.appendChild(u);
+    }
+    if (s.unreadableDirectoryCount > 0) {
+      var dirButton = el('button', { type: 'button', title: 'Some folders could not be read' },
+        s.unreadableDirectoryCount.toLocaleString() + ' offline folders');
+      dirButton.addEventListener('click', function () { filesModal.open(); });
+      root.appendChild(dirButton);
     }
     if (s.failedCount > 0) {
       var f = el('button', { type: 'button', title: 'See which files could not be read' }, s.failedCount.toLocaleString() + ' unreadable');
@@ -462,12 +560,31 @@
     }
     // total includes unsupported and unreadable files, so it matches what's actually in the folder
     root.appendChild(el('span', { class: 'total' }, s.total.toLocaleString() + ' total'));
+    if (libraryStatus && libraryStatus.lastScan && isAdmin) {
+      root.appendChild(el('span', { class: 'scan-timing' },
+        'Last scan ' + (libraryStatus.lastScan.durationMs / 1000).toFixed(1) + 's'));
+    }
+    if (isAdmin) {
+      var dashboardLink = el('button', { type: 'button', title: 'Open import statistics and scan history' }, 'Dashboard');
+      dashboardLink.addEventListener('click', function () { dashboardModal.open(); });
+      root.appendChild(dashboardLink);
+    }
   }
 
   function fetchLibraryStatus() {
+    var previous = libraryStatus;
     return fetch('/api/library-status')
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (data) { if (data) { libraryStatus = data; renderLibrarySummary(); } })
+      .then(function (data) {
+        if (!data) return;
+        libraryStatus = data;
+        renderLibrarySummary();
+        // Avoid disrupting an open lightbox or someone deep in the gallery.
+        // Freshly indexed media appears automatically when the user is at the top.
+        var before = previous && previous.lastScan && previous.lastScan.at;
+        var after = data.lastScan && data.lastScan.at;
+        if (previous && before !== after && after && !lb.open && window.scrollY < 200) resetAndLoad();
+      })
       .catch(function () { /* the summary is a nicety; never block the app on it */ });
   }
 
@@ -537,6 +654,9 @@
       addSection('Unreadable',
         'A supported type, but the file could not be read -- often a corrupt or truncated file, or a variant the decoder cannot handle.',
         st.failed || [], function (e) { return e.error; });
+      addSection('Unavailable directories',
+        'An SMB/NAS folder could not be read. Existing records were preserved, not treated as deleted.',
+        st.walkErrors || [], function (e) { return e.error; });
       if (!body.children.length) {
         body.appendChild(el('p', { class: 'files-help' }, 'Nothing to report -- every file was imported.'));
       }
@@ -550,6 +670,166 @@
     });
 
     return { root: scrim, open: open, close: close };
+  }
+
+  function buildDashboardModal() {
+    var scrim = el('div', { class: 'modal-scrim dashboard-scrim' });
+    var card = el('section', { class: 'dashboard-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Library dashboard' });
+    var head = el('div', { class: 'dashboard-head' });
+    head.appendChild(el('h2', {}, 'Library audit'));
+    var close = el('button', { class: 'icon-btn', 'aria-label': 'Close dashboard' }, icon('close'));
+    head.appendChild(close);
+    var body = el('div', { class: 'dashboard-body' });
+    card.appendChild(head); card.appendChild(body); scrim.appendChild(card);
+    close.addEventListener('click', function () { scrim.classList.remove('open'); });
+    scrim.addEventListener('click', function (e) { if (e.target === scrim) scrim.classList.remove('open'); });
+
+    function section(title) {
+      var wrap = el('section', { class: 'dashboard-section' });
+      wrap.appendChild(el('h3', {}, title)); body.appendChild(wrap); return wrap;
+    }
+    function barChart(title, rows, getLabel, getValue) {
+      var wrap = section(title);
+      var max = Math.max(1, ...rows.map(getValue));
+      rows.slice(0, 25).forEach(function (row) {
+        var line = el('div', { class: 'dashboard-bar-line' });
+        var label = el('span', { class: 'dashboard-bar-label' }); label.textContent = getLabel(row);
+        var track = el('div', { class: 'dashboard-bar-track' });
+        var bar = el('div', { class: 'dashboard-bar' });
+        bar.style.width = (getValue(row) / max * 100).toFixed(2) + '%';
+        track.appendChild(bar);
+        var val = el('span', { class: 'mono' }); val.textContent = getValue(row).toLocaleString();
+        line.appendChild(label); line.appendChild(track); line.appendChild(val); wrap.appendChild(line);
+      });
+      if (!rows.length) wrap.appendChild(el('p', {}, 'No entries yet'));
+    }
+    function showAiControls() {
+      var sectionEl = section('Optional AI models & hardware');
+      sectionEl.appendChild(el('p', { class: 'modal-sub' },
+        'Only installed models run. Downloads are explicit and optional. Hardware details reflect the container, not necessarily the physical host.'));
+      var aiBox = el('div', { class: 'dashboard-ai-controls' });
+      sectionEl.appendChild(aiBox);
+      function render() {
+        fetch('/api/ai').then(function (r) { if (!r.ok) throw Error('AI unavailable'); return r.json(); })
+          .then(function (d) {
+            aiBox.innerHTML = '';
+            var hw = d.hardware;
+            aiBox.appendChild(el('p', { class: 'dashboard-file' },
+              hw.cpu + ' · ' + hw.threads + ' threads · ' + hw.detectedMemoryGiB + ' GiB visible RAM'));
+            aiBox.appendChild(el('p', { class: 'dashboard-file' },
+              hw.gpu.length ? hw.gpu.map(function (g) { return g.name + ' (' + g.freeVramMiB + '/' + g.totalVramMiB + ' MiB VRAM free/total)'; }).join(' · ') : hw.gpuNote));
+            var modelSelect = el('select', { class: 'filter-select', 'aria-label': 'AI model' });
+            d.models.forEach(function (model) {
+              modelSelect.add(new Option(model.label + (model.installed ? ' · Installed' : ' · Download required'), model.id));
+            });
+            modelSelect.value = d.selected;
+            aiBox.appendChild(modelSelect);
+            var deviceSelect = el('select', { class: 'filter-select', 'aria-label': 'AI execution device' });
+            ['auto', 'cpu', 'cuda:0'].forEach(function (v) { deviceSelect.add(new Option(v === 'auto' ? 'Auto-detect compute' : v === 'cpu' ? 'Use CPU' : 'NVIDIA GPU (CUDA:0)', v)); });
+            deviceSelect.value = d.device;
+            aiBox.appendChild(deviceSelect);
+            var enabled = el('label', { class: 'dashboard-toggle' });
+            var check = el('input', { type: 'checkbox' }); check.checked = d.enabled;
+            enabled.appendChild(check);
+            enabled.appendChild(el('span', {}, 'Enable selected installed model during scans'));
+            aiBox.appendChild(enabled);
+            var save = el('button', { class: 'dashboard-next' }, 'Save AI settings');
+            save.addEventListener('click', function () {
+              save.disabled = true;
+              fetch('/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ selected: modelSelect.value, device: deviceSelect.value, enabled: check.checked }) })
+                .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw Error(j.error); return j; }); })
+                .then(function (saved) { showToast(saved.effective ? 'AI ready. Rescan to analyze existing media.' : 'AI preference saved; install the selected model to activate.'); render(); })
+                .catch(function (e) { showToast(e.message || 'Settings failed'); save.disabled = false; });
+            });
+            aiBox.appendChild(save);
+            var selected = d.models.find(function (m) { return m.id === modelSelect.value; });
+            var install = el('button', { class: 'dashboard-next' }, 'Download chosen model');
+            install.disabled = d.installing || (selected && selected.installed);
+            install.addEventListener('click', function () {
+              install.disabled = true;
+              install.textContent = 'Downloading… (may take several minutes)';
+              fetch('/api/ai/install', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: modelSelect.value }) })
+                .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw Error(j.error); return j; }); })
+                .then(function () { showToast('Model downloaded. Enable it and rescan.'); render(); })
+                .catch(function (e) { showToast(e.message || 'Could not download model; check AI stack in Docker build'); render(); });
+            });
+            aiBox.appendChild(install);
+            modelSelect.addEventListener('change', function () {
+              var m = d.models.find(function (v) { return v.id === modelSelect.value; });
+              install.disabled = d.installing || !m || m.installed;
+            });
+            aiBox.appendChild(el('p', { class: 'modal-sub' },
+              'Changing models affects future rescans; existing image analysis is preserved until rescanned. GPU compute requires a CUDA-capable PyTorch install and Docker GPU passthrough.'));
+          })
+          .catch(function () { aiBox.textContent = 'Could not detect hardware or AI settings.'; });
+      }
+      render();
+    }
+    function showFiles() {
+      var wrap = section('Indexed files (paged)');
+      var list = el('div', { class: 'dashboard-files' });
+      var next = el('button', { class: 'dashboard-next' }, 'Load next 100');
+      var offset = 0;
+      function fetchPage() {
+        next.disabled = true;
+        fetch('/api/dashboard/files?offset=' + offset + '&limit=100')
+          .then(function (r) { if (!r.ok) throw Error('Files unavailable'); return r.json(); })
+          .then(function (data) {
+            data.items.forEach(function (i) {
+              var line = el('div', { class: 'dashboard-file' });
+              line.textContent = i.creator + ' / ' + i.filename + ' · ' + (i.width || '?') + '×' + (i.height || '?');
+              list.appendChild(line);
+            });
+            offset += data.items.length;
+            next.disabled = offset >= data.total;
+            next.textContent = offset >= data.total ? 'All ' + data.total.toLocaleString() + ' indexed files shown' : 'Load next 100 (' + offset.toLocaleString() + '/' + data.total.toLocaleString() + ')';
+          }).catch(function () { next.textContent = 'Could not load files'; next.disabled = false; });
+      }
+      next.addEventListener('click', fetchPage);
+      wrap.appendChild(list); wrap.appendChild(next); fetchPage();
+    }
+    function open() {
+      body.innerHTML = '';
+      scrim.classList.add('open');
+      body.appendChild(el('p', { class: 'modal-sub' }, 'Loading audit data…'));
+      fetch('/api/dashboard').then(function (r) { if (!r.ok) throw Error('Dashboard unavailable'); return r.json(); })
+        .then(function (d) {
+          if (!scrim.classList.contains('open')) return;
+          body.innerHTML = '';
+          var summary = section('Overview');
+          summary.appendChild(el('p', { class: 'dashboard-lead' },
+            d.totals.photos.toLocaleString() + ' photos · ' + d.totals.videos.toLocaleString() +
+            ' videos · ' + (d.totals.bytes / (1024 ** 3)).toFixed(2) + ' GiB indexed'));
+          if (d.lastScan) summary.appendChild(el('p', { class: 'modal-sub' },
+            'Last scan: ' + d.lastScan.at + ' · ' + (d.lastScan.durationMs / 1000).toFixed(1) +
+            ' seconds · +' + d.lastScan.added + ' new · ' + d.lastScan.updated + ' updated · ' + d.lastScan.removed + ' removed'));
+          barChart('Creators / folders', d.creators, function (x) { return x.name; }, function (x) { return x.photos + x.videos; });
+          barChart('Formats', d.formats, function (x) { return x.name; }, function (x) { return x.count; });
+          barChart('Resolution', d.resolutions, function (x) { return x.name; }, function (x) { return x.count; });
+          var pie = section('Photos vs videos');
+          var total = Math.max(1, d.totals.photos + d.totals.videos);
+          var circle = el('div', { class: 'dashboard-pie', role: 'img', 'aria-label': 'Photo/video split' });
+          circle.style.background = 'conic-gradient(var(--accent) 0 ' + (d.totals.photos / total * 100).toFixed(2) + '%, var(--text-muted) 0 100%)';
+          pie.appendChild(circle);
+          pie.appendChild(el('p', { class: 'mono' }, 'Photos ' + d.totals.photos + ' · Videos ' + d.totals.videos));
+          var scans = section('Recent scans');
+          (d.history || []).slice().reverse().forEach(function (scan) {
+            scans.appendChild(el('div', { class: 'dashboard-file' }, scan.at + ' · ' + (scan.durationMs / 1000).toFixed(1) + 's · +' + scan.added + ' / ~' + scan.updated + ' / −' + scan.removed + ' · ' + scan.failed + ' failed'));
+          });
+          if (!d.history.length) scans.appendChild(el('p', {}, 'No scan history yet'));
+          var errors = section('Not imported / errors');
+          [].concat((d.unsupported || []).map(function (x) { return x.relPath + ': unsupported ' + x.ext; }),
+            (d.failed || []).map(function (x) { return x.relPath + ': ' + x.error; }),
+            (d.walkErrors || []).map(function (x) { return x.relPath + ': inaccessible folder: ' + x.error; }))
+            .forEach(function (line) { errors.appendChild(el('div', { class: 'dashboard-file' }, line)); });
+          if (!errors.children.length || errors.children.length === 1) errors.appendChild(el('p', {}, 'No errors in the last scan'));
+          showFiles();
+          showAiControls();
+        }).catch(function () { body.innerHTML = ''; body.appendChild(el('p', {}, 'Could not load dashboard.')); });
+    }
+    return { root: scrim, open: open };
   }
 
   function renderBottomLinks() {
@@ -745,14 +1025,16 @@
     var aspect = item.width && item.height ? item.width / item.height : 1;
     var rowUnit = parseFloat(getComputedStyle(grid).getPropertyValue('grid-auto-rows')) || 4;
     var gap = parseFloat(getComputedStyle(grid).getPropertyValue('gap')) || 3;
-    var tileHeight = columnWidth / aspect;
+    var width = columnWidth;
+    if (tile.classList.contains('tile-expanded')) width = columnWidth * 2 + gap;
+    var tileHeight = width / aspect;
     var span = Math.max(1, Math.ceil((tileHeight + gap) / (rowUnit + gap)));
     tile.style.gridRowEnd = 'span ' + span;
     // Keep the responsive <img>/<video> sizes attribute matching the
     // actual measured column width, so the browser's srcset choice is
     // based on real layout rather than a guessed vw fraction.
     var media = tile.querySelector('img.tile-media, video.tile-media');
-    if (media && media.tagName === 'IMG') media.sizes = Math.round(columnWidth) + 'px';
+    if (media && media.tagName === 'IMG') media.sizes = Math.round(width) + 'px';
   }
 
   var resizeTimer = null;
@@ -765,6 +1047,11 @@
     var params = new URLSearchParams();
     if (state.type) params.set('type', state.type);
     if (state.album) params.set('album', state.album);
+    if (state.creator) params.set('creator', state.creator);
+    if (state.dateField) params.set('dateField', state.dateField);
+    if (state.dateFrom) params.set('dateFrom', state.dateFrom);
+    if (state.dateTo) params.set('dateTo', state.dateTo);
+    if (state.resolution) params.set('resolution', state.resolution);
     if (state.has) params.set('has', state.has);
     if (state.q) params.set('q', state.q);
     params.set('sort', state.sort);
@@ -785,6 +1072,7 @@
         if (myToken !== state.loadToken) return; // superseded by a filter/sort change; discard
         state.loadedOnce = true;
         updateAlbumOptions(data.albums);
+        updateCreatorOptions(data.creators);
         updateObjectClassOptions(data.objectClasses);
         if (data.items.length === 0 && !state.cursor) {
           showEmptyState();
@@ -814,20 +1102,41 @@
     state.loading = false;
     grid.classList.add('refreshing');
     grid.innerHTML = '';
+    lastGroupCreator = null;
+    inViewVideoTiles.clear();
+    runningPreviews.forEach(function (tile) { pausePreview(tile); });
+    runningPreviews.clear();
     state.cursor = null;
     state.done = false;
     loadMore().finally(function () { grid.classList.remove('refreshing'); });
   }
 
-  var albumSelectPopulated = false;
+  var lastCreators = null;
+  function updateCreatorOptions(creators) {
+    if (!creators) return;
+    var key = JSON.stringify(creators);
+    if (key === lastCreators) return;
+    lastCreators = key;
+    var sel = header._creatorSelect;
+    sel.innerHTML = '';
+    sel.add(new Option('All creators', ''));
+    creators.forEach(function (c) { sel.add(new Option(c, c)); });
+    sel.value = state.creator || '';
+    sel.style.display = creators.length ? '' : 'none';
+  }
+
+  var lastAlbums = null;
   function updateAlbumOptions(albums) {
-    if (albumSelectPopulated || !albums || albums.length === 0) return;
-    albumSelectPopulated = true;
+    if (!albums) return;
+    var key = JSON.stringify(albums);
+    if (key === lastAlbums) return;
+    lastAlbums = key;
     var sel = header._albumSelect;
-    sel.innerHTML = '<option value="">All albums</option>' + albums.map(function (a) {
-      return '<option value="' + a.replace(/"/g, '&quot;') + '">' + a + '</option>';
-    }).join('');
-    sel.style.display = '';
+    sel.innerHTML = '';
+    sel.add(new Option('All albums', ''));
+    albums.forEach(function (a) { sel.add(new Option(a, a)); });
+    sel.value = state.album || '';
+    sel.style.display = albums.length ? '' : 'none';
   }
 
   function refreshContainsHighlight() {
@@ -883,6 +1192,9 @@
     });
   }, { rootMargin: dataSaverMode ? '100px' : '500px' });
 
+  // A dozen simultaneous 60fps decoders would make even a fast GPU stutter.
+  // Prioritize hovered clips; cap others to keep the page responsive.
+  var runningPreviews = new Set();
   var inViewVideoTiles = new Set();
   var autoplayObserver = new IntersectionObserver(function (entries) {
     entries.forEach(function (entry) {
@@ -909,7 +1221,7 @@
     video.muted = true;
     video.loop = true;
     video.playsInline = true;
-    video.preload = 'none';
+    video.preload = 'metadata';
     video.src = item.urls.preview || item.urls.full;
     tile.appendChild(video);
     var liveEl = tile.querySelector('.tile-live');
@@ -926,14 +1238,36 @@
   }
 
   function playPreview(tile) {
-    if (tile._item.type !== 'video') return;
+    if (!autoplayEnabled || document.hidden || document.body.classList.contains('lb-open') || !tile.isConnected || tile._item.type !== 'video') return;
+    if (runningPreviews.has(tile)) return;
+    if (runningPreviews.size >= MAX_PREVIEWS) {
+      // During hover, evict the oldest non-hovered playback first.
+      if (!tile.matches(':hover')) return;
+      var victim = Array.from(runningPreviews).find(function (t) { return !t.matches(':hover'); });
+      if (!victim) victim = runningPreviews.values().next().value;
+      if (victim) pausePreview(victim);
+    }
     var video = attachVideoPreview(tile, tile._item);
+    runningPreviews.add(tile);
     var p = video.play();
-    if (p && p.catch) p.catch(function () { /* blocked until a user gesture; hover covers that */ });
+    if (p && p.catch) p.catch(function () { runningPreviews.delete(tile); });
   }
   function pausePreview(tile) {
+    runningPreviews.delete(tile);
     if (tile._video) tile._video.pause();
+    if (!inViewVideoTiles.has(tile) && !document.hidden) requestAnimationFrame(refillPreviews);
   }
+  function refillPreviews() {
+    if (document.hidden || document.body.classList.contains('lb-open')) return;
+    for (var tile of inViewVideoTiles) {
+      if (runningPreviews.size >= MAX_PREVIEWS) return;
+      if (tile.isConnected) playPreview(tile);
+    }
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) runningPreviews.forEach(function (tile) { pausePreview(tile); });
+    else Array.from(inViewVideoTiles).slice(0, MAX_PREVIEWS).forEach(playPreview);
+  });
 
   function paintVisibilityButton(btn, guest) {
     btn.classList.toggle('is-guest', guest);
@@ -967,10 +1301,35 @@
       .catch(function () { showToast('Could not update visibility'); });
   }
 
+  var lastGroupCreator = null;
+  function creatorColor(name) {
+    var hash = 0;
+    for (var c = 0; c < name.length; c++) hash = Math.imul(hash ^ name.charCodeAt(c), 16777619);
+    return 'hsl(' + (Math.abs(hash) % 360) + ' 74% 64%)';
+  }
+
   function addTile(item) {
+    var creator = item.creator || '(Unsorted)';
+    if (state.sort === 'creator' && lastGroupCreator !== creator) {
+      var heading = el('li', { class: 'group-heading' });
+      var dot = el('span', { class: 'creator-dot' });
+      dot.style.backgroundColor = creatorColor(creator);
+      heading.appendChild(dot);
+      var headingText = el('span'); headingText.textContent = creator;
+      heading.appendChild(headingText);
+      grid.appendChild(heading);
+      lastGroupCreator = creator;
+    }
     var tile = el('li', { class: 'tile', tabindex: '0', role: 'button', 'aria-label': 'Open ' + item.filename, 'data-item-id': item.id });
     tile.style.background = item.color;
     tile._item = item;
+    tile.style.setProperty('--source-color', creatorColor(creator));
+    var sourceLabel = el('span', { class: 'tile-source', title: item.album || creator });
+    var originName = el('strong'); originName.textContent = creator;
+    sourceLabel.appendChild(originName);
+    var originSub = el('small'); originSub.textContent = item.album || 'Top-level folder';
+    sourceLabel.appendChild(originSub);
+    tile.appendChild(sourceLabel);
 
     var img = el('img', { class: 'tile-media', alt: '', loading: 'lazy' });
     img.dataset.src = item.urls.thumb;
@@ -980,6 +1339,16 @@
     lazyObserver.observe(img);
 
     if (item.type === 'video') {
+      tile.classList.add('video-tile');
+      if (videoScale === '2') tile.classList.add('tile-expanded');
+      var expand = el('button', { type: 'button', class: 'tile-expand', title: 'Toggle large video tile', 'aria-label': 'Resize this video tile' }, icon('expand'));
+      expand.addEventListener('click', function (e) {
+        e.stopPropagation();
+        tile.classList.toggle('tile-expanded');
+        tile.dataset.manualScale = '1';
+        remeasureAndReflow();
+      });
+      tile.appendChild(expand);
       var live = el('span', { class: 'tile-live' }, '<span class="tile-live-dot"></span>LIVE');
       tile.appendChild(live);
       if (item.duration) {
@@ -1239,7 +1608,10 @@
 
   function infoRow(label, value) {
     if (value === null || value === undefined || value === '') return '';
-    return '<dt>' + label + '</dt><dd>' + String(value).replace(/</g, '&lt;') + '</dd>';
+    function escapeHtml(raw) { return String(raw).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    }); }
+    return '<dt>' + escapeHtml(label) + '</dt><dd>' + escapeHtml(value) + '</dd>';
   }
 
   function renderInfoPanel(item) {
@@ -1326,6 +1698,11 @@
     if (state.sort === 'random') params.set('seed', state.seed);
     if (state.type) params.set('type', state.type);
     if (state.album) params.set('album', state.album);
+    if (state.creator) params.set('creator', state.creator);
+    if (state.dateField) params.set('dateField', state.dateField);
+    if (state.dateFrom) params.set('dateFrom', state.dateFrom);
+    if (state.dateTo) params.set('dateTo', state.dateTo);
+    if (state.resolution) params.set('resolution', state.resolution);
     if (state.has) params.set('has', state.has);
     if (state.q) params.set('q', state.q);
     return fetch('/api/item/' + encodeURIComponent(id) + '?' + params.toString()).then(function (r) { return r.json(); });
@@ -1337,6 +1714,7 @@
     lb.item = item;
     document.body.style.overflow = 'hidden';
     document.body.classList.add('lb-open');
+    runningPreviews.forEach(function (tile) { pausePreview(tile); });
     lightbox.root.classList.add('open');
     renderLightboxMedia(item);
     if (fromGrid) {
@@ -1358,6 +1736,7 @@
     lb.open = false;
     lightbox.root.classList.remove('open');
     document.body.classList.remove('lb-open');
+    requestAnimationFrame(refillPreviews);
     if (bg) bg.detachAudio();
     lightbox.editPanel.classList.remove('open');
     lightbox.editBtn.classList.remove('active');
@@ -1518,4 +1897,5 @@
   }
   loadMore();
   fetchLibraryStatus();
+  setInterval(fetchLibraryStatus, 20000);
 })();

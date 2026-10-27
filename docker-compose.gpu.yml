@@ -1,0 +1,9 @@
+# Optional Linux NVIDIA Container Toolkit passthrough.
+# docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+# Run nvidia-smi on the host and inside the container to verify visibility.
+services:
+  stream:
+    gpus: all
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility

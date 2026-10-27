@@ -1,0 +1,19 @@
+name: Validate Stream
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: |
+          node --check server.js
+          for file in public/*.js lib/*.js lib/handlers/*.js; do node --check "$file"; done
+          python3 -m py_compile lib/vision/*.py
+      - name: Unit tests
+        run: npm test

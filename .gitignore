@@ -1,10 +1,28 @@
+# Local secrets and runtime state
 .env
+.env.*
+!.env.example
 .cache/
 node_modules/
 *.log
+*.pid
+rclone.conf
+*.pem
+*.key
 
-# Your media library stays out of git -- that's the whole point.
-# Point MEDIA_DIR at a folder or mounted volume outside the repo
-# instead of committing photos/videos here.
-media/original/*
-!media/original/.gitkeep
+# Never push personal media. Docker's default mount points at ./media.
+/media/*
+!/media/original/
+/media/original/*
+!/media/original/.gitkeep
+
+# Python / editor / system outputs
+__pycache__/
+*.pyc
+.DS_Store
+.vscode/
+.idea/
+
+# Archives and generated artifacts
+*.zip
+coverage/

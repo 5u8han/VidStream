@@ -1,6 +1,10 @@
 services:
   stream:
-    build: .
+    build:
+      context: .
+      args:
+        INSTALL_AI_STACK: ${STREAM_AI_STACK:-false}
+        AI_ACCELERATOR: ${STREAM_AI_ACCELERATOR:-cpu}
     # Or, once published: image: yourname/stream:latest
     restart: unless-stopped
     ports:

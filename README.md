@@ -1,7 +1,7 @@
 # Stream
 
 A self-hosted photo *and video* stream. Drop files in a folder, and they
-show up — no database, no build step, no cloud dependency.
+show up — no database, no build step, no cloud dependency. Optional AI is off by default.
 
 Stream is a from-scratch spiritual successor to
 [waschinski/photo-stream](https://github.com/waschinski/photo-stream), built
@@ -17,7 +17,7 @@ below.
   immediately), and again on hover. Click to open with full quality, sound,
   and scrubbing, with a slideshow mode in the lightbox.
 - **Responsive by default.** The grid scales continuously with your browser
-  width, with a small/medium/large density control in the menu. Photos and
+  width, with a small/medium/large density control in the menu, a live tile-width slider, and 1×/2× video tile sizes. Photos and
   video posters are served as real `srcset` variants at several
   resolutions, so a phone doesn't download the same image as a 4K monitor.
 - **Local detection, no cloud APIs**: face/pet presence detection, general
@@ -40,7 +40,7 @@ below.
   resets when you move to the next item), and an info sidebar with
   dimensions, file size, date, camera make/model/lens/exposure (photos),
   codec/frame rate/bit rate (video), and whatever detection found.
-- Sort by newest, oldest, filename, or shuffle; filter by type, album, or
+- Sort by newest, oldest, filename, shuffle, or creator groups; filter by type, album, or
   "contains" (faces/pets/text/detected objects); search filenames and OCR'd
   text; RSS feed; Web Share API (with clipboard fallback); optional
   original-file downloads.
@@ -53,7 +53,7 @@ below.
 - **Optional admin/guest split**: keep your library private by default and
   explicitly mark individual photos, videos, or whole albums as
   guest-visible — see [Admin mode](#admin-mode) below.
-- **Library counts, and nothing silently missing.** A summary line shows
+- **Library counts, and nothing silently missing.** A fixed bottom audit bar shows
   "114 photos · 222 videos · 3 unsupported · 63 unreadable · 402 total" (the
   total includes the files that didn't import); click the unsupported/
   unreadable chips for a folder-by-folder list with the reason for each.
@@ -69,6 +69,57 @@ below.
 - **Zero npm dependencies.** External tools are `ffmpeg`, ImageMagick,
   OpenCV (Python), Tesseract, and (optionally) PyTorch/YOLO for object
   detection — all included in the Docker image.
+
+## What's new: fast previews, creators, dashboard and optional AI
+
+- **Up to 60 FPS video previews:** `VIDEO_PREVIEW_FPS=60` is the encoding ceiling. It cannot invent motion absent from 24/30 FPS source material or force 60 FPS browser composition on slow clients. Existing cached videos are re-encoded during the next scan when the setting changes. Preview files are muted MP4s; full originals are opened in the lightbox.
+- **Smooth browsing first:** no frontend framework, no client-side video transcoding. Preplaying tile concurrency is configurable from 4 to 64 (default 8, with hover priority), and hidden tabs pause playback. This prevents dozens of decoders overwhelming the browser.
+- **Resize videos:** click the expand icon at the bottom right of a video to toggle 2-column width. The View options menu includes global Normal/2× video settings and an adjustable tile-width slider. On narrow screens 2× falls back to one column.
+- **Creator grouping:** the first media subfolder is treated as creator/artist (for example `Artist/Collection/clip.mp4` → `Artist`). The full relative subfolder is still an album. Tiles get creator-colored hover outlines and a label showing the origin. Select **Group by creator** in Sort, or use the creator dropdown to filter.
+- **Filters:** creator, album, media type, date created/taken, date *imported into Stream*, and minimum resolution measured using the shorter image dimension. The import date is a local Stream import timestamp, **not** the original internet upload/posting date, which generally isn't embedded in downloaded media.
+- **Always-on footer:** counts of indexed photos/videos, unsupported types and unreadable files, plus last scan time.
+- **Audit dashboard:** available to administrators from the chart icon or footer. It displays creator/format/resolution charts, imported files (paginated), processing durations, recent scans, and errors. Stream does not silently read host syslogs; that would require invasive permissions. Use `docker compose logs stream` for container logs.
+- **Optional object models:** open Dashboard → Optional AI models & hardware. Stream reports CPU, effective memory and NVIDIA GPUs visible inside the container, and offers approved YOLOv8 nano/small/medium model downloads. Install and enable a model only if you need AI tags. A new scan refreshes object analysis. This feature is independent of faster photo/video browsing.
+
+### AI model installation (optional)
+
+The default image **does not** install large PyTorch/Ultralytics packages or download model weights. For CPU inference, set `STREAM_AI_STACK=true` in the shell or `.env`, then rebuild:
+
+```sh
+STREAM_AI_STACK=true docker compose up -d --build
+```
+
+Open the admin dashboard. It shows supported downloadable models. Choose a model, click Download, then Save AI settings with Enable selected, then Rescan. Weights and settings survive rebuilds in the persistent `.cache` volume. The UI does not support arbitrary model URLs or arbitrary Python execution.
+
+For Linux with an NVIDIA GPU, install NVIDIA drivers and NVIDIA Container Toolkit **on the host**. The Compose GPU overlay passes hardware into the container:
+
+```sh
+STREAM_AI_STACK=true STREAM_AI_ACCELERATOR=cuda \
+  docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
+The dashboard shows what Docker exposes. Choose CUDA:0 after validating that the container can run CUDA-enabled PyTorch and `nvidia-smi`; otherwise choose CPU/Auto. GPU passthrough can't be activated by a webpage; it is a Docker host deployment decision. macOS Docker Desktop generally cannot pass through a Mac's Metal GPU to this Linux container. Support for ROCm/AMD/Jetson would require additional build and runtime paths.
+
+**Model costs:** GPU inference and larger models need more system RAM and possibly substantially more than the default `STREAM_MEM_LIMIT=2g`. Increase that limit when using medium weights. Model quality and memory usage should be tested on your target hardware. Ultralytics weights/packages have their own license terms.
+
+### GitHub publishing (no personal media in the repository)
+
+Create an empty GitHub repository named e.g. `stream` (do **not** add a README when creating it), then from the folder containing `server.js`:
+
+```sh
+git init -b main
+git add .
+git status --short        # verify NO media/.env/.cache/rclone.conf are staged
+git commit -m "Stream: fast media gallery and audit improvements"
+git remote add origin https://github.com/YOUR_USERNAME/stream.git
+git push -u origin main
+```
+
+If the included archive was checked out from a Git repository already, skip `git init`. Never `git add -f` a secret or personal media. Set repo visibility **private** while you check the original Claude code, local credentials and license obligations. `npm test` executes the new regression tests, and GitHub Actions runs the same checks on pushes/PRs.
+
+### File index and NAS tolerance
+
+The index remains JSON-based for simplicity and startup speed. An unavailable SMB/NAS directory is recorded as a scan error and no longer causes existing catalog entries to be deleted. Source files remain read-only when mounted as documented; thumbnails and previews live separately. If source storage goes offline, existing cached images may remain visible, but opening original videos/files can fail until the source returns. Full-time availability is not a design goal.
 
 ## Quick start (Docker)
 

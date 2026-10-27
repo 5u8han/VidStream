@@ -6,6 +6,7 @@ const { URL } = require('url');
 
 const { loadConfig } = require('./lib/config');
 const { Db } = require('./lib/db');
+const { AiManager } = require('./lib/ai-manager');
 const { Scanner } = require('./lib/scanner');
 const { Router } = require('./lib/router');
 const { serveFile } = require('./lib/serve-file');
@@ -16,7 +17,7 @@ const { pageHandler } = require('./lib/handlers/page');
 const { mediaHandler } = require('./lib/handlers/media');
 const {
   itemsHandler, itemHandler, rescanHandler, healthHandler, libraryStatusHandler,
-  setItemVisibilityHandler, setAlbumVisibilityHandler, duplicatesHandler,
+  setItemVisibilityHandler, setAlbumVisibilityHandler, duplicatesHandler, dashboardHandler, dashboardFilesHandler, aiStatusHandler, aiUpdateHandler, aiInstallHandler,
 } = require('./lib/handlers/api');
 const { feedHandler } = require('./lib/feed');
 const { loginHandler, logoutHandler } = require('./lib/handlers/auth');
@@ -24,6 +25,7 @@ const { downloadZipHandler } = require('./lib/handlers/download');
 
 const ROOT = __dirname;
 const cfg = loadConfig(ROOT);
+const ai = new AiManager(cfg);
 
 const db = new Db(path.join(cfg.cacheDir, 'index.json'));
 const scanner = new Scanner(cfg, db, {
@@ -38,6 +40,11 @@ router.post('/api/logout', logoutHandler());
 router.get('/api/items', itemsHandler(cfg, db));
 router.get('/api/item/:id', itemHandler(cfg, db));
 router.get('/api/library-status', libraryStatusHandler(cfg, scanner));
+router.get('/api/dashboard', dashboardHandler(cfg, db, scanner));
+router.get('/api/dashboard/files', dashboardFilesHandler(cfg, db));
+router.get('/api/ai', aiStatusHandler(cfg, ai));
+router.post('/api/ai', aiUpdateHandler(cfg, ai));
+router.post('/api/ai/install', aiInstallHandler(cfg, ai));
 router.post('/api/items/:id/visibility', setItemVisibilityHandler(cfg, db));
 router.post('/api/albums/visibility', setAlbumVisibilityHandler(cfg, db));
 router.get('/api/duplicates', duplicatesHandler(cfg, db));
@@ -103,21 +110,22 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-async function main() {
+function main() {
   console.log(`[stream] Media folder: ${cfg.mediaDir}`);
-  console.log(`[stream] Scanning...`);
-  await scanner.scan();
-  scanner.startWatching();
-
+  // Serve the cached index immediately. Scanning remote SMB storage may take a
+  // long time; it must never make the entire website unavailable on startup.
+  server.listen(cfg.port, cfg.host, () => {
+    console.log(`[stream] ${cfg.title} listening on http://${cfg.host}:${cfg.port}`);
+    console.log('[stream] Scanning in the background...');
+    scanner.scan()
+      .catch((err) => console.error('[stream] Initial scan failed:', err))
+      .finally(() => scanner.startWatching());
+  });
   if (cfg.rescanIntervalMinutes > 0) {
     setInterval(() => {
       scanner.scan().catch((err) => console.error('[stream] Interval scan failed:', err));
     }, cfg.rescanIntervalMinutes * 60 * 1000);
   }
-
-  server.listen(cfg.port, cfg.host, () => {
-    console.log(`[stream] ${cfg.title} listening on http://${cfg.host}:${cfg.port}`);
-  });
 }
 
 main().catch((err) => {

@@ -27,27 +27,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# General object detection (person/animals/vehicles/furniture/food/...,
-# 80 COCO classes) via YOLOv8n -- a real, modern, multi-class detector,
-# layered on top of (not instead of) the Haar-cascade face/cat presence
-# check. This is the heavy, optional half of detection: CPU-only
-# PyTorch + ultralytics add real image size and per-item processing
-# time, so it's behind a build arg you can turn off:
-#   docker build --build-arg ENABLE_OBJECT_DETECTION=false .
-# The model weights download once, at build time, into this layer --
-# the running container never needs network access for this. COPY
-# below (which brings in the actual app source, including
-# lib/vision/object_worker.py that loads this file) happens *after*,
-# and only overwrites files that exist in the source tree, so this
-# downloaded weight file survives it.
-ARG ENABLE_OBJECT_DETECTION=true
-RUN if [ "$ENABLE_OBJECT_DETECTION" = "true" ]; then \
+# Optional AI stack. The default build is intentionally light and fast.
+# To enable model downloads from the admin dashboard:
+#   STREAM_AI_STACK=true docker compose build
+# Default CPU; for Linux x86_64 hosts with NVIDIA GPU passthrough:
+#   STREAM_AI_STACK=true STREAM_AI_ACCELERATOR=cuda docker compose -f docker-compose.yml -f docker-compose.gpu.yml build
+ARG INSTALL_AI_STACK=false
+ARG AI_ACCELERATOR=cpu
+RUN if [ "$INSTALL_AI_STACK" = "true" ]; then \
       pip install --no-cache-dir --break-system-packages "typing_extensions>=4.10.0" filelock && \
-      pip install --no-cache-dir --break-system-packages \
-        torch --index-url https://download.pytorch.org/whl/cpu && \
-      pip install --no-cache-dir --break-system-packages ultralytics && \
-      mkdir -p /app/lib/vision && \
-      cd /app/lib/vision && python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt')" ; \
+      if [ "$AI_ACCELERATOR" = "cuda" ]; then \
+        pip install --no-cache-dir --break-system-packages torch --index-url https://download.pytorch.org/whl/cu128; \
+      else \
+        pip install --no-cache-dir --break-system-packages torch --index-url https://download.pytorch.org/whl/cpu; \
+      fi && \
+      pip install --no-cache-dir --break-system-packages ultralytics; \
     fi
 
 COPY . .

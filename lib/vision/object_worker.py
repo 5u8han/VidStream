@@ -30,7 +30,7 @@ def main():
         print("UNAVAILABLE: ultralytics not installed", flush=True)
         return
 
-    weights_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'yolov8n.pt')
+    weights_path = os.environ.get('STREAM_MODEL_PATH') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'yolov8n.pt')
     if not os.path.isfile(weights_path):
         print("UNAVAILABLE: yolov8n.pt not found (ENABLE_OBJECT_DETECTION=false at build time?)", flush=True)
         return
@@ -50,7 +50,9 @@ def main():
         try:
             req = json.loads(line)
             path = req['path']
-            results = model(path, imgsz=IMAGE_SIZE, verbose=False)
+            device = os.environ.get('STREAM_DEVICE', 'auto')
+            kwargs = {} if device == 'auto' else {'device': device}
+            results = model(path, imgsz=IMAGE_SIZE, verbose=False, **kwargs)
             names = results[0].names
             detected = set()
             for box in results[0].boxes:
