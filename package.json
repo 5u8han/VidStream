@@ -1,6 +1,6 @@
 {
   "name": "stream",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "A self-hosted photo and video stream. No database, no build step, no npm dependencies \u2014 just Node.js, ffmpeg, ImageMagick, OpenCV, and Tesseract.",
   "license": "MIT",
   "private": true,

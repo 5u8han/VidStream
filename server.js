@@ -110,7 +110,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-function main() {
+async function main() {
   console.log(`[stream] Media folder: ${cfg.mediaDir}`);
   // Serve the cached index immediately. Scanning remote SMB storage may take a
   // long time; it must never make the entire website unavailable on startup.

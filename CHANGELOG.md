@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1
+
+- Fixed the startup restart loop by making `main()` asynchronous so its caller can handle rejected startup errors with `.catch()`.
+- Added a regression test that launches the real server, checks `/health`, and verifies clean shutdown.
+
 ## 1.1.0 (GitHub-ready iteration)
 
 - Preserved the lightweight, dependency-free Node.js gallery instead of replacing it with a heavyweight library manager.
