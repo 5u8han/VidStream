@@ -35,7 +35,20 @@ const scanner = new Scanner(cfg, db, {
 const { MediaEditor } = require('./lib/media-editor');
 const { libraryHandlers } = require('./lib/handlers/library');
 const library = libraryHandlers(cfg, db, new MediaEditor(cfg, db, scanner));
+const { EnhancementQueue } = require('./lib/enhancement-queue');
+const { settingsHandlers } = require('./lib/handlers/settings');
+const enhancements = new EnhancementQueue(cfg, db);
+const settings = settingsHandlers(cfg, db, enhancements, ai);
 const router = new Router();
+router.get('/api/settings', settings.get);
+router.post('/api/settings', settings.update);
+router.post('/api/activity', settings.events);
+router.get('/api/activity', settings.activity);
+router.get('/api/enhancements', settings.jobs);
+router.post('/api/items/:id/enhance', settings.create);
+router.post('/api/enhancements/:id', settings.control);
+router.get('/api/enhancements/:id/video', settings.video);
+router.post('/api/enhancement-models/install', settings.install);
 router.post('/api/items/:id/preferences', library.preferences);
 router.post('/api/items/:id/edit', library.edit);
 router.get('/health', healthHandler(cfg, db));
@@ -59,7 +72,7 @@ router.get('/media/:id/:variant', mediaHandler(cfg, db));
 router.get('/', pageHandler(cfg, db));
 router.get('/:id', pageHandler(cfg, db));
 
-const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/social-preview.png']);
+const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/social-preview.png', '/settings.js', '/activity.js']);
 const PUBLIC_DIR = path.join(ROOT, 'public');
 
 const server = http.createServer(async (req, res) => {
@@ -116,6 +129,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 async function main() {
+  await enhancements.start();
   console.log(`[stream] Media folder: ${cfg.mediaDir}`);
   // Serve the cached index immediately. Scanning remote SMB storage may take a
   // long time; it must never make the entire website unavailable on startup.
@@ -139,10 +153,12 @@ main().catch((err) => {
 });
 
 process.on('SIGTERM', () => {
+  void enhancements.stop();
   scanner.stopWatching();
   server.close(() => process.exit(0));
 });
 process.on('SIGINT', () => {
+  void enhancements.stop();
   scanner.stopWatching();
   server.close(() => process.exit(0));
 });

@@ -1212,3 +1212,16 @@ body { padding-bottom:100px; }
 @media(max-width:800px) { .header { height:auto; min-height:var(--header-h); padding:8px 10px; flex-wrap:wrap; } .header-controls { flex:1 1 100%; } .header-title { flex-basis:100%; } .menu-panel { max-width:calc(100vw - 24px); } .menu-section > .filter-select { max-width:none; } }
 .lightbox { overflow:hidden; }
 .tile-live { left:48px; }
+
+/* Native modal provides keyboard focus containment and a mobile-safe scroll area. */
+.stream-settings { width: min(700px, calc(100vw - 32px)); max-height: 85dvh; overflow: auto; border: 1px solid #7776; border-radius: 16px; padding: 24px; color: var(--text, #eee); background: var(--bg, #181719); box-shadow: 0 24px 90px #0009; }
+.stream-settings::backdrop { background: #0009; backdrop-filter: blur(5px); }
+.stream-settings header { display:flex; justify-content:space-between; gap:16px; align-items:center; }
+.stream-settings h2 { margin: 0; } .stream-settings h3 { margin-top:24px; }
+.stream-settings p { line-height:1.55; margin:12px 0; overflow-wrap:anywhere; }
+.stream-settings pre { font-size:12px; white-space:pre-wrap; }
+.stream-settings button, .stream-settings select, .enhance-video { font:inherit; color:inherit; background:transparent; border:1px solid #8887; border-radius:8px; padding:9px 12px; margin:5px; cursor:pointer; }
+.stream-settings label { display:block; margin:12px 0; } .stream-settings select { max-width:100%; }
+.stream-settings article { border:1px solid #8885; border-radius:10px; padding:14px; margin:12px 0; }
+.stream-settings a { display:inline-block; padding:10px; color:inherit; text-decoration:underline; }
+.enhance-video { color: white; background: #222b; font-size:13px; }

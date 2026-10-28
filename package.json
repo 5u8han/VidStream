@@ -1,6 +1,6 @@
 {
   "name": "stream",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "A self-hosted photo and video stream. Embedded SQLite, no build step, no npm dependencies \u2014 just Node.js, ffmpeg, ImageMagick, OpenCV, and Tesseract.",
   "license": "MIT",
   "private": true,
@@ -8,7 +8,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test test/*.test.js",
-    "check": "node --check server.js && node --check public/app.js && node --check public/ambient.js"
+    "check": "node --check server.js && node --check public/app.js && node --check public/ambient.js && node --check public/settings.js && node --check public/activity.js && node --check lib/enhancement-queue.js"
   },
   "engines": {
     "node": ">=22.13.0"

@@ -498,3 +498,48 @@ video go through one coherent pipeline instead of two.
 
 MIT — see [LICENSE](LICENSE). Not affiliated with the original photo-stream
 project; built in its spirit, with real appreciation for the original design.
+
+## Version 1.3: settings, history and saved enhancement
+
+Open **Settings** in the header or press **/** (outside a text field). Escape closes the popup. View options still contains the grid controls, including **Randomly enlarge video previews**. Each shuffle creates a saved pattern across the library; newly loaded pages use the same pattern. Manual tile enlargement takes precedence until the page reloads. Administrator view preferences are stored in the library database and restored on another browser; guests retain local preferences.
+
+Activity is recorded in `DATA_DIR/library.sqlite`: the media path and ID, an anonymous browser ID, timestamps, intentional hovers (500 ms), viewer opens/closes, plays/pauses, seeking, completed playback, download clicks, enhanced playback and watched seconds. An **open** means opening the viewer; autoplaying a grid preview does not count as an open. Watched time excludes hidden tabs, pauses and buffering, and is sampled every second. It is an approximate engagement measure, not an exact audit of human attention. Pending events are saved in browser storage and retried after reconnecting; duplicate deliveries do not increase counts. Clearing browser storage before delivery loses those unsent events. Settings can disable new recording; existing records remain. History is administrator-only, and the media Info panel shows totals. Application revisions and index rebuilds do not reset the database.
+
+### Optional enhancement
+
+Open a video and choose **Enhance video**. Nothing is enhanced merely by browsing. Choose smoothing, upscaling, or both, then **Start saved enhancement**. The original is never replaced. Completed jobs offer playback and download of a separate MP4 with audio preserved (AAC). Jobs continue after closing the browser and can be paused/resumed in Settings.
+
+* **Optical flow to 60 fps:** included in the standard installation, uses FFmpeg's motion interpolation on the CPU, no model required. This is not AI. Motion interpolation can introduce artifacts around cuts, rapid movement or occlusion.
+* **RIFE 4.6 to 60 fps:** optional AI interpolation. Download its pinned data-only model from the official [RIFE NCNN repository](https://github.com/nihui/rife-ncnn-vulkan) through Settings. Supports CPU or Vulkan graphics hardware with the optional runtime.
+* **Real-ESRGAN 4× realistic / 2× animation:** optional frame upscaling with pinned NCNN weights from the [Hugging Face edgetools mirror](https://huggingface.co/edgetools/realesrgan) of the upstream models. Requires the [Real-ESRGAN NCNN Vulkan runtime](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan) and a compatible Vulkan device. Only these supported models are accepted; arbitrary Hugging Face Python repositories are not executed. AI upscaling can invent texture and is not guaranteed to improve every video. Outputs are limited to 8192 pixels per edge.
+
+On **Linux x86-64**, install the optional AI enhancement executables when building:
+
+```sh
+STREAM_ENHANCEMENT_TOOLS=true docker compose build
+STREAM_ENHANCEMENT_TOOLS=true docker compose up -d
+```
+
+For NVIDIA passthrough, with a working host driver and NVIDIA Container Toolkit:
+
+```sh
+STREAM_ENHANCEMENT_TOOLS=true docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
+This option is independent of `STREAM_AI_STACK` (YOLO object detection). Both may be enabled together. The build uses fixed upstream releases with checked SHA-256 hashes; model downloads remain opt-in in Settings. The bundled enhancement executables are **Linux amd64 only**. The normal build and CPU optical-flow smoothing work on ARM. For native macOS, Windows or ARM AI enhancement, build/install the upstream NCNN executables on the server's PATH; the UI reports whether they are available. A CUDA-capable GPU alone does not establish Vulkan availability. New GPU generations may require a newer driver/runtime; an RTX 5090 was not available for validation. Raise `STREAM_MEM_LIMIT` and allow adequate disk space for large video jobs.
+
+### Changing machines and recovery
+
+The **server** does object detection and enhancement. Opening the site on another phone or computer does not transfer that workload. Object detection checks CUDA availability on startup and falls back to CPU if a saved CUDA preference is unavailable. Enhancement Auto checks the server again when a job starts/resumes; select GPU explicitly for a non-NVIDIA Vulkan device. Real-ESRGAN always uses Vulkan. Missing models/runtimes or processing errors pause a job with a visible explanation, preserving its completed work.
+
+Each enhancement saves a source snapshot, verifies it with SHA-256, saves AI output frame checkpoints, and assembles verified approximately two-second encoded segments. On resume, verified work is reused; corrupt or unfinished outputs are regenerated. CPU optical flow checkpoints whole segments. An interrupted model download retains verified completed files and retries the incomplete file. Snapshots, frames and final outputs remain under `DATA_DIR/enhancements`; this can consume **much more space than the original video**. Only one enhancement job runs at a time.
+
+To move work to a more powerful server:
+
+1. Stop VidStream on the old server, then copy its **entire persistent data directory/volume** (`stream-data`, mounted at `/app/data` by default), including SQLite files and the `enhancements` and `enhancement-models` directories. Copy `stream-cache` too: it holds the catalog and object detection model downloads. Keep a backup of the originals.
+2. Restore both volumes on the new server, preserve the media directory layout and mount paths, install the appropriate runtime/driver, then start VidStream there. Never start both hosts with these shared files; this is a single-host migration workflow, not distributed processing. The local worker lease is an additional guard, not a shared-network-storage guarantee.
+3. Queued/interrupted running jobs resume automatically. Explicitly paused/error jobs stay paused until **Resume** is selected. Once a source snapshot is complete, that job can resume even if the original NAS is temporarily offline. A partially copied source still requires the original to finish its verified snapshot.
+
+For Docker volume migration, use `docker volume inspect` to identify your actual Compose-prefixed volume names, and back up/restore **both volumes while the application is stopped**. Do not run `docker compose down -v` during upgrades: it deletes the persistent volumes. Updating normally is `git pull --ff-only` followed by your chosen `docker compose … up -d --build` command.
+
+Durable file writes, checksums and SQLite transactions protect completed checkpoints against ordinary process/network interruptions. They cannot guarantee zero loss from damaged storage, deleted volumes, unsent browser events or a power failure during unfinished work. Maintain backups. Already completed frames/segments survive; the current unfinished frame/segment may need to be rerun. Changing enhancement options creates a separate job rather than reusing incompatible output.

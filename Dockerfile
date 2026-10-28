@@ -44,6 +44,10 @@ RUN if [ "$INSTALL_AI_STACK" = "true" ]; then \
       pip install --no-cache-dir --break-system-packages ultralytics; \
     fi
 
+ARG INSTALL_ENHANCEMENT_TOOLS=false
+COPY scripts/install-enhancement-runtime.sh /tmp/install-enhancement-runtime.sh
+RUN if [ "$INSTALL_ENHANCEMENT_TOOLS" = "true" ]; then sh /tmp/install-enhancement-runtime.sh; fi
+
 COPY . .
 
 RUN mkdir -p /media/original /app/.cache

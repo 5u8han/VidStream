@@ -43,6 +43,7 @@
     download: '<path d="M12 3v11M7.5 10L12 14.5 16.5 10M5 19h14"/>',
     refresh: '<path d="M4 10a8 8 0 0114-5.3M20 5v5h-5M20 14a8 8 0 01-14 5.3M4 19v-5h5"/>',
     rss: '<circle cx="6.2" cy="17.8" r="1.6" fill="currentColor" stroke="none"/><path d="M4 10.5a9.5 9.5 0 019.5 9.5M4 4.8a15.2 15.2 0 0115.2 15.2"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="m9 3 1-2h4l1 2 3 2 2 1v4l-2 1v3l2 1v4l-2 1-3 2-1 2h-4l-1-2-3-2-2-1v-4l2-1v-3l-2-1V6l2-1z"/>',
     sliders: '<line x1="4" y1="7" x2="20" y2="7"/><circle cx="14" cy="7" r="2" fill="currentColor"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="8" cy="12" r="2" fill="currentColor"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="16" cy="17" r="2" fill="currentColor"/>',
     eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
     eyeOff: '<path d="M3 3l18 18"/><path d="M10.6 5.2A10.6 10.6 0 0122 12s-1.1 2.2-3.2 4M6.5 6.7C3.7 8.6 2 12 2 12s3.5 7 10 7c1.4 0 2.7-.3 3.9-.7"/><path d="M9.5 9.6a3 3 0 004.1 4.2"/>',
@@ -81,8 +82,17 @@
     try { return localStorage.getItem(key) || fallback; } catch (e) { return fallback; }
   }
   function storageSet(key, val) {
+    window.StreamSettings.preference(key, val);
     try { localStorage.setItem(key, val); } catch (e) { /* ignore (private browsing etc.) */ }
   }
+
+  var randomSeed = storageGet('stream-random-seed', 'initial');
+  var randomEnabled = storageGet('stream-random-enabled', '0') === '1';
+  function randomLarge(id) { var n=2166136261; var value=randomSeed+id; for(var i=0;i<value.length;i++)n=Math.imul(n^value.charCodeAt(i),16777619);return (n>>>0)/4294967296<.25; }
+  function refreshSizes() { grid.querySelectorAll('.tile.video-tile').forEach(function(t){if(!t.dataset.manualScale)t.classList.toggle('tile-expanded',randomEnabled?randomLarge(t.dataset.itemId):videoScale==='2');});remeasureAndReflow(); }
+  function randomize() { randomSeed=window.StreamActivity.uuid();randomEnabled=true;storageSet('stream-random-seed',randomSeed);storageSet('stream-random-enabled','1');refreshSizes(); }
+  function uniform() {randomEnabled=false;storageSet('stream-random-enabled','0');refreshSizes();}
+  window.StreamSettings.init({randomize:randomize,uniform:uniform,theme:applyTheme,density:function(value){applyDensity(value);remeasureAndReflow();},fit:function(value){document.documentElement.dataset.mediaFit=value;storageSet('stream-media-fit',value);}});
 
   // ---------------------------------------------------------------
   // Theme + density (data-theme/data-density already applied by the
@@ -264,7 +274,7 @@
     paintSaverItem();
     saverItem.addEventListener('click', function () {
       dataSaverMode = !dataSaverMode;
-      try { localStorage.setItem('stream-data-saver', dataSaverMode ? '1' : '0'); } catch (e) { /* ignore */ }
+      storageSet('stream-data-saver', dataSaverMode ? '1' : '0');
       location.reload();
     });
     saverSection.appendChild(saverItem);
@@ -349,7 +359,7 @@
         videoScale = factor;
         storageSet('stream-video-scale', factor);
         Array.prototype.forEach.call(grid.querySelectorAll('.tile.video-tile'), function (t) {
-          if (!t.dataset.manualScale) t.classList.toggle('tile-expanded', videoScale === '2');
+          if (!t.dataset.manualScale) t.classList.toggle('tile-expanded', randomEnabled ? randomLarge(t.dataset.itemId) : videoScale === '2');
         });
         remeasureAndReflow();
         Array.prototype.forEach.call(layoutSection.querySelectorAll('[data-video-scale]'), function (button) {
@@ -358,6 +368,8 @@
       });
       layoutSection.appendChild(b);
     });
+    var randomButton=el('button',{class:'menu-item'},'Randomly enlarge video previews');randomButton.onclick=randomize;layoutSection.appendChild(randomButton);
+    var uniformButton=el('button',{class:'menu-item'},'Turn off random enlargement');uniformButton.onclick=uniform;layoutSection.appendChild(uniformButton);
     panel.appendChild(layoutSection);
 
     var datesSection = section('Dates and resolution');
@@ -527,6 +539,7 @@
     header._selectBtn = selectBtn;
 
     controls.appendChild(buildMenu());
+    var settingsButton=el('button',{class:'icon-btn',title:'Settings (/)', 'aria-label':'Settings'},icon('settings'));settingsButton.onclick=window.StreamSettings.open;controls.appendChild(settingsButton);
 
     var rescanBtn = el('button', { class: 'icon-btn', title: 'Rescan library', 'aria-label': 'Rescan library' }, icon('refresh'));
     rescanBtn.addEventListener('click', function () {
@@ -1368,6 +1381,7 @@
     var tile = el('li', { class: 'tile', tabindex: '0', role: 'button', 'aria-label': 'Open ' + item.filename, 'data-item-id': item.id });
     tile.style.background = item.color;
     tile._item = item;
+    var hoverTimer;tile.addEventListener('pointerenter',function(){hoverTimer=setTimeout(function(){window.StreamActivity.record(item,'hover');},500);});tile.addEventListener('pointerleave',function(){clearTimeout(hoverTimer);});
     tile.style.setProperty('--source-color', creatorColor(creator));
     var sourceLabel = el('span', { class: 'tile-source', title: item.album || creator });
     var originName = el('strong'); originName.textContent = creator;
@@ -1385,7 +1399,7 @@
 
     if (item.type === 'video') {
       tile.classList.add('video-tile');
-      if (videoScale === '2') tile.classList.add('tile-expanded');
+      if (randomEnabled ? randomLarge(item.id) : videoScale === '2') tile.classList.add('tile-expanded');
       var expand = el('button', { type: 'button', class: 'tile-expand', title: 'Toggle large video tile', 'aria-label': 'Resize this video tile' }, icon('expand'));
       expand.addEventListener('click', function (e) {
         e.stopPropagation();
@@ -1788,9 +1802,12 @@
     if (item.objects && item.objects.length) rows += infoRow('Detected', item.objects.join(', '));
     if (item.hasText) rows += infoRow('Text found', item.ocrText);
     lightbox.infoList.innerHTML = rows || '<dt>No details available</dt>';
+    if(isAdmin)fetch('/api/activity?item='+encodeURIComponent(item.id)).then(function(r){return r.json();}).then(function(data){if(lb.item?.id!==item.id||!data.stats)return;var stats=data.stats;lightbox.infoList.insertAdjacentHTML('beforeend',infoRow('Viewer opens',stats.opens)+infoRow('Hovers',stats.hovers)+infoRow('Plays',stats.plays)+infoRow('Watched seconds',Math.round(stats.watch_seconds)));}).catch(function(){});
   }
 
+  var stopActivity = null;
   function renderLightboxMedia(item) {
+    if(stopActivity){stopActivity();stopActivity=null;}
     resetEditState();
     if (bg) bg.detachAudio();
     lightbox.mediaWrap.innerHTML = '';
@@ -1809,6 +1826,9 @@
       if (slideshow.active) bindSlideshowEnded(media);
     }
     lightbox.mediaWrap.appendChild(media);
+    if(item.type==='video')stopActivity=window.StreamActivity.bind(media,item);
+    var previousEnhance=lightbox.root.querySelector('.enhance-video');if(previousEnhance)previousEnhance.remove();
+    if(isAdmin&&item.type==='video'){var enhance=el('button',{class:'enhance-video',type:'button'},'Enhance video');enhance.onclick=function(){window.StreamSettings.enhance(item,media);};lightbox.root.querySelector('.lightbox-actions').prepend(enhance);}
     installMediaZoom(media);
     renderSavedEditor(item);
     if (bg && item.type === 'video') { bg.setHoverColor(item.color); bg.attachAudio(media); }
@@ -1824,6 +1844,7 @@
     lightbox.prevBtn.disabled = !lb.prev;
     lightbox.nextBtn.disabled = !lb.next;
     lightbox.caption.textContent = lb.item.filename;
+    lightbox.downloadLink.onclick=function(){window.StreamActivity.record(lb.item,'download');};
     if (lb.item.urls.download) {
       lightbox.downloadLink.href = lb.item.urls.download;
       lightbox.downloadLink.style.display = '';
@@ -1858,6 +1879,8 @@
   }
 
   function openLightbox(item, fromGrid) {
+    if(lb.open)window.StreamActivity.record(lb.item,'close');
+    window.StreamActivity.record(item,'open');
     lb.open = true;
     if (fromGrid) lb.openedFromGrid = true; // never reset to false here — navigate() relies on this persisting across prev/next
     lb.item = item;
@@ -1883,6 +1906,8 @@
 
   function closeLightboxUI() {
     if (!lb.open) return;
+    window.StreamActivity.record(lb.item,'close');
+    if(stopActivity){stopActivity();stopActivity=null;}
     lb.open = false;
     lightbox.root.classList.remove('open');
     document.body.classList.remove('lb-open');
@@ -1936,7 +1961,8 @@
   });
 
   document.addEventListener('keydown', function (e) {
-    if (!lb.open) return;
+    if (!lb.open || document.querySelector('dialog[open]')) return;
+    if (e.target.closest('input,textarea,select,[contenteditable]')) return;
     if (e.key === 'Escape') { stopSlideshow(); closeLightbox(); }
     else if (e.key === 'ArrowLeft') { stopSlideshow(); navigate(-1); }
     else if (e.key === 'ArrowRight') { stopSlideshow(); navigate(1); }
