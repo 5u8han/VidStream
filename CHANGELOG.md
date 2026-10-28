@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.0
+
+- Web-managed enhancement runtime/model installation, server enable/suspend switch and confirmed library batches; verified native Apple GPU support.
+- Resumable clean-library exports, checked manifests, untouched originals and archived superseded exports.
+- Locked first-time owner setup with salted passphrase hashing; functional logout, persistent whole-library access control and retained LDAP support.
+- Live scoped CPU/RAM/GPU/VRAM/storage/network dashboard with persistent observed byte totals and native macOS telemetry.
+- Compact translucent selected controls, grouped View options, tabbed Settings and device-local playback preferences.
+
+
 ## 1.2.0
 
 - Durable SQLite favorites, pins, bookmarks, visibility, import dates, and revision history, separated from rebuildable previews.

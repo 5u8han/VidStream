@@ -29,7 +29,7 @@ test('activity is deduplicated, retains media identity and survives reopening / 
 });
 test('guest cannot read settings, jobs, activity or enqueue enhancements',async t=>{
  const {db,queue}=fixture(t),cfg={adminPassword:'secret',sessionSecret:'secret'},h=settingsHandlers(cfg,db,queue,{});
- for(const method of ['get','jobs','activity','create','control','install']){
+ for(const method of ['get','jobs','activity','create','control','install','runtime','batch','export','exportStatus']){
   const req={headers:{},url:'/api/settings'},res={writeHead(s){this.status=s;},end(){}};
   await h[method](req,res,{});assert.equal(res.status,403,method);
  }
@@ -67,6 +67,7 @@ test('real 60 fps job resumes verified segments after host migration without its
 test('very short videos can be smoothed and duplicate requests reuse the saved job',{skip:!hasTools},async t=>{
  const {cfg,db,queue}=fixture(t),item=clip(cfg,.05);db.upsert(item);await queue.start();const j=await queue.create(item,{});
  assert.equal((await queue.create(item,{})).id,j.id);
+ const duplicates=await Promise.all([queue.create(item,{}),queue.create(item,{})]);assert.ok(duplicates.every(x=>x.id===j.id));assert.equal(db.store.jobs().length,1);
  await until(()=>!queue.active&&['completed','paused'].includes(queue.get(j.id).state));assert.equal(queue.get(j.id).state,'completed',queue.get(j.id).error);
 });
 test('worker lease prevents two active hosts and allows stopped host takeover',async t=>{

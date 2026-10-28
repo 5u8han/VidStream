@@ -9,6 +9,45 @@ because that project (great as it is) only handles photos. Video needed a
 different foundation, not a bolt-on — see [Why a rewrite](#why-a-rewrite-and-not-a-fork)
 below.
 
+## Version 1.4: operate enhancement from the web
+
+### Start or upgrade
+
+```sh
+git pull --ff-only
+docker compose up -d --build
+```
+
+Keep both persistent volumes. No special **enhancement** build flag is required anymore. If no password or LDAP is configured, the library is locked until owner setup is complete. Obtain the one-time owner setup code from `docker compose logs stream`, open the site, and create an owner username and a passphrase of at least 10 characters. The passphrase is stored as a salted scrypt hash under `DATA_DIR/security.json`; the one-time code is removed after setup. **Logout now returns to the sign-in screen**, rather than granting admin again. Existing `ADMIN_PASSWORD`/LDAP deployments keep their authentication. Settings → Security controls whether the whole library requires sign-in or explicitly guest-visible media can be browsed publicly. Keep HTTPS for remote access. If the local owner passphrase is lost, stop the server, move `DATA_DIR/security.json` to a private backup, and restart to create a new owner using the new setup code. This requires filesystem control and invalidates old sessions; media and library preferences remain in place.
+
+### How enhancement works
+
+1. Open **Settings → Enhancement** and choose **Install tools & recommended models**. The standard image already contains the small system libraries; this button downloads fixed, checksum-verified executables into the persistent data volume, plus RIFE 4.6 and Real-ESRGAN x4plus weights. No root installer, Docker socket, arbitrary executable URL, or rebuild is needed. Animation 2× is an optional separate model.
+2. Enable enhancement and leave **Processing device → Detect on this server**, or explicitly choose CPU/GPU. CPU supports optical-flow smoothing and RIFE; Real-ESRGAN needs a Vulkan GPU. Disabling enhancement suspends active work and keeps queued/checkpointed work; re-enabling lets it continue. Explicitly paused/error jobs still require Resume.
+3. Open a short video → **Enhance video**, choose smoothing/upscaling, and start. The job runs on the server even after closing the browser, saves a separate MP4, and stops. It does **one pass over the original**, not endless refinement or repeated processing of its own output. Inspect motion/texture artifacts and frame-to-frame flicker before processing a large library; frame upscaling cannot restore known ground truth from missing detail.
+4. To prepare the library, choose batch options in Settings → Enhancement, tick the batch confirmation, and **Queue current videos**. Only currently indexed videos are queued; future imports require another batch. Matching saved jobs are reused. Jobs run one at a time. Monitor/pause/resume them under **Jobs**.
+5. Under Jobs, **Export / resume hosting library** creates `DATA_DIR/clean-library` (override with `CLEAN_LIBRARY_DIR`). It copies the newest matching completed enhancement for each video. The optional checkbox includes original photos and videos without a completed enhancement. Photos are copied unchanged; this release does not AI-enhance still images. Re-export after more jobs finish. This folder can become the media source of a separate hosting instance; do not point the enhancement source at its own export directory.
+
+Exports preserve source paths for originals. Enhanced filenames include a job ID to avoid extension/name collisions. A checksummed manifest makes export resumable. Superseded, verified VidStream exports move into hidden `.vidstream-previous/` so only the current version is visible; original source files remain untouched. Unrelated or externally modified destination files are never overwritten. Configure a generic static host to exclude hidden directories and `manifest.json`; VidStream itself ignores hidden directories and non-media JSON. Exports do not automatically delete missing source media, and are not an automatic backup of everything. Disk space must cover snapshots, frames, results and exported copies.
+
+### Your two server types
+
+- **Apple M3 Pro / 36 GB:** run VidStream natively on macOS for Apple GPU acceleration. The web installer provides universal macOS NCNN/MoltenVK executables. RIFE and realistic 4× inference have been verified on this M3 Pro using small generated clips. Docker Desktop's Linux ARM guest does not expose the Apple GPU to these executables; standard CPU optical-flow smoothing remains available there. Run `npm start` natively after installing Node 22.13+, FFmpeg, ImageMagick, ExifTool and Python 3 as described below.
+- **NVIDIA server / RTX 5090:** the same models are appropriate, with tiled upscaling. The app reads available GPU/VRAM instead of trusting a hard-coded memory claim. NVIDIA specifies 32 GB for the desktop RTX 5090; 24 GB may identify a different variant/model. Physical 5090 inference has not been validated here. Use a working Vulkan-capable driver and expose the GPU to Docker/your Proxmox VM once. For Docker, retain `docker-compose.gpu.yml`; a web menu cannot grant missing host/VM GPU passthrough permissions.
+- **iPad / iPhone:** these are viewing/control clients. They do not need the models or compute power. Data saver, preview source, and simultaneous preview limits are local to each browser; server enhancement settings apply to the server for everyone.
+
+Automatic executable installation supports native macOS (Apple Silicon/Intel) and Linux x86-64. The normal container also works on ARM for CPU optical flow; native upstream builds may be supplied on PATH for other platforms. The optional YOLO object-detection Python stack remains a separate `STREAM_AI_STACK` build option; it is not needed for smoothing/upscaling.
+
+### Live resource dashboard
+
+The dashboard polls every five seconds and displays CPU, RAM, free storage, physical disk read/write totals and rates, network bytes/rates, GPU utilization and GPU memory when exposed. Units use decimal **KB / MB / GB** (bytes, not bits); installed RAM also shows GiB to explain differences from system labels. On Linux cgroup v2, workload CPU/RAM/block I/O include worker processes; the host CPU and visible OS memory are separate. In a VM, these are the resources visible inside that VM, not unrestricted access to the Proxmox host.
+
+On native macOS, IOKit provides Apple GPU utilization, shared-memory occupancy and storage-driver counters; netstat supplies network totals. Host counters include other applications. Node-only CPU/RAM are labeled and exclude native worker processes. Apple shared memory is not additional dedicated VRAM. Occupied Mac RAM includes caches, so it is not a memory-pressure reading. RAM occupancy is not RAM read/write bandwidth; NVIDIA memory-controller utilization is shown if available. Unavailable sensors are labeled **Unavailable**, never faked as zero. Observed read/write/network/cpu totals persist in SQLite across restarts, but activity while the server is stopped is not counted.
+
+The View options menu now has **Layout / Playback / Filters / Theme** sections, compact translucent controls, colored selected states and mobile-safe scrolling. Settings has separate View / Enhancement / Jobs / History / Security tabs.
+
+Hardware references: [NVIDIA RTX 5090 specifications](https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/), [Docker GPU support](https://docs.docker.com/desktop/features/gpu/), [RIFE NCNN](https://github.com/nihui/rife-ncnn-vulkan), [Real-ESRGAN NCNN](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan).
+
 ## Version 1.2: library choices, full frames, and beta editing
 
 - **Best / favorites, pins, bookmarks:** mark media in the viewer; use the star on a tile for a quick favorite. Pins appear first, then favorites, then bookmarks, followed by your chosen sort. Filters still apply; the Contains menu can show only one saved category. These are shared library choices, writable by admins, not separate user accounts.
@@ -513,24 +552,11 @@ Open a video and choose **Enhance video**. Nothing is enhanced merely by browsin
 * **RIFE 4.6 to 60 fps:** optional AI interpolation. Download its pinned data-only model from the official [RIFE NCNN repository](https://github.com/nihui/rife-ncnn-vulkan) through Settings. Supports CPU or Vulkan graphics hardware with the optional runtime.
 * **Real-ESRGAN 4× realistic / 2× animation:** optional frame upscaling with pinned NCNN weights from the [Hugging Face edgetools mirror](https://huggingface.co/edgetools/realesrgan) of the upstream models. Requires the [Real-ESRGAN NCNN Vulkan runtime](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan) and a compatible Vulkan device. Only these supported models are accepted; arbitrary Hugging Face Python repositories are not executed. AI upscaling can invent texture and is not guaranteed to improve every video. Outputs are limited to 8192 pixels per edge.
 
-On **Linux x86-64**, install the optional AI enhancement executables when building:
-
-```sh
-STREAM_ENHANCEMENT_TOOLS=true docker compose build
-STREAM_ENHANCEMENT_TOOLS=true docker compose up -d
-```
-
-For NVIDIA passthrough, with a working host driver and NVIDIA Container Toolkit:
-
-```sh
-STREAM_ENHANCEMENT_TOOLS=true docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
-```
-
-This option is independent of `STREAM_AI_STACK` (YOLO object detection). Both may be enabled together. The build uses fixed upstream releases with checked SHA-256 hashes; model downloads remain opt-in in Settings. The bundled enhancement executables are **Linux amd64 only**. The normal build and CPU optical-flow smoothing work on ARM. For native macOS, Windows or ARM AI enhancement, build/install the upstream NCNN executables on the server's PATH; the UI reports whether they are available. A CUDA-capable GPU alone does not establish Vulkan availability. New GPU generations may require a newer driver/runtime; an RTX 5090 was not available for validation. Raise `STREAM_MEM_LIMIT` and allow adequate disk space for large video jobs.
+Starting in 1.4, use **Settings → Enhancement → Install tools & recommended models** on the standard build. See the current instructions above for native Mac support, Linux/NVIDIA passthrough, architecture limits and storage requirements. The old `STREAM_ENHANCEMENT_TOOLS` build flag remains accepted for preinstallation but is no longer necessary.
 
 ### Changing machines and recovery
 
-The **server** does object detection and enhancement. Opening the site on another phone or computer does not transfer that workload. Object detection checks CUDA availability on startup and falls back to CPU if a saved CUDA preference is unavailable. Enhancement Auto checks the server again when a job starts/resumes; select GPU explicitly for a non-NVIDIA Vulkan device. Real-ESRGAN always uses Vulkan. Missing models/runtimes or processing errors pause a job with a visible explanation, preserving its completed work.
+The **server** does object detection and enhancement. Opening the site on another phone or computer does not transfer that workload. Object detection checks CUDA availability on startup and falls back to CPU if a saved CUDA preference is unavailable. Enhancement Auto checks the server again when a job starts/resumes; select GPU explicitly for a non-NVIDIA Linux Vulkan device. Native Apple Silicon GPU detection is also supported in 1.4. Real-ESRGAN always uses Vulkan. Missing models/runtimes or processing errors pause a job with a visible explanation, preserving its completed work.
 
 Each enhancement saves a source snapshot, verifies it with SHA-256, saves AI output frame checkpoints, and assembles verified approximately two-second encoded segments. On resume, verified work is reused; corrupt or unfinished outputs are regenerated. CPU optical flow checkpoints whole segments. An interrupted model download retains verified completed files and retries the incomplete file. Snapshots, frames and final outputs remain under `DATA_DIR/enhancements`; this can consume **much more space than the original video**. Only one enhancement job runs at a time.
 

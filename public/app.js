@@ -89,7 +89,7 @@
   var randomSeed = storageGet('stream-random-seed', 'initial');
   var randomEnabled = storageGet('stream-random-enabled', '0') === '1';
   function randomLarge(id) { var n=2166136261; var value=randomSeed+id; for(var i=0;i<value.length;i++)n=Math.imul(n^value.charCodeAt(i),16777619);return (n>>>0)/4294967296<.25; }
-  function refreshSizes() { grid.querySelectorAll('.tile.video-tile').forEach(function(t){if(!t.dataset.manualScale)t.classList.toggle('tile-expanded',randomEnabled?randomLarge(t.dataset.itemId):videoScale==='2');});remeasureAndReflow(); }
+  function refreshSizes() { document.querySelectorAll('[data-video-scale]').forEach(function(b){b.classList.toggle('selected',!randomEnabled&&b.dataset.videoScale===videoScale);});document.querySelectorAll('[data-random-size]').forEach(function(b){b.classList.toggle('selected',(b.dataset.randomSize==='on')===randomEnabled);});grid.querySelectorAll('.tile.video-tile').forEach(function(t){if(!t.dataset.manualScale)t.classList.toggle('tile-expanded',randomEnabled?randomLarge(t.dataset.itemId):videoScale==='2');});remeasureAndReflow(); }
   function randomize() { randomSeed=window.StreamActivity.uuid();randomEnabled=true;storageSet('stream-random-seed',randomSeed);storageSet('stream-random-enabled','1');refreshSizes(); }
   function uniform() {randomEnabled=false;storageSet('stream-random-enabled','0');refreshSizes();}
   window.StreamSettings.init({randomize:randomize,uniform:uniform,theme:applyTheme,density:function(value){applyDensity(value);remeasureAndReflow();},fit:function(value){document.documentElement.dataset.mediaFit=value;storageSet('stream-media-fit',value);}});
@@ -300,8 +300,9 @@
     sourceSelect.addEventListener('change', function () { previewSource = sourceSelect.value; storageSet('stream-preview-source', previewSource); resetAndLoad(); });
     saverSection.appendChild(sourceSelect);
     var pauseAll = el('button', { class: 'menu-item' }, 'Pause / resume all previews');
+    pauseAll.classList.toggle('selected',autoplayEnabled);pauseAll.setAttribute('aria-pressed',String(autoplayEnabled));
     pauseAll.addEventListener('click', function () {
-      autoplayEnabled = !autoplayEnabled;
+      autoplayEnabled = !autoplayEnabled;pauseAll.classList.toggle('selected',autoplayEnabled);pauseAll.setAttribute('aria-pressed',String(autoplayEnabled));
       if (!autoplayEnabled) Array.from(runningPreviews).forEach(pausePreview); else refillPreviews();
       showToast(autoplayEnabled ? 'Previews playing' : 'Previews paused');
     });
@@ -354,22 +355,24 @@
     layoutSection.appendChild(sizeSlider);
     ['1', '2'].forEach(function (factor) {
       var b = el('button', { class: 'menu-item', 'data-video-scale': factor }, factor === '1' ? 'Normal video tiles' : '2× video tiles');
-      b.classList.toggle('selected', videoScale === factor);
+      b.classList.toggle('selected', !randomEnabled && videoScale === factor);
       b.addEventListener('click', function () {
-        videoScale = factor;
+        videoScale = factor;randomEnabled=false;storageSet('stream-random-enabled','0');
         storageSet('stream-video-scale', factor);
         Array.prototype.forEach.call(grid.querySelectorAll('.tile.video-tile'), function (t) {
           if (!t.dataset.manualScale) t.classList.toggle('tile-expanded', randomEnabled ? randomLarge(t.dataset.itemId) : videoScale === '2');
         });
         remeasureAndReflow();
+        refreshSizes();
         Array.prototype.forEach.call(layoutSection.querySelectorAll('[data-video-scale]'), function (button) {
           button.classList.toggle('selected', button.dataset.videoScale === factor);
         });
       });
       layoutSection.appendChild(b);
     });
-    var randomButton=el('button',{class:'menu-item'},'Randomly enlarge video previews');randomButton.onclick=randomize;layoutSection.appendChild(randomButton);
-    var uniformButton=el('button',{class:'menu-item'},'Turn off random enlargement');uniformButton.onclick=uniform;layoutSection.appendChild(uniformButton);
+    var randomButton=el('button',{class:'menu-item','data-random-size':'on'},'Randomly enlarge video previews');randomButton.onclick=randomize;layoutSection.appendChild(randomButton);
+    var uniformButton=el('button',{class:'menu-item','data-random-size':'off'},'Turn off random enlargement');uniformButton.onclick=uniform;layoutSection.appendChild(uniformButton);
+    randomButton.classList.toggle('selected',randomEnabled);uniformButton.classList.toggle('selected',!randomEnabled);
     panel.appendChild(layoutSection);
 
     var datesSection = section('Dates and resolution');
@@ -442,6 +445,11 @@
     });
 
     wrap.appendChild(trigger);
+    var categories=el('nav',{class:'view-tabs','aria-label':'View option categories'});
+    var sections=Array.from(panel.children);var currentCategory='Layout';
+    function categoryOf(section){var label=section.querySelector('.menu-label')?.textContent||'';return /Sort|Contains|Dates/.test(label)?'Filters':/Theme/.test(label)?'Theme':/Performance/.test(label)?'Playback':'Layout';}
+    ['Layout','Playback','Filters','Theme'].forEach(function(name){var button=el('button',{type:'button','aria-pressed':String(name===currentCategory)},name);button.addEventListener('click',function(){currentCategory=name;sections.forEach(function(section){section.hidden=categoryOf(section)!==name;});categories.querySelectorAll('button').forEach(function(b){b.setAttribute('aria-pressed',String(b.textContent===name));});});categories.appendChild(button);});
+    sections.forEach(function(section){section.hidden=categoryOf(section)!==currentCategory;});panel.prepend(categories);
     wrap.appendChild(panel);
     return wrap;
   }
@@ -856,6 +864,7 @@
         .then(function (d) {
           if (!scrim.classList.contains('open')) return;
           body.innerHTML = '';
+          window.StreamResources.mount(body,function(){return scrim.classList.contains('open');});
           var summary = section('Overview');
           summary.appendChild(el('p', { class: 'dashboard-lead' },
             d.totals.photos.toLocaleString() + ' photos · ' + d.totals.videos.toLocaleString() +
@@ -2003,6 +2012,7 @@
   // ---------------------------------------------------------------
 
   function buildSignInModal(opts) {
+    var setup = CONFIG.setupRequired;
     var locked = Boolean(opts && opts.locked);
     var scrim = el('div', { class: 'modal-scrim' + (locked ? ' locked' : '') });
     var card = el('form', { class: 'modal-card' });
@@ -2013,10 +2023,13 @@
     var sub = el('p', { class: 'modal-sub' }, locked ? 'This stream is private. Sign in to continue.' : 'Sign in to see the full library.');
     card.appendChild(sub);
     var userInput = el('input', { type: 'text', name: 'username', placeholder: 'Username', autocomplete: 'username', autocapitalize: 'none', spellcheck: 'false' });
+    userInput.setAttribute('aria-label','Username');if(setup)userInput.value='owner';
     card.appendChild(userInput);
+    var setupCode=null;if(setup){sub.textContent='Create your owner passphrase. Find the one-time setup code in the server logs (docker compose logs stream).';setupCode=el('input',{type:'password',placeholder:'Owner setup code','aria-label':'Owner setup code',autocomplete:'off'});card.appendChild(setupCode);}
     var input = el('input', { type: 'password', name: 'password', placeholder: 'Password', autocomplete: 'current-password' });
+    input.setAttribute('aria-label','Password');if(setup){input.autocomplete='new-password';input.minLength=10;input.placeholder='New passphrase (10+ characters)';}
     card.appendChild(input);
-    var submit = el('button', { type: 'submit' }, 'Sign in');
+    var submit = el('button', { type: 'submit' }, setup ? 'Create owner & lock library' : 'Sign in');
     card.appendChild(submit);
     var cancel = null;
     if (!locked) {
@@ -2039,10 +2052,10 @@
     card.addEventListener('submit', function (e) {
       e.preventDefault();
       submit.disabled = true;
-      fetch('/api/login', {
+      fetch(setup?'/api/setup':'/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: userInput.value.trim(), password: input.value }),
+        body: JSON.stringify({ username: userInput.value.trim(), password: input.value, code:setupCode?setupCode.value.trim():undefined }),
       })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
         .then(function (res) {

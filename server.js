@@ -20,14 +20,16 @@ const {
   setItemVisibilityHandler, setAlbumVisibilityHandler, duplicatesHandler, dashboardHandler, dashboardFilesHandler, aiStatusHandler, aiUpdateHandler, aiInstallHandler,
 } = require('./lib/handlers/api');
 const { feedHandler } = require('./lib/feed');
-const { loginHandler, logoutHandler } = require('./lib/handlers/auth');
+const { loginHandler, logoutHandler, setupHandler } = require('./lib/handlers/auth');
 const { downloadZipHandler } = require('./lib/handlers/download');
 
 const ROOT = __dirname;
 const cfg = loadConfig(ROOT);
+require('./lib/security').initializeSecurity(cfg);
 const ai = new AiManager(cfg);
 
 const db = new Db(path.join(cfg.cacheDir, 'index.json'), cfg.dataDir);
+if(!cfg.setupRequired)cfg.requireLogin=db.store.setting('requireLogin',cfg.requireLogin);
 const scanner = new Scanner(cfg, db, {
   onLog: (msg) => console.log(`[stream] ${msg}`),
 });
@@ -38,9 +40,16 @@ const library = libraryHandlers(cfg, db, new MediaEditor(cfg, db, scanner));
 const { EnhancementQueue } = require('./lib/enhancement-queue');
 const { settingsHandlers } = require('./lib/handlers/settings');
 const enhancements = new EnhancementQueue(cfg, db);
-const settings = settingsHandlers(cfg, db, enhancements, ai);
+const cleanLibrary = new (require('./lib/clean-library').CleanLibrary)(cfg,db,enhancements);
+const resources = new (require('./lib/resource-monitor').ResourceMonitor)(cfg,db.store);
+const settings = settingsHandlers(cfg, db, enhancements, ai, cleanLibrary);
 const router = new Router();
 router.get('/api/settings', settings.get);
+router.get('/api/resources', async(req,res)=>{if(!isAdmin(req,cfg)){res.writeHead(403);return res.end();}res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');res.end(JSON.stringify(await resources.sample()));});
+router.post('/api/enhancement-runtime/install', settings.runtime);
+router.post('/api/enhancements/batch', settings.batch);
+router.post('/api/clean-library/export', settings.export);
+router.get('/api/clean-library', settings.exportStatus);
 router.post('/api/settings', settings.update);
 router.post('/api/activity', settings.events);
 router.get('/api/activity', settings.activity);
@@ -53,6 +62,7 @@ router.post('/api/items/:id/preferences', library.preferences);
 router.post('/api/items/:id/edit', library.edit);
 router.get('/health', healthHandler(cfg, db));
 router.get('/feed.xml', feedHandler(cfg, db));
+router.post('/api/setup', setupHandler(cfg));
 router.post('/api/login', loginHandler(cfg));
 router.post('/api/logout', logoutHandler());
 router.get('/api/items', itemsHandler(cfg, db));
@@ -72,7 +82,7 @@ router.get('/media/:id/:variant', mediaHandler(cfg, db));
 router.get('/', pageHandler(cfg, db));
 router.get('/:id', pageHandler(cfg, db));
 
-const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/social-preview.png', '/settings.js', '/activity.js']);
+const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/social-preview.png', '/settings.js', '/activity.js', '/resources.js']);
 const PUBLIC_DIR = path.join(ROOT, 'public');
 
 const server = http.createServer(async (req, res) => {
@@ -92,10 +102,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if(req.method==='POST' && (req.headers['sec-fetch-site']==='cross-site' || (req.headers.origin && req.headers.origin!==((req.headers['x-forwarded-proto']==='https'?'https':'http')+'://'+req.headers.host)))) {
+    res.writeHead(403, {'Content-Type':'application/json'});res.end(JSON.stringify({error:'Same-origin request required'}));return;
+  }
+
   // REQUIRE_LOGIN: signed-out visitors can reach only the login endpoint
   // and a login-only page shell -- no gallery UI, media, API, or feed.
-  if (cfg.requireLogin && authConfigured(cfg) && !isAdmin(req, cfg)) {
-    const open = pathname === '/api/login' || pathname === '/health';
+  if ((cfg.setupRequired || (cfg.requireLogin && authConfigured(cfg))) && !isAdmin(req, cfg)) {
+    const open = pathname === '/api/login' || pathname === '/api/setup' || pathname === '/api/logout' || pathname === '/health';
     if (!open) {
       if (pathname.startsWith('/api/') || pathname.startsWith('/media/') || pathname === '/feed.xml') {
         res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -129,6 +143,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 async function main() {
+  if(cfg.setupRequired)console.log('[stream] Owner setup code: '+cfg.setupCode+' (enter this once in the web setup screen)');
+  resources.start();
   await enhancements.start();
   console.log(`[stream] Media folder: ${cfg.mediaDir}`);
   // Serve the cached index immediately. Scanning remote SMB storage may take a
@@ -153,11 +169,13 @@ main().catch((err) => {
 });
 
 process.on('SIGTERM', () => {
+  resources.stop();cleanLibrary.stop();
   void enhancements.stop();
   scanner.stopWatching();
   server.close(() => process.exit(0));
 });
 process.on('SIGINT', () => {
+  resources.stop();cleanLibrary.stop();
   void enhancements.stop();
   scanner.stopWatching();
   server.close(() => process.exit(0));
