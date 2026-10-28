@@ -12,6 +12,9 @@ services:
     volumes:
       - ./media:/media/original
       - stream-cache:/app/.cache
+      - stream-data:/app/data
+    environment:
+      DATA_DIR: /app/data
     env_file:
       - .env
     # A hard ceiling so a leak (or just a big library under heavy
@@ -70,5 +73,6 @@ services:
     profiles: ["remote"]
 
 volumes:
+  stream-data:
   stream-cache:
   rclone-vfs-cache:

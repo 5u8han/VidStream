@@ -1,7 +1,7 @@
 {
   "name": "stream",
-  "version": "1.1.1",
-  "description": "A self-hosted photo and video stream. No database, no build step, no npm dependencies \u2014 just Node.js, ffmpeg, ImageMagick, OpenCV, and Tesseract.",
+  "version": "1.2.0",
+  "description": "A self-hosted photo and video stream. Embedded SQLite, no build step, no npm dependencies \u2014 just Node.js, ffmpeg, ImageMagick, OpenCV, and Tesseract.",
   "license": "MIT",
   "private": true,
   "main": "server.js",
@@ -11,6 +11,6 @@
     "check": "node --check server.js && node --check public/app.js && node --check public/ambient.js"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.13.0"
   }
 }

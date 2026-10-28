@@ -1,13 +1,48 @@
 # Stream
 
 A self-hosted photo *and video* stream. Drop files in a folder, and they
-show up — no database, no build step, no cloud dependency. Optional AI is off by default.
+show up — embedded SQLite for durable library choices, no database server, no build step, no cloud dependency. Optional AI is off by default.
 
 Stream is a from-scratch spiritual successor to
 [waschinski/photo-stream](https://github.com/waschinski/photo-stream), built
 because that project (great as it is) only handles photos. Video needed a
 different foundation, not a bolt-on — see [Why a rewrite](#why-a-rewrite-and-not-a-fork)
 below.
+
+## Version 1.2: library choices, full frames, and beta editing
+
+- **Best / favorites, pins, bookmarks:** mark media in the viewer; use the star on a tile for a quick favorite. Pins appear first, then favorites, then bookmarks, followed by your chosen sort. Filters still apply; the Contains menu can show only one saved category. These are shared library choices, writable by admins, not separate user accounts.
+- **Fit entire frame** is the default. The menu can optionally switch to Fill tile (cropped). Resizing recalculates the actual tile width each animation frame. Open a media file to pinch/pan on touch screens, double-click to zoom/reset, or Ctrl+wheel to zoom. At normal zoom the whole frame fits. Existing simultaneous-preview controls remain available.
+- **Native preview FPS:** optimized previews retain source FPS up to `VIDEO_PREVIEW_FPS=60`. A 30 FPS source stays 30; no interpolated frames are invented. Old previews regenerate during the first scan after upgrade and receive new browser cache URLs. Check an older `.env` for a lingering `VIDEO_PREVIEW_FPS=12` or `15`. The Performance menu also offers full-quality original playback (higher bandwidth/decoder cost) and Pause/resume previews. Browser/device limits can still drop frames; reduce simultaneous decoders when needed.
+- **Info:** the `i` panel opens below the stationary toolbar. It includes dimensions/pixel count, file size, import/modification/birth dates where available, codecs, source/preview FPS, camera/lens information and ExifTool metadata. Admins also see file paths, embedded GPS, and recent revision history. An Internet download date cannot be recovered when the source does not contain it.
+- **Motion:** stable menu controls, lower background rendering load, no periodic canvas flash, retained pointer trails and click glow. The compact glass footer contains the library counts and dashboard.
+- **Crop & trim beta:** Quick edit now offers a pixel crop rectangle, output width, and video start/end times with a preview. Save writes the edited media as the main file, keeps its identity/favorites, then refreshes previews. Originals and a recovery manifest are stored under `MEDIA_DIR/.vidstream-originals/<revision>/`; this hidden folder is excluded from scanning. JPG/JPEG, PNG, WebP photos and MP4/M4V/MOV/MKV/WebM videos are supported. Animated images are excluded. Video edits re-encode and can take time. Rotation, brightness and volume remain viewing-only controls. Editing requires a writable media mount; the supplied SMB overlay is intentionally read-only and will report an error instead of replacing files.
+
+### Update an existing deployment
+
+Keep your existing `.env`, media mount, and `stream-cache` volume. Merge any local Compose customization when pulling:
+
+```sh
+git pull --ff-only
+# In .env, use VIDEO_PREVIEW_FPS=60 for native previews capped at 60.
+docker compose up -d --build
+```
+
+Compose adds `stream-data:/app/data` with `DATA_DIR=/app/data`. Favorites, bookmarks, pins, import dates, visibility choices, and revision events are committed synchronously to SQLite with WAL journaling. Metadata/preview scans cannot reset those records. The existing JSON media index and derivatives remain in `stream-cache`. On first use the existing import dates and visibility flags are migrated into the durable store. The underlying SQLite file must stay on local Docker storage rather than an SMB/NFS share.
+
+Without Compose, set `DATA_DIR` to a persistent local directory (default: `CACHE_DIR/library-data`). Node **22.13+** is required. When upgrading from a non-Compose 1.2 installation, retain the same `DATA_DIR` or copy its contents while Stream is stopped.
+
+**Backups:** stop Stream and back up the complete data directory/volume, cache volume, `.env`, media, and `.vidstream-originals`. Restart after the copy. Do not remove persistent volumes with `docker compose down -v`. Code updates do not erase data, but deleting a volume does. To restore an archived edit, stop Stream, consult that revision's `revision.json`, copy its `original.<ext>` back to the recorded library-relative path, then restart/rescan. Every revision retains a complete original. Automatic backup scheduling and an in-app restore browser would be useful next additions.
+
+Identity follows the library-relative file path, so changes to application slugs or rescanning the same path preserve choices. Moving/renaming files externally does not currently transfer their choices automatically; the old records remain available in the durable database. Stable content-based move detection is a recommended follow-up.
+
+### Models and offline placement
+
+Dashboard → Optional AI models & hardware lists ten compatible detection presets and their exact local paths. Downloads use pinned revisions of the official Ultralytics YOLOv8 and YOLO11 Hugging Face repositories. You can download weights without installing the inference stack; inference still needs `STREAM_AI_STACK=true` and a rebuild. For offline use, copy the named `.pt` file to the displayed models directory (normally `/app/.cache/models` inside the container), choose it, save/enable, then rescan. Only compatible detection presets are offered; arbitrary Hugging Face LLMs or diffusion models cannot run in this object-detection pipeline. Load trusted weights only and review the displayed model license.
+
+### Implementation references
+
+[Full-frame media sizing](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/object-fit), [glass blur](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/backdrop-filter), [frontend design guidance](https://github.com/aladicf/better-web-ui/blob/main/skills/frontend-design/SKILL.md), [Node SQLite](https://nodejs.org/api/sqlite.html), and [Hugging Face downloads](https://huggingface.co/docs/hub/models-downloading).
 
 ## Features
 
@@ -79,7 +114,7 @@ below.
 - **Filters:** creator, album, media type, date created/taken, date *imported into Stream*, and minimum resolution measured using the shorter image dimension. The import date is a local Stream import timestamp, **not** the original internet upload/posting date, which generally isn't embedded in downloaded media.
 - **Always-on footer:** counts of indexed photos/videos, unsupported types and unreadable files, plus last scan time.
 - **Audit dashboard:** available to administrators from the chart icon or footer. It displays creator/format/resolution charts, imported files (paginated), processing durations, recent scans, and errors. Stream does not silently read host syslogs; that would require invasive permissions. Use `docker compose logs stream` for container logs.
-- **Optional object models:** open Dashboard → Optional AI models & hardware. Stream reports CPU, effective memory and NVIDIA GPUs visible inside the container, and offers approved YOLOv8 nano/small/medium model downloads. Install and enable a model only if you need AI tags. A new scan refreshes object analysis. This feature is independent of faster photo/video browsing.
+- **Optional object models:** open Dashboard → Optional AI models & hardware. Stream reports CPU, effective memory and NVIDIA GPUs visible inside the container, and offers official YOLOv8 and YOLO11 nano/small/medium/large/extra-large model downloads from Hugging Face. Install and enable a model only if you need AI tags. A new scan refreshes object analysis. This feature is independent of faster photo/video browsing.
 
 ### AI model installation (optional)
 
@@ -89,7 +124,7 @@ The default image **does not** install large PyTorch/Ultralytics packages or dow
 STREAM_AI_STACK=true docker compose up -d --build
 ```
 
-Open the admin dashboard. It shows supported downloadable models. Choose a model, click Download, then Save AI settings with Enable selected, then Rescan. Weights and settings survive rebuilds in the persistent `.cache` volume. The UI does not support arbitrary model URLs or arbitrary Python execution.
+Open the admin dashboard. It shows supported downloadable models. Choose a model, click Download, then Save AI settings with Enable selected, then Rescan. Weights survive rebuilds in the persistent `.cache` volume; AI preferences live in the persistent `DATA_DIR` volume (legacy settings are migrated automatically). The UI does not support arbitrary model URLs or arbitrary Python execution.
 
 For Linux with an NVIDIA GPU, install NVIDIA drivers and NVIDIA Container Toolkit **on the host**. The Compose GPU overlay passes hardware into the container:
 
@@ -119,7 +154,7 @@ If the included archive was checked out from a Git repository already, skip `git
 
 ### File index and NAS tolerance
 
-The index remains JSON-based for simplicity and startup speed. An unavailable SMB/NAS directory is recorded as a scan error and no longer causes existing catalog entries to be deleted. Source files remain read-only when mounted as documented; thumbnails and previews live separately. If source storage goes offline, existing cached images may remain visible, but opening original videos/files can fail until the source returns. Full-time availability is not a design goal.
+The index remains JSON-based for simplicity and startup speed. An unavailable SMB/NAS directory is recorded as a scan error and no longer causes existing catalog entries to be deleted. Source files remain read-only with the SMB overlay; beta editing requires an explicitly writable mount; thumbnails and previews live separately. If source storage goes offline, existing cached images may remain visible, but opening original videos/files can fail until the source returns. Full-time availability is not a design goal.
 
 ## Quick start (Docker)
 
@@ -152,7 +187,7 @@ PyTorch install — set `ENABLE_OBJECT_DETECTION=false` to skip it.)
 
 ## Quick start (no Docker)
 
-Requires Node.js 20+, `ffmpeg`, ImageMagick (`convert`/`identify`), Python 3
+Requires Node.js 22.13+, `ffmpeg`, ImageMagick (`convert`), ExifTool, Python 3
 with OpenCV (`python3 -c "import cv2"` should not error), and `tesseract`
 on your PATH. Detection features degrade gracefully (skipped, not crashed)
 if any of these aren't installed.
@@ -250,7 +285,7 @@ Two explicit exceptions, so this isn't oversold:
 
 Stream only ever *reads* `MEDIA_DIR`. Everything it writes — the index,
 thumbnails, posters, preview clips, the generated session secret — goes to
-`CACHE_DIR` (the `stream-cache` Docker volume), never beside your photos. (A
+`CACHE_DIR` (the `stream-cache` Docker volume). Durable user choices live in `DATA_DIR`; beta edits archive originals beside your library in `.vidstream-originals`. (A
 test that scans, serves thumbnails and originals, downloads a zip and rescans
 leaves the media folder byte-for-byte unchanged.) Mount the library read-only
 for a hard guarantee.

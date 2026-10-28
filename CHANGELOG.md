@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0
+
+- Durable SQLite favorites, pins, bookmarks, visibility, import dates, and revision history, separated from rebuildable previews.
+- Full-frame responsive media, touch zoom/pan, stable toolbar and sliding information/edit panels.
+- Fixed Debian/ImageMagick 6 photo metadata scanning (`identify` did not support `-auto-orient`).
+- Extended ExifTool metadata, protected admin-only paths/GPS/history, compact glass footer, and reduced background flicker/load.
+- Native-FPS preview rebuild and browser cache invalidation; original preview source and pause/resume controls.
+- Ten YOLOv8/YOLO11 detection presets with pinned Hugging Face downloads and offline placement help.
+- Beta photo crop/resize and video crop/trim with archived originals and revision manifests.
+- Node 22.13+ required. Docker adds a persistent stream-data volume; retain it across updates.
+
+
 ## 1.1.1
 
 - Fixed the startup restart loop by making `main()` asynchronous so its caller can handle rejected startup errors with `.catch()`.

@@ -27,12 +27,17 @@ const ROOT = __dirname;
 const cfg = loadConfig(ROOT);
 const ai = new AiManager(cfg);
 
-const db = new Db(path.join(cfg.cacheDir, 'index.json'));
+const db = new Db(path.join(cfg.cacheDir, 'index.json'), cfg.dataDir);
 const scanner = new Scanner(cfg, db, {
   onLog: (msg) => console.log(`[stream] ${msg}`),
 });
 
+const { MediaEditor } = require('./lib/media-editor');
+const { libraryHandlers } = require('./lib/handlers/library');
+const library = libraryHandlers(cfg, db, new MediaEditor(cfg, db, scanner));
 const router = new Router();
+router.post('/api/items/:id/preferences', library.preferences);
+router.post('/api/items/:id/edit', library.edit);
 router.get('/health', healthHandler(cfg, db));
 router.get('/feed.xml', feedHandler(cfg, db));
 router.post('/api/login', loginHandler(cfg));

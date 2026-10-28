@@ -7,8 +7,7 @@
 
   var SCALE = 0.5;             // canvas resolution vs. CSS px: lower = softer and cheaper
   var FADE_ALPHA = 0.085;      // per-frame wash toward the page color: lower = longer trails
-  var DEEP_CLEAN_EVERY = 24;   // frames between stronger washes (8-bit canvases leave faint residue otherwise)
-  var MAX_BLOBS = 160;
+  var MAX_BLOBS = 36;
   var TILE_EMIT_GAP_MS = 150;  // per-tile cooldown for scroll-trail emission
   var MOUSE_EMIT_PX = 22;      // pointer travel between cursor blobs
   var IDLE_EMIT_MS = 1400;     // cadence of slow ambient blobs with no interaction
@@ -157,7 +156,7 @@
 
       // Wash toward the page color so everything leaves a trail.
       ctx.globalCompositeOperation = 'source-over';
-      var a = frames % DEEP_CLEAN_EVERY === 0 ? 0.3 : FADE_ALPHA;
+      var a = FADE_ALPHA;
       ctx.fillStyle = 'rgba(' + bgRGB[0] + ',' + bgRGB[1] + ',' + bgRGB[2] + ',' + a + ')';
       ctx.fillRect(0, 0, W, H);
 
@@ -217,6 +216,10 @@
       }
     }, { passive: true });
 
+    window.addEventListener('pointerdown', function(e) {
+      if (e.target.closest('button, a, input, select')) return;
+      spawn(e.clientX*SCALE,e.clientY*SCALE,vivid(parseColor(hoverColor||accentStr)),60*SCALE,0,0,.65,.3);
+    }, {passive:true});
     requestAnimationFrame(frame);
 
     api = {

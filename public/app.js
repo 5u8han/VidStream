@@ -33,6 +33,9 @@
   }
 
   var ICONS = {
+    star: '<path d="m12 3 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3-5.6-3-5.6 3 1.1-6.3L2.9 9.6l6.3-.9z"/>',
+    pin: '<path d="M9 3h6l-1 6 4 4v2H6v-2l4-4-1-6zM12 15v7"/>',
+    bookmark: '<path d="M6 3h12v18l-6-4-6 4z"/>',
     close: '<path d="M6 6L18 18M18 6L6 18"/>',
     chevronLeft: '<path d="M15 6l-6 6 6 6"/>',
     chevronRight: '<path d="M9 6l6 6-6 6"/>',
@@ -102,6 +105,8 @@
 
   var currentTheme = storageGet('stream-theme', 'system');
   var currentDensity = storageGet('stream-density', 'medium');
+  var previewSource = storageGet('stream-preview-source', 'preview');
+  document.documentElement.dataset.mediaFit = storageGet('stream-media-fit', 'contain');
   var videoScale = storageGet('stream-video-scale', '1');
   var MAX_PREVIEWS = dataSaverMode ? 0 : Math.max(4, Math.min(64, Number(storageGet('stream-max-previews', '8')) || 8));
   var tileSize = Math.max(120, Math.min(460, Number(storageGet('stream-tile-size', '0')) || 0));
@@ -222,6 +227,9 @@
     var containsSection = section('Contains');
     var containsOptions = [
       { id: '', label: 'Anything' },
+      { id: 'favorite', label: '★ Best / favorites' },
+      { id: 'pinned', label: 'Pinned' },
+      { id: 'bookmarked', label: 'Bookmarked' },
       { id: 'face', label: 'Faces' },
       { id: 'cat', label: 'Pets' },
       { id: 'text', label: 'Text' },
@@ -275,6 +283,36 @@
     });
     saverSection.appendChild(el('div', { class: 'menu-help' }, 'Simultaneously playing previews'));
     saverSection.appendChild(maxPreviewSelect);
+    var sourceSelect = el('select', { class: 'filter-select', 'aria-label': 'Preview source' });
+    sourceSelect.add(new Option('Optimized previews · native FPS up to 60', 'preview'));
+    sourceSelect.add(new Option('Original videos · full quality / more bandwidth', 'original'));
+    sourceSelect.value = previewSource;
+    sourceSelect.addEventListener('change', function () { previewSource = sourceSelect.value; storageSet('stream-preview-source', previewSource); resetAndLoad(); });
+    saverSection.appendChild(sourceSelect);
+    var pauseAll = el('button', { class: 'menu-item' }, 'Pause / resume all previews');
+    pauseAll.addEventListener('click', function () {
+      autoplayEnabled = !autoplayEnabled;
+      if (!autoplayEnabled) Array.from(runningPreviews).forEach(pausePreview); else refillPreviews();
+      showToast(autoplayEnabled ? 'Previews playing' : 'Previews paused');
+    });
+    saverSection.appendChild(pauseAll);
+    var fitSelect = el('select', { class: 'filter-select', 'aria-label': 'Media framing' });
+    fitSelect.add(new Option('Fit entire frame · no cropping', 'contain'));
+    fitSelect.add(new Option('Fill tile · crop edges', 'cover'));
+    fitSelect.value = document.documentElement.dataset.mediaFit;
+    fitSelect.addEventListener('change', function () { document.documentElement.dataset.mediaFit = fitSelect.value; storageSet('stream-media-fit', fitSelect.value); });
+    saverSection.appendChild(fitSelect);
+    if (isAdmin) {
+      var rebuild = el('button', {class:'menu-item'}, 'Refresh metadata & previews');
+      rebuild.addEventListener('click', function () {
+        rebuild.disabled=true; showToast('Refreshing metadata and previews…');
+        fetch('/api/rescan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true})})
+          .then(function(r){if(!r.ok)throw Error('Refresh failed');return r.json();})
+          .then(function(j){showToast(j.skipped?'A scan or edit is already running':'Metadata and previews refreshed');resetAndLoad();fetchLibraryStatus();})
+          .catch(function(e){showToast(e.message);}).finally(function(){rebuild.disabled=false;});
+      });
+      saverSection.appendChild(rebuild);
+    }
     panel.appendChild(saverSection);
 
     var densitySection = section('Grid size');
@@ -713,6 +751,7 @@
         fetch('/api/ai').then(function (r) { if (!r.ok) throw Error('AI unavailable'); return r.json(); })
           .then(function (d) {
             aiBox.innerHTML = '';
+            if (!d.inferenceAvailable) aiBox.appendChild(el('p', {class:'modal-sub'}, 'Downloads are available. To run detection, set STREAM_AI_STACK=true and rebuild the container.'));
             var hw = d.hardware;
             aiBox.appendChild(el('p', { class: 'dashboard-file' },
               hw.cpu + ' · ' + hw.threads + ' threads · ' + hw.detectedMemoryGiB + ' GiB visible RAM'));
@@ -724,6 +763,12 @@
             });
             modelSelect.value = d.selected;
             aiBox.appendChild(modelSelect);
+            var modelPath = el('p', {class:'dashboard-file'});
+            function paintModelPath() {
+              var model = d.models.find(function(m) {return m.id === modelSelect.value;});
+              modelPath.textContent = 'Already downloaded? Place ' + model.weights + ' in ' + d.modelsDir + '. ' + model.note + '. Source: ' + model.repo + ' · ' + model.license + '. Use trusted weights only.';
+            }
+            paintModelPath(); modelSelect.addEventListener('change',paintModelPath); aiBox.appendChild(modelPath);
             var deviceSelect = el('select', { class: 'filter-select', 'aria-label': 'AI execution device' });
             ['auto', 'cpu', 'cuda:0'].forEach(function (v) { deviceSelect.add(new Option(v === 'auto' ? 'Auto-detect compute' : v === 'cpu' ? 'Use CPU' : 'NVIDIA GPU (CUDA:0)', v)); });
             deviceSelect.value = d.device;
@@ -739,12 +784,12 @@
               fetch('/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ selected: modelSelect.value, device: deviceSelect.value, enabled: check.checked }) })
                 .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw Error(j.error); return j; }); })
-                .then(function (saved) { showToast(saved.effective ? 'AI ready. Rescan to analyze existing media.' : 'AI preference saved; install the selected model to activate.'); render(); })
+                .then(function (saved) { showToast(saved.effective ? 'AI ready. Rescan to analyze existing media.' : 'AI preference saved; installed weights and the optional AI stack are both required.'); render(); })
                 .catch(function (e) { showToast(e.message || 'Settings failed'); save.disabled = false; });
             });
             aiBox.appendChild(save);
             var selected = d.models.find(function (m) { return m.id === modelSelect.value; });
-            var install = el('button', { class: 'dashboard-next' }, 'Download chosen model');
+            var install = el('button', { class: 'dashboard-next' }, 'Download from Hugging Face');
             install.disabled = d.installing || (selected && selected.installed);
             install.addEventListener('click', function () {
               install.disabled = true;
@@ -1025,8 +1070,7 @@
     var aspect = item.width && item.height ? item.width / item.height : 1;
     var rowUnit = parseFloat(getComputedStyle(grid).getPropertyValue('grid-auto-rows')) || 4;
     var gap = parseFloat(getComputedStyle(grid).getPropertyValue('gap')) || 3;
-    var width = columnWidth;
-    if (tile.classList.contains('tile-expanded')) width = columnWidth * 2 + gap;
+    var width = tile.getBoundingClientRect().width || columnWidth;
     var tileHeight = width / aspect;
     var span = Math.max(1, Math.ceil((tileHeight + gap) / (rowUnit + gap)));
     tile.style.gridRowEnd = 'span ' + span;
@@ -1039,8 +1083,8 @@
 
   var resizeTimer = null;
   window.addEventListener('resize', function () {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(remeasureAndReflow, 150);
+    cancelAnimationFrame(resizeTimer);
+    resizeTimer = requestAnimationFrame(remeasureAndReflow);
   });
 
   function apiUrl(cursor) {
@@ -1222,7 +1266,8 @@
     video.loop = true;
     video.playsInline = true;
     video.preload = 'metadata';
-    video.src = item.urls.preview || item.urls.full;
+    video.src = previewSource === 'original' ? item.urls.full : item.urls.preview || item.urls.full;
+    video.addEventListener('error', function () { if (previewSource === 'original' && video.src.indexOf('/original') >= 0) { video.src = item.urls.preview; video.play().catch(function () {}); showToast('Original format unsupported here; using preview'); } });
     tile.appendChild(video);
     var liveEl = tile.querySelector('.tile-live');
     video.addEventListener('playing', function () {
@@ -1364,6 +1409,10 @@
     }
 
     if (isAdmin) {
+      var best = el('button', { class: 'tile-best', title: 'Mark as best', 'aria-label': 'Mark as best', 'aria-pressed': String(item.favorite === true) }, icon('star'));
+      best.classList.toggle('active', item.favorite === true);
+      best.addEventListener('click', function (e) { e.stopPropagation(); setPreference(item, 'favorite'); });
+      tile.appendChild(best);
       var visBtn = el('button', { class: 'tile-visibility', 'aria-label': 'Toggle guest visibility' });
       paintVisibilityButton(visBtn, item.guest);
       visBtn.addEventListener('click', function (e) {
@@ -1382,6 +1431,7 @@
       else openLightbox(item, true);
     });
     tile.addEventListener('keydown', function (e) {
+      if (e.target !== tile) return;
       if (e.key !== 'Enter' && e.key !== ' ') return;
       e.preventDefault();
       if (selection.active) toggleTileSelection(item, tile);
@@ -1400,6 +1450,80 @@
   // Lightbox
   // ---------------------------------------------------------------
 
+  function setPreference(item, key) {
+    if (!item || !isAdmin) return;
+    var changes = {}; changes[key] = !item[key];
+    fetch('/api/items/' + encodeURIComponent(item.id) + '/preferences', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(changes)
+    }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw Error(j.error); return j; }); })
+      .then(function (data) {
+        Object.assign(item, data.item);
+        if (lb.item && lb.item.id === item.id) { Object.assign(lb.item, data.item); updateLightboxChrome(); renderInfoPanel(lb.item); }
+        resetAndLoad(); showToast(changes[key] ? 'Saved to ' + key : 'Removed from ' + key);
+      }).catch(function (e) { showToast(e.message); });
+  }
+
+  function installMediaZoom(media) {
+    var scale = 1, x = 0, y = 0, points = new Map(), distance = 0;
+    function paint() {
+      x = Math.max(-media.clientWidth * (scale-1)/2, Math.min(media.clientWidth * (scale-1)/2, x));
+      y = Math.max(-media.clientHeight * (scale-1)/2, Math.min(media.clientHeight * (scale-1)/2, y));
+      media.style.setProperty('--zoom', scale); media.style.setProperty('--pan-x', x + 'px'); media.style.setProperty('--pan-y', y + 'px');
+      lightbox.mediaWrap.dataset.zoomed = String(scale > 1.01);
+    }
+    function gap() { var a = Array.from(points.values()); return a.length === 2 ? Math.hypot(a[0].x-a[1].x, a[0].y-a[1].y) : 0; }
+    media.addEventListener('pointerdown', function (e) { if (e.pointerType === 'mouse' && scale === 1) return; points.set(e.pointerId, {x:e.clientX,y:e.clientY}); distance=gap(); if (points.size > 1 || scale > 1) media.setPointerCapture(e.pointerId); });
+    media.addEventListener('pointermove', function (e) {
+      var old=points.get(e.pointerId); if (!old) return;
+      points.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      if (points.size === 2) { var d=gap(); if (distance) scale=Math.max(1,Math.min(5,scale*d/distance)); distance=d; }
+      else if (scale > 1) { x+=e.clientX-old.x; y+=e.clientY-old.y; }
+      paint();
+    });
+    function release(e) { points.delete(e.pointerId); distance=gap(); }
+    media.addEventListener('pointerup', release); media.addEventListener('pointercancel', release);
+    media.addEventListener('dblclick', function (e) { e.preventDefault(); scale=scale>1 ? 1 : 2; x=y=0; paint(); });
+    media.addEventListener('wheel', function (e) { if (!e.ctrlKey) return; e.preventDefault(); scale=Math.max(1,Math.min(5,scale-e.deltaY*.01)); paint(); }, {passive:false});
+  }
+
+  function renderSavedEditor(item) {
+    var box=lightbox.savedEditor; box.innerHTML=''; if (!isAdmin) return;
+    box.appendChild(el('h3', {}, 'Crop & trim · Beta'));
+    box.appendChild(el('p', {}, 'Save replaces this media and keeps the original in .vidstream-originals. Rotate, brightness and volume above are viewing controls only.'));
+    var fields={};
+    function field(key,label,value,max) {
+      var wrap=el('label', {class:'edit-field'}); wrap.appendChild(el('span',{},label));
+      var input=el('input',{type:'number',min:'0',step:key==='start'||key==='end'?'0.1':'1',value:String(value),'aria-label':label});
+      if (max) input.max=String(max); fields[key]=input; wrap.appendChild(input); box.appendChild(wrap);
+    }
+    field('x','Left (pixels)',0,item.width); field('y','Top (pixels)',0,item.height);
+    field('width','Crop width',item.width,item.width); field('height','Crop height',item.height,item.height);
+    field('maxWidth','Output width',item.width,item.width);
+    fields.width.addEventListener('input', function () { if (Number(fields.maxWidth.value)>Number(fields.width.value)) fields.maxWidth.value=fields.width.value; });
+    if (item.type==='video') { field('start','Start (seconds)',0,item.duration); field('end','End (seconds)',item.duration,item.duration); }
+    var preview=el('button',{class:'dashboard-next'},'Preview crop / trim');
+    preview.addEventListener('click',function () {
+      var media=lightbox.mediaWrap.querySelector('img,video');
+      var x=Number(fields.x.value),y=Number(fields.y.value),w=Number(fields.width.value),h=Number(fields.height.value);
+      var factor=Math.min(media.clientWidth/item.width,media.clientHeight/item.height);
+      var mx=(media.clientWidth-item.width*factor)/2,my=(media.clientHeight-item.height*factor)/2;
+      media.style.clipPath='inset('+(my+y*factor)+'px '+(mx+(item.width-x-w)*factor)+'px '+(my+(item.height-y-h)*factor)+'px '+(mx+x*factor)+'px)';
+      if (fields.start) { media.currentTime=Number(fields.start.value); media.ontimeupdate=function () { if (media.currentTime>=Number(fields.end.value)) media.pause(); }; media.play().catch(function () {}); }
+    });
+    box.appendChild(preview);
+    var message=el('p', {'aria-live':'polite'});
+    var save=el('button',{class:'dashboard-next'},'Save edit & keep original');
+    save.addEventListener('click',function () {
+      var body={}; Object.keys(fields).forEach(function(k){body[k]=Number(fields[k].value);});
+      save.disabled=true; message.textContent='Saving and rebuilding previews… You can keep browsing.';
+      fetch('/api/items/'+encodeURIComponent(item.id)+'/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+        .then(function(r){return r.json().then(function(j){if(!r.ok)throw Error(j.error);return j;});})
+        .then(function(j){showToast(j.warning||'Edit saved. Original archived.'); if(lb.item && lb.item.id===item.id) closeLightbox(); resetAndLoad();})
+        .catch(function(e){message.textContent=e.message; save.disabled=false;});
+    });
+    box.appendChild(save); box.appendChild(message);
+  }
+
   function buildLightbox() {
     var root = el('div', { class: 'lightbox', role: 'dialog', 'aria-modal': 'true' });
     var bar = el('div', { class: 'lightbox-bar' });
@@ -1412,6 +1536,12 @@
     var shareBtn = el('button', { class: 'icon-btn', title: 'Share', 'aria-label': 'Share' }, icon('share'));
     var downloadLink = el('a', { class: 'icon-btn', title: 'Download original', 'aria-label': 'Download original' }, icon('download'));
     var closeBtn = el('button', { class: 'icon-btn', title: 'Close', 'aria-label': 'Close' }, icon('close'));
+    var preferenceButtons = {};
+    [['favorite','star','Best'],['pinned','pin','Pin'],['bookmarked','bookmark','Bookmark']].forEach(function (entry) {
+      var button = el('button', { class:'icon-btn', title:entry[2], 'aria-label':entry[2], style:isAdmin ? '' : 'display:none' }, icon(entry[1]));
+      button.addEventListener('click', function () { setPreference(lb.item, entry[0]); });
+      preferenceButtons[entry[0]] = button; actions.appendChild(button);
+    });
     actions.appendChild(visBtn);
     actions.appendChild(slideshowBtn);
     actions.appendChild(editBtn);
@@ -1448,6 +1578,8 @@
     editPanel.appendChild(rotateBtn);
     editPanel.appendChild(brightnessGroup);
     editPanel.appendChild(volumeGroup);
+    var savedEditor = el('div', { class:'saved-editor' });
+    editPanel.appendChild(savedEditor);
 
     // Info sidebar: read-only metadata, populated per-item in
     // renderInfoPanel() below.
@@ -1505,6 +1637,7 @@
     });
 
     return {
+      preferenceButtons: preferenceButtons, savedEditor: savedEditor,
       root: root, counter: counter, mediaWrap: mediaWrap, prevBtn: prevBtn, nextBtn: nextBtn,
       caption: caption, downloadLink: downloadLink, visBtn: visBtn, slideshowBtn: slideshowBtn,
       editBtn: editBtn, infoBtn: infoBtn, editPanel: editPanel, infoPanel: infoPanel, infoList: infoList,
@@ -1585,12 +1718,14 @@
     lightbox.volumeSlider.value = '100';
     lightbox.editPanel.classList.remove('open');
     lightbox.editBtn.classList.remove('active');
+    lightbox.mediaWrap.dataset.zoomed = 'false';
   }
 
   function applyEditState() {
     var media = lightbox.mediaWrap.querySelector('img, video');
     if (!media) return;
-    media.style.transform = editState.rotation ? 'rotate(' + editState.rotation + 'deg)' : '';
+    media.style.setProperty('--rotation', editState.rotation + 'deg');
+    media.style.setProperty('--rotation-fit', editState.rotation % 180 && lb.item ? String(Math.min(1, lightbox.mediaWrap.clientHeight / Math.max(1, media.clientWidth), lightbox.mediaWrap.clientWidth / Math.max(1, media.clientHeight))) : '1');
     media.style.filter = editState.brightness !== 100 ? 'brightness(' + editState.brightness + '%)' : '';
     if (media.tagName === 'VIDEO') media.volume = editState.volume / 100;
   }
@@ -1616,6 +1751,7 @@
 
   function renderInfoPanel(item) {
     var info = item.info || {};
+    var metadata = info.metadata || {};
     var cam = info.camera || {};
     var tech = info.tech || {};
     var rows = '';
@@ -1623,12 +1759,22 @@
     rows += infoRow('Type', item.type === 'photo' ? 'Photo' + (item.isAnimated ? ' (animated)' : '') : 'Video');
     if (item.width && item.height) rows += infoRow('Dimensions', item.width + ' × ' + item.height);
     rows += infoRow('Size', formatFileSize(info.size));
+    rows += infoRow('File location', info.path);
+    rows += infoRow('Pixels', item.width && item.height ? (item.width * item.height / 1000000).toFixed(2) + ' megapixels' : null);
+    rows += infoRow('Imported into Stream', info.addedAt ? new Date(info.addedAt).toLocaleString() : null);
+    rows += infoRow('File modified', info.mtime ? new Date(info.mtime).toLocaleString() : null);
+    rows += infoRow('File created', info.birthtime ? new Date(info.birthtime).toLocaleString() : null);
+    rows += infoRow('Download date', 'Not recorded by most media files');
+    var labels = {Make:'Device maker',Model:'Device model',Software:'Software',DateTimeOriginal:'Shot date (embedded)',CreateDate:'Created date (embedded)',GPSLatitude:'Latitude',GPSLongitude:'Longitude',GPSAltitude:'Altitude',MIMEType:'File format',scanNote:'Metadata scan'};
+    Object.keys(metadata).forEach(function (key) { rows += infoRow(labels[key] || key.replace(/([a-z])([A-Z])/g, '$1 $2'), metadata[key]); });
+    (info.history || []).slice(0, 15).forEach(function (event) { rows += infoRow(new Date(event.at).toLocaleString(), event.action + (event.data.backup ? ' · Original: ' + event.data.backup : '')); });
     rows += infoRow('Album', info.album);
     rows += infoRow('Date', item.date ? new Date(item.date).toLocaleString() + (item.dateExact ? '' : ' (estimated)') : null);
     if (item.type === 'video') {
       rows += infoRow('Duration', item.duration ? formatDuration(item.duration) : null);
       rows += infoRow('Video codec', tech.videoCodec);
       rows += infoRow('Audio codec', tech.audioCodec);
+      rows += infoRow('Preview rate', tech.previewFrameRate ? tech.previewFrameRate + ' fps' : 'Rebuild previews to update');
       rows += infoRow('Frame rate', tech.frameRate ? tech.frameRate + ' fps' : null);
       rows += infoRow('Bit rate', tech.bitRate ? Math.round(tech.bitRate / 1000) + ' kbps' : null);
     }
@@ -1663,11 +1809,14 @@
       if (slideshow.active) bindSlideshowEnded(media);
     }
     lightbox.mediaWrap.appendChild(media);
+    installMediaZoom(media);
+    renderSavedEditor(item);
     if (bg && item.type === 'video') { bg.setHoverColor(item.color); bg.attachAudio(media); }
     lightbox.volumeGroup.style.display = item.type === 'video' ? '' : 'none';
   }
 
   function updateLightboxChrome() {
+    Object.keys(lightbox.preferenceButtons).forEach(function (key) { var b = lightbox.preferenceButtons[key]; b.classList.toggle('active', lb.item[key] === true); b.setAttribute('aria-pressed', String(lb.item[key] === true)); });
     var digits = String(lb.total).length;
     var idx = String(lb.index + 1).padStart(digits, '0');
     var total = String(lb.total).padStart(digits, '0');
@@ -1722,6 +1871,7 @@
     }
     fetchNeighbors(item.id).then(function (data) {
       if (!lb.open || lb.item.id !== item.id) return;
+      if (data.item) lb.item = data.item;
       lb.index = data.index;
       lb.total = data.total;
       lb.prev = data.prev;
@@ -1796,10 +1946,10 @@
     }
   });
 
-  var touchStartX = null;
-  lightbox.root.addEventListener('touchstart', function (e) { touchStartX = e.touches[0].clientX; }, { passive: true });
+  var touchStartX = null, multiTouch = false;
+  lightbox.root.addEventListener('touchstart', function (e) { multiTouch = e.touches.length > 1 || lightbox.mediaWrap.dataset.zoomed === 'true'; touchStartX = multiTouch ? null : e.touches[0].clientX; }, { passive: true });
   lightbox.root.addEventListener('touchend', function (e) {
-    if (touchStartX === null) return;
+    if (touchStartX === null || multiTouch || lightbox.mediaWrap.dataset.zoomed === 'true') { touchStartX = null; return; }
     var dx = e.changedTouches[0].clientX - touchStartX;
     if (Math.abs(dx) > 50) { stopSlideshow(); navigate(dx > 0 ? -1 : 1); }
     touchStartX = null;
