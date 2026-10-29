@@ -58,3 +58,12 @@ test('guests cannot change preferences or edit files',async()=>{
   await handler({headers:{}},res,{id:'a'});assert.equal(res.code,403);
  }
 });
+test('artist sorting keeps creators together despite pins and creation dates',t=>{
+ const {db}=fixture(t);
+ db.upsert(record('z',{creator:'A',mtime:'2020-01-01'}));
+ db.upsert(record('a',{creator:'A',mtime:'2010-01-01'}));
+ db.upsert(record('b',{creator:'B',mtime:'2030-01-01'}));
+ db.store.update(db.get('b'),{pinned:true,favorite:true});
+ assert.deepEqual(db.query({sort:'creator'}).items.map(i=>i.id),['a','z','b']);
+ assert.equal(db.neighbors('z',{sort:'creator'}).next.id,'b');
+});

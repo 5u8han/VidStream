@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.0
+
+- Dashboard library treemap, sized by storage or file count, with artist drilldown and an all-files nested view.
+- Optional fine per-tile artist borders, hover/focus highlighting, and reusable shuffled colors without adding gallery gaps.
+- All-media artist sorting clears gallery filters and keeps artists together regardless of favorites or creation dates.
+- Authenticated, paginated map catalog with refresh detection when the index changes.
+
 ## 1.4.0
 
 - Web-managed enhancement runtime/model installation, server enable/suspend switch and confirmed library batches; verified native Apple GPU support.
