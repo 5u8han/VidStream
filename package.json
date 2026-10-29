@@ -1,6 +1,6 @@
 {
   "name": "stream",
-  "version": "1.5.0",
+  "version": "1.4.0",
   "description": "A self-hosted photo and video stream. Embedded SQLite, no build step, no npm dependencies \u2014 just Node.js, ffmpeg, ImageMagick, OpenCV, and Tesseract.",
   "license": "MIT",
   "private": true,
@@ -8,7 +8,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test test/*.test.js",
-    "check": "node --check server.js && node --check public/app.js && node --check public/ambient.js && node --check public/settings.js && node --check public/activity.js && node --check lib/enhancement-queue.js && node --check lib/enhancement-runtime.js && node --check lib/clean-library.js && node --check lib/security.js && node --check lib/resource-monitor.js && node --check public/resources.js && node --check public/library-layout.js && node --check public/artist-outlines.js && node --check public/library-map.js && node --check lib/handlers/library-map.js"
+    "check": "node --check server.js && node --check public/app.js && node --check public/ambient.js && node --check public/settings.js && node --check public/activity.js && node --check lib/enhancement-queue.js && node --check lib/enhancement-runtime.js && node --check lib/clean-library.js && node --check lib/security.js && node --check lib/resource-monitor.js && node --check public/resources.js"
   },
   "engines": {
     "node": ">=22.13.0"

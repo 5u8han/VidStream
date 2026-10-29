@@ -219,13 +219,12 @@
       { id: 'name-asc', label: 'Name A–Z' },
       { id: 'name-desc', label: 'Name Z–A' },
       { id: 'random', label: 'Shuffle' },
-      { id: 'creator', label: 'All media · artist A–Z' },
+      { id: 'creator', label: 'Group by creator (folder)' },
     ];
     sortOptions.forEach(function (opt) {
       var item = el('button', { class: 'menu-item', 'data-sort': opt.id }, '<span>' + opt.label + '</span>');
       item.addEventListener('click', function () {
         if (opt.id === 'random') state.seed = String(Date.now());
-        if(opt.id==='creator')clearGalleryFilters();
         state.sort = opt.id;
         closeMenu();
         markSortSelected();
@@ -375,11 +374,6 @@
     var uniformButton=el('button',{class:'menu-item','data-random-size':'off'},'Turn off random enlargement');uniformButton.onclick=uniform;layoutSection.appendChild(uniformButton);
     randomButton.classList.toggle('selected',randomEnabled);uniformButton.classList.toggle('selected',!randomEnabled);
     panel.appendChild(layoutSection);
-    var outlinesSection=section('Artist outlines');
-    [['off','Off'],['subtle','Fine tile borders'],['hover','On hover / focus']].forEach(function(option){var b=el('button',{class:'menu-item','data-artist-outlines':option[0],'aria-pressed':String(storageGet('stream-artist-outlines','off')===option[0])},option[1]);b.classList.toggle('selected',storageGet('stream-artist-outlines','off')===option[0]);b.onclick=function(){storageSet('stream-artist-outlines',option[0]);artistOutlines.setMode(option[0]);outlinesSection.querySelectorAll('[data-artist-outlines]').forEach(function(button){var chosen=button.dataset.artistOutlines===option[0];button.classList.toggle('selected',chosen);button.setAttribute('aria-pressed',String(chosen));});};outlinesSection.appendChild(b);});
-    var recolor=el('button',{class:'menu-item'},'Shuffle artist colors');recolor.onclick=function(){storageSet('stream-artist-palette',window.StreamActivity.uuid());grid.querySelectorAll('.tile').forEach(function(tile){tile.style.setProperty('--source-color',creatorColor(tile._item.creator));});artistOutlines.refresh();};outlinesSection.appendChild(recolor);
-    outlinesSection.appendChild(el('p',{class:'menu-help'},'Fine borders around each tile. Hover highlights all visible media from the same artist.'));
-    panel.appendChild(outlinesSection);
 
     var datesSection = section('Dates and resolution');
     var dateFieldSelect = el('select', { class: 'filter-select', 'aria-label': 'Date filter field' },
@@ -460,20 +454,11 @@
     return wrap;
   }
 
-  function clearGalleryFilters(){
-    state.type=state.album=state.creator=state.has=state.dateFrom=state.dateTo=null;state.q='';state.resolution=0;
-    if(header._albumSelect)header._albumSelect.value='';if(header._creatorSelect)header._creatorSelect.value='';
-    header.querySelectorAll('input[type="date"]').forEach(function(input){input.value='';});
-    header.querySelector('[aria-label="Filter by type"]').value='';
-    header.querySelector('[aria-label="Minimum resolution"]').value='0';
-    var search=header.querySelector('input[type="search"]');if(search)search.value='';refreshContainsHighlight();renderAlbumBulkAction();
-  }
   function remeasureAndReflow() {
     measureColumns();
     Array.prototype.forEach.call(grid.querySelectorAll('.tile'), function (tile) {
       if (tile._item) applySpan(tile, tile._item);
     });
-    if(artistOutlines)artistOutlines.refresh();
   }
 
   // ---------------------------------------------------------------
@@ -879,7 +864,6 @@
         .then(function (d) {
           if (!scrim.classList.contains('open')) return;
           body.innerHTML = '';
-          window.StreamLibraryMap.mount(body,{color:creatorColor,isOpen:function(){return scrim.classList.contains('open');},openArtist:function(name){scrim.classList.remove('open');clearGalleryFilters();state.creator=name;state.sort='creator';header.querySelectorAll('[data-sort]').forEach(function(b){b.classList.toggle('selected',b.dataset.sort===state.sort);});if(header._creatorSelect)header._creatorSelect.value=name;resetAndLoad();},openItem:function(id){scrim.classList.remove('open');clearGalleryFilters();resetAndLoad();fetch('/api/item/'+encodeURIComponent(id)).then(function(r){return r.json();}).then(function(d){if(d.item)openLightbox(d.item,true);});}});
           window.StreamResources.mount(body,function(){return scrim.classList.contains('open');});
           var summary = section('Overview');
           summary.appendChild(el('p', { class: 'dashboard-lead' },
@@ -1093,8 +1077,6 @@
   // Grid state + data loading
   // ---------------------------------------------------------------
 
-  var artistOutlines=window.StreamArtistOutlines.install(grid,{mode:storageGet('stream-artist-outlines','off'),color:creatorColor});
-  artistOutlines.setMode(storageGet('stream-artist-outlines','off'));
   var sentinel = el('li', { class: 'sentinel' });
   var statusEl = el('div', { class: 'grid-status' });
   statusEl.style.display = 'none';
@@ -1186,6 +1168,7 @@
     state.loading = false;
     grid.classList.add('refreshing');
     grid.innerHTML = '';
+    lastGroupCreator = null;
     inViewVideoTiles.clear();
     runningPreviews.forEach(function (tile) { pausePreview(tile); });
     runningPreviews.clear();
@@ -1385,10 +1368,25 @@
       .catch(function () { showToast('Could not update visibility'); });
   }
 
-  function creatorColor(name) {return window.StreamLayout.color(name,storageGet('stream-artist-palette','default'));}
+  var lastGroupCreator = null;
+  function creatorColor(name) {
+    var hash = 0;
+    for (var c = 0; c < name.length; c++) hash = Math.imul(hash ^ name.charCodeAt(c), 16777619);
+    return 'hsl(' + (Math.abs(hash) % 360) + ' 74% 64%)';
+  }
 
   function addTile(item) {
     var creator = item.creator || '(Unsorted)';
+    if (state.sort === 'creator' && lastGroupCreator !== creator) {
+      var heading = el('li', { class: 'group-heading' });
+      var dot = el('span', { class: 'creator-dot' });
+      dot.style.backgroundColor = creatorColor(creator);
+      heading.appendChild(dot);
+      var headingText = el('span'); headingText.textContent = creator;
+      heading.appendChild(headingText);
+      grid.appendChild(heading);
+      lastGroupCreator = creator;
+    }
     var tile = el('li', { class: 'tile', tabindex: '0', role: 'button', 'aria-label': 'Open ' + item.filename, 'data-item-id': item.id });
     tile.style.background = item.color;
     tile._item = item;
