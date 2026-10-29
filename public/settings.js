@@ -2,7 +2,7 @@
  'use strict';
  var config=JSON.parse(document.getElementById('app').dataset.config||'{}'),dialog,content,status,returnFocus,poll,adapter={},pendingUI={},saveTimer;
  try{pendingUI=JSON.parse(localStorage.getItem('stream-ui-pending')||'{}');}catch(_){}
- var deviceKeys=['stream-data-saver','stream-max-previews','stream-preview-source'];deviceKeys.forEach(function(k){delete pendingUI[k];});
+ var deviceKeys=['stream-data-saver','stream-max-previews','stream-preview-source','stream-viewer-blur','stream-video-stats'];deviceKeys.forEach(function(k){delete pendingUI[k];});
  Object.entries(Object.assign({},config.savedUI||{},pendingUI)).filter(function(entry){return !deviceKeys.includes(entry[0]);}).forEach(function(entry){try{localStorage.setItem(entry[0],entry[1]);}catch(_){}});
  try{var theme=localStorage.getItem('stream-theme');if(theme&&theme!=='system')document.documentElement.dataset.theme=theme;else document.documentElement.removeAttribute('data-theme');var density=localStorage.getItem('stream-density');if(density)document.documentElement.dataset.density=density;}catch(_){}
  window.StreamActivity.setEnabled(config.tracking!==false);
@@ -28,7 +28,7 @@
    node('small',j.options.smoothing+' · '+j.options.upscale,card);
    if(j.error)node('p',j.error,card);
    if(j.state==='completed'){
-    if(video)button('Play enhanced video',card,function(){video.src=j.url;video.play().catch(function(){});window.StreamActivity.record(item,'enhanced-play');dialog.close();});
+    if(video)button('Play enhanced video',card,function(){video.dataset.sourceKind='enhanced';video.dataset.sourceFps=String(j.options.fps||'');video.src=j.url;video.play().catch(function(){});window.StreamActivity.record(item,'enhanced-play');dialog.close();});
     var a=node('a','Download enhanced video',card);a.href=j.url+'?download=1';a.setAttribute('download','');
    }else button(j.state==='paused'?'Resume':'Pause',card,async function(){await api('/api/enhancements/'+j.id,{action:j.state==='paused'?'resume':'pause'});await jobs(parent,item,video);});
   });
@@ -44,8 +44,14 @@
   Array.from(view.querySelectorAll('button')).slice(0,2).forEach(function(b,i){b.dataset.randomSize=i===0?'on':'off';try{b.classList.toggle('selected',(localStorage.getItem('stream-random-enabled')==='1')===(i===0));}catch(_){}});
   var theme=select('Theme',[['system','System'],['light-table','Light Table'],['darkroom','Darkroom'],['golden-hour','Golden Hour'],['contact-sheet','Contact Sheet']],view);
   var density=select('Grid density',[['small','Small'],['medium','Medium'],['large','Large']],view),fit=select('Media fit',[['contain','Show the whole image'],['cover','Fill each tile']],view);
+  var blurLabel=node('label','Viewer background blur: ',view),blurValue=node('span','',blurLabel),blur=node('input',undefined,blurLabel);blur.type='range';blur.min='0';blur.max='30';blur.step='1';blur.className='settings-range';
   try{theme.value=localStorage.getItem('stream-theme')||'system';density.value=localStorage.getItem('stream-density')||'medium';fit.value=localStorage.getItem('stream-media-fit')||'contain';}catch(_){}
+  try{blur.value=localStorage.getItem('stream-viewer-blur')||'10';}catch(_){blur.value='10';}blurValue.textContent=blur.value+' px';
   theme.onchange=function(){adapter.theme?.(theme.value);};density.onchange=function(){adapter.density?.(density.value);};fit.onchange=function(){adapter.fit?.(fit.value);};
+  blur.oninput=function(){blurValue.textContent=blur.value+' px';adapter.viewerBlur?.(blur.value);};
+  var statsLabel=node('label','Show Stats for nerds in video player ',view),stats=node('input',undefined,statsLabel);statsLabel.className='option-chip';stats.type='checkbox';
+  try{stats.checked=localStorage.getItem('stream-video-stats')==='1';}catch(_){}
+  stats.onchange=function(){adapter.videoStats?.(stats.checked);};
   if(!config.isAdmin){node('p','Sign in to manage enhancement and the library.',view);return;}
   var enhancement=tab('Enhancement'),saved=tab('Jobs'),historyPane=tab('History'),security=tab('Security');
   var data=await api('/api/settings');if(!body.closest('dialog')?.open)return;window.StreamActivity.setEnabled(data.tracking);
@@ -93,7 +99,7 @@
   node('p','Install tools and models from Settings → Enhancement first. Upscaling needs compatible server graphics hardware. Processing may be much slower than playback.',body);
   var list=node('div',undefined,body);
   button('Start saved enhancement',body,async function(){await api('/api/items/'+encodeURIComponent(item.id)+'/enhance',{smoothing:smoothing.value,upscale:upscale.value});status.textContent='Job saved.';await jobs(list,item,video);});
-  button('Play original',body,function(){video.src=item.urls.full;video.play().catch(function(){});dialog.close();});
+  button('Play original',body,function(){video.dataset.sourceKind='original';delete video.dataset.sourceFps;video.src=item.urls.full;video.play().catch(function(){});dialog.close();});
   await jobs(list,item,video);if(!body.closest('dialog')?.open)return;poll=setInterval(function(){jobs(list,item,video).catch(error);},3000);
  }
  function savePending(){try{localStorage.setItem('stream-ui-pending',JSON.stringify(pendingUI));}catch(_){}}

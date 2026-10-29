@@ -9,7 +9,15 @@ because that project (great as it is) only handles photos. Video needed a
 different foundation, not a bolt-on — see [Why a rewrite](#why-a-rewrite-and-not-a-fork)
 below.
 
-## Version 1.4: operate enhancement from the web
+## Version 1.6: compact media player
+
+Opening media shows a centered player occupying 90% of the browser's width and height. Scroll with the pointer over the visible gallery around the player to browse underneath; click that background, use Close, or press Escape to dismiss it. The ambient mouse/audio effects remain available. Settings → View → **Viewer background blur** adjusts the backdrop from 0–30 px immediately; the player also has a settings shortcut. Blur stays local to each browser so slower devices can use 0 px.
+
+Video playback uses the browser's native controls and original file through HTTP range requests, which allow seeking without downloading the entire file first. The player adds a **0.25×–2× speed selector** and **Stats for nerds** (chart icon). Stats reuse the library/dashboard dock as the player footer and return it to normal after closing. They display file resolution, player viewport, source FPS when known, measured presented FPS, dropped/total frames, buffered seconds, playback speed/state, codecs, and original/enhanced source. Presented FPS is measured from browser frame callbacks; older browsers show an explicitly estimated value or unavailable counters. This is client playback telemetry, separate from the server resource dashboard. Stats run only while enabled in an open video and the choice stays local to that browser.
+
+Enhancement is a separate saved processing job; opening a video does not automatically upscale or smooth it. This release does not change originals, enhancement output paths, or archive behavior.
+
+## Operate enhancement from the web
 
 ### Start or upgrade
 

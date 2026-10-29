@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.6.0
+
+- Reworked the media viewer into a centered 90% browser-sized player so the blurred, scrollable gallery remains visible around it.
+- Added a device-local 0–30 px viewer blur control under Settings → View.
+- Added optional live “Stats for nerds” playback telemetry in the existing bottom dashboard dock, including source and viewport resolution, measured presented FPS, dropped frames, buffer, playback state, codecs, and original/enhanced source.
+- Added a playback-speed selector, viewer settings shortcut, contained info/edit panels, keyboard focus handling, and prompt release of closed media.
+- Backdrop clicks still close the viewer, while scrolling over the backdrop moves the gallery without interrupting playback.
+
 ## 1.5.0
 
 - Dashboard library treemap, sized by storage or file count, with artist drilldown and an all-files nested view.
