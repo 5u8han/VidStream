@@ -45,6 +45,7 @@ const resources = new (require('./lib/resource-monitor').ResourceMonitor)(cfg,db
 const settings = settingsHandlers(cfg, db, enhancements, ai, cleanLibrary);
 const router = new Router();
 router.get('/api/settings', settings.get);
+router.get('/api/library-map',require('./lib/handlers/library-map').libraryMapHandler(cfg,db));
 router.get('/api/resources', async(req,res)=>{if(!isAdmin(req,cfg)){res.writeHead(403);return res.end();}res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');res.end(JSON.stringify(await resources.sample()));});
 router.post('/api/enhancement-runtime/install', settings.runtime);
 router.post('/api/enhancements/batch', settings.batch);
@@ -82,7 +83,7 @@ router.get('/media/:id/:variant', mediaHandler(cfg, db));
 router.get('/', pageHandler(cfg, db));
 router.get('/:id', pageHandler(cfg, db));
 
-const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/social-preview.png', '/settings.js', '/activity.js', '/resources.js']);
+const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/social-preview.png', '/settings.js', '/activity.js', '/resources.js', '/library-layout.js', '/artist-outlines.js', '/library-map.js']);
 const PUBLIC_DIR = path.join(ROOT, 'public');
 
 const server = http.createServer(async (req, res) => {
