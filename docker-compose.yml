@@ -24,8 +24,11 @@ services:
     # and with the timeouts in lib/exec.js that stop hung ffmpeg/
     # OpenCV/tesseract subprocesses from accumulating in the first
     # place. Raise this if you have the headroom and a large library.
-    # 2g covers PyTorch/YOLO object detection plus ffmpeg; with
-    # ENABLE_OBJECT_DETECTION=false, 1g is plenty.
+    # The default 2g ceiling is for light browsing/processing, not a
+    # guarantee that large AI models will fit. Raise STREAM_MEM_LIMIT
+    # in .env for heavier jobs AFTER assigning enough RAM to Docker
+    # Desktop / your VM. See docs/HARDWARE.md. No CPU quota is set here;
+    # a small CPU count usually comes from Desktop/VM/host allocation.
     mem_limit: ${STREAM_MEM_LIMIT:-2g}
     memswap_limit: ${STREAM_MEM_LIMIT:-2g}
 

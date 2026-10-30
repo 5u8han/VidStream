@@ -9,9 +9,13 @@ because that project (great as it is) only handles photos. Video needed a
 different foundation, not a bolt-on — see [Why a rewrite](#why-a-rewrite-and-not-a-fork)
 below.
 
-## Version 1.6: compact media player
+## Version 1.7: media-shaped player and layered navigation
 
-Opening media shows a centered player occupying 90% of the browser's width and height. Scroll with the pointer over the visible gallery around the player to browse underneath; click that background, use Close, or press Escape to dismiss it. The ambient mouse/audio effects remain available. Settings → View → **Viewer background blur** adjusts the backdrop from 0–30 px immediately; the player also has a settings shortcut. Blur stays local to each browser so slower devices can use 0 px.
+Opening media shows a centered card fitted to the source resolution and aspect ratio. Portrait videos open in narrow cards; smaller videos stay at their native size. Media scales down to fit the viewport, with toolbar/caption/stats space reserved. Desktop cards are capped at 78% viewport width and 80% height; mobile caps are 90% width and 86% height. Scroll with the pointer over the visible gallery around the player to browse underneath; click that background, use Close, or press Escape to dismiss it. The ambient mouse/audio effects remain available. Settings → View → **Viewer background blur** adjusts the backdrop from 0–30 px immediately; the player also has a settings shortcut. Blur stays local to each browser so slower devices can use 0 px.
+
+Settings and View options open at a category list. Selecting a category opens its section; selecting an option keeps that section open. The Back button, Escape, clicking the backdrop and browser Back move up one level at a time, including expanded hardware guidance. Browser Forward can restore the last screen. Gallery tile spacing is 0 px when artist outlines are off and 1 px when enabled; media still uses the chosen whole-frame/cropped framing preference.
+
+If hardware settings report 2 GiB, the default Compose container ceiling is the reason. Settings now distinguish OS/VM RAM from the container ceiling and effective CPU capacity. Read [hardware allocation and GPU setup](docs/HARDWARE.md) for Docker Desktop, native macOS and Linux/Proxmox/NVIDIA instructions.
 
 Video playback uses the browser's native controls and original file through HTTP range requests, which allow seeking without downloading the entire file first. The player adds a **0.25×–2× speed selector** and **Stats for nerds** (chart icon). Stats reuse the library/dashboard dock as the player footer and return it to normal after closing. They display file resolution, player viewport, source FPS when known, measured presented FPS, dropped/total frames, buffered seconds, playback speed/state, codecs, and original/enhanced source. Presented FPS is measured from browser frame callbacks; older browsers show an explicitly estimated value or unavailable counters. This is client playback telemetry, separate from the server resource dashboard. Stats run only while enabled in an open video and the choice stays local to that browser.
 
@@ -25,6 +29,8 @@ Enhancement is a separate saved processing job; opening a video does not automat
 git pull --ff-only
 docker compose up -d --build
 ```
+
+`git pull --ff-only` downloads the current branch's committed updates and applies them only when no merge is needed. `docker compose up -d --build` rebuilds and starts/recreates the application in the background with the current configuration; it retains the media mounts and named data/cache volumes.
 
 Keep both persistent volumes. No special **enhancement** build flag is required anymore. If no password or LDAP is configured, the library is locked until owner setup is complete. Obtain the one-time owner setup code from `docker compose logs stream`, open the site, and create an owner username and a passphrase of at least 10 characters. The passphrase is stored as a salted scrypt hash under `DATA_DIR/security.json`; the one-time code is removed after setup. **Logout now returns to the sign-in screen**, rather than granting admin again. Existing `ADMIN_PASSWORD`/LDAP deployments keep their authentication. Settings → Security controls whether the whole library requires sign-in or explicitly guest-visible media can be browsed publicly. Keep HTTPS for remote access. If the local owner passphrase is lost, stop the server, move `DATA_DIR/security.json` to a private backup, and restart to create a new owner using the new setup code. This requires filesystem control and invalidates old sessions; media and library preferences remain in place.
 

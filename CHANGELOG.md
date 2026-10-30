@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.0
+
+- Media-shaped viewer cards fit the source resolution and aspect ratio, reserve toolbar/stats space, and resize when enhanced media or viewport dimensions change.
+- Settings and View options use category screens with Back, Escape, outside-click and browser Back/Forward navigation through individual levels. Choosing a setting keeps its section open.
+- Zero gallery gap, outer padding and tile corner radius with artist outlines off; optional outlines retain only a 1 px seam. Fixed zero-gap masonry measurements.
+- Hardware settings distinguish OS/VM RAM, container ceiling and quota/affinity-constrained CPU capacity, with allocation and GPU guidance. Resource defaults are unchanged.
+- Recorded the user's requirement to explain every user-facing terminal command in AGENTS.md.
+
 ## 1.6.0
 
 - Reworked the media viewer into a centered 90% browser-sized player so the blurred, scrollable gallery remains visible around it.

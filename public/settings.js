@@ -11,14 +11,21 @@
  function error(e){if(status)status.textContent=e.message;}
  async function api(url,body){var r=await fetch(url,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});var j=await r.json();if(!r.ok)throw Error(j.error||'Request failed');return j;}
  function select(label,values,parent){var wrap=node('label',label,parent),s=node('select',undefined,wrap);s.setAttribute('aria-label',label);values.forEach(function(v){var o=node('option',v[1],s);o.value=v[0];});return s;}
+ function stepBack(){if(window.StreamNavigation)window.StreamNavigation.back();else if(dialog?._back)dialog._back();}
+ function enter(id,back,forward){if(window.StreamNavigation)return window.StreamNavigation.enter(id,{back:back,forward:forward});return true;}
  function shell(title){
   if(dialog)dialog.remove();clearInterval(poll);returnFocus=document.activeElement;
-  dialog=node('dialog');dialog.className='stream-settings';dialog.setAttribute('aria-label',title);
-  var head=node('header',undefined,dialog);node('h2',title,head);button('Close',head,function(){dialog.close();});
+  dialog=node('dialog');var current=dialog;dialog.className='stream-settings';dialog.setAttribute('aria-label',title);
+  var head=node('header',undefined,dialog),back=button('Close',head,stepBack);back.className='settings-nav-back';
+  var heading=node('h2',title,head);dialog._heading=heading;dialog._backButton=back;
   content=node('div',undefined,dialog);status=node('p','',dialog);status.setAttribute('role','status');
-  dialog.addEventListener('close',function(){clearInterval(poll);returnFocus?.focus();});
-  dialog.addEventListener('click',function(e){if(e.target===dialog)dialog.close();});
-  document.body.appendChild(dialog);dialog.showModal();return content;
+  dialog._back=function(){if(current.open)current.close();};
+  dialog.addEventListener('cancel',function(e){e.preventDefault();stepBack();});
+  dialog.addEventListener('close',function(){clearInterval(poll);if(window.StreamNavigation?.has('settings'))window.StreamNavigation.leave('settings');returnFocus?.focus({preventScroll:true});});
+  dialog.addEventListener('click',function(e){var bounds=current.getBoundingClientRect();if(e.target===current&&(e.clientX<bounds.left||e.clientX>bounds.right||e.clientY<bounds.top||e.clientY>bounds.bottom))stepBack();});
+  document.body.appendChild(dialog);dialog.showModal();
+  enter('settings',function(){if(current.open)current.close();},function(){if(!current.isConnected)return false;dialog=current;if(!current.open)current.showModal();current._resumePolling?.();});
+  return content;
  }
  async function jobs(parent,item,video){
   var offset=parent._offset||0;var data=await api('/api/enhancements?offset='+offset+(item?'&item='+encodeURIComponent(item.id):''));if(!parent.isConnected||!parent.closest('dialog')?.open)return;var snapshot=JSON.stringify(data);if(parent._snapshot===snapshot)return;parent._snapshot=snapshot;parent.replaceChildren();
@@ -28,7 +35,7 @@
    node('small',j.options.smoothing+' · '+j.options.upscale,card);
    if(j.error)node('p',j.error,card);
    if(j.state==='completed'){
-    if(video)button('Play enhanced video',card,function(){video.dataset.sourceKind='enhanced';video.dataset.sourceFps=String(j.options.fps||'');video.src=j.url;video.play().catch(function(){});window.StreamActivity.record(item,'enhanced-play');dialog.close();});
+    if(video)button('Play enhanced video',card,function(){video.dataset.sourceKind='enhanced';video.dataset.sourceFps=String(j.options.fps||'');video.src=j.url;video.play().catch(function(){});window.StreamActivity.record(item,'enhanced-play');stepBack();});
     var a=node('a','Download enhanced video',card);a.href=j.url+'?download=1';a.setAttribute('download','');
    }else button(j.state==='paused'?'Resume':'Pause',card,async function(){await api('/api/enhancements/'+j.id,{action:j.state==='paused'?'resume':'pause'});await jobs(parent,item,video);});
   });
@@ -36,9 +43,12 @@
   if(data.nextOffset!==null)button('Older jobs',parent,function(){parent._offset=data.nextOffset;return jobs(parent,item,video);});
  }
  async function open(){
-  var body=shell('Settings'),tabs=node('nav',undefined,body),panes={},buttons={},active='View';tabs.className='settings-tabs';tabs.setAttribute('role','tablist');
-  function tab(name){var pane=node('section',undefined,body);pane.className='settings-pane';pane.hidden=name!==active;pane.id='settings-'+name.toLowerCase();pane.setAttribute('role','tabpanel');panes[name]=pane;var b=button(name,tabs,function(){active=name;Object.entries(panes).forEach(function(entry){entry[1].hidden=entry[0]!==name;buttons[entry[0]].setAttribute('aria-selected',String(entry[0]===name));buttons[entry[0]].tabIndex=entry[0]===name?0:-1;});});b.id=pane.id+'-tab';b.setAttribute('role','tab');b.setAttribute('aria-controls',pane.id);pane.setAttribute('aria-labelledby',b.id);b.setAttribute('aria-selected',String(name===active));b.tabIndex=name===active?0:-1;buttons[name]=b;return pane;}
-  tabs.addEventListener('keydown',function(e){if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();var names=Object.keys(buttons),index=names.indexOf(active);index=e.key==='Home'?0:e.key==='End'?names.length-1:(index+(e.key==='ArrowLeft'?-1:1)+names.length)%names.length;buttons[names[index]].click();buttons[names[index]].focus();});
+  if(dialog?.open)return;
+  var body=shell('Settings'),current=dialog,tabs=node('nav',undefined,body),panes={},buttons={},active=null;tabs.className='settings-categories';tabs.setAttribute('aria-label','Settings categories');
+  var descriptions={View:'Layout, player blur and playback details',Enhancement:'Hardware, models and processing',Jobs:'Saved enhancements and clean-library exports',History:'Activity recording and recent views',Security:'Sign-in, access and account'};
+  function show(name){active=name;tabs.hidden=!!name;Object.entries(panes).forEach(function(entry){entry[1].hidden=entry[0]!==name;});current._heading.textContent=name||'Settings';current._backButton.textContent=name?'← Settings':'Close';current._backButton.setAttribute('aria-label',name?'Back to settings':'Close settings');current.scrollTop=0;if(name){panes[name].tabIndex=-1;panes[name].focus({preventScroll:true});}else buttons[current._lastSection||'View']?.focus({preventScroll:true});}
+  function root(){show(null);current._back=function(){if(current.open)current.close();};}
+  function tab(name){var pane=node('section',undefined,body);pane.className='settings-pane';pane.hidden=true;pane.id='settings-'+name.toLowerCase();pane.setAttribute('aria-label',name);panes[name]=pane;var b=button('',tabs,function(){if(enter('settings-section',root,function(){show(name);current._back=root;})===false)return;current._lastSection=name;show(name);current._back=root;});b.className='settings-category';node('strong',name,b);node('small',descriptions[name],b);var arrow=node('span','›',b);arrow.setAttribute('aria-hidden','true');b.setAttribute('aria-controls',pane.id);buttons[name]=b;return pane;}
   var view=tab('View');node('p','Choose a look and layout. Press / for settings.',view);
   button('Randomly enlarge previews',view,function(){adapter.randomize?.();status.textContent='New pattern saved across the library.';});button('Uniform preview sizes',view,function(){adapter.uniform?.();status.textContent='Random enlargement disabled.';});
   Array.from(view.querySelectorAll('button')).slice(0,2).forEach(function(b,i){b.dataset.randomSize=i===0?'on':'off';try{b.classList.toggle('selected',(localStorage.getItem('stream-random-enabled')==='1')===(i===0));}catch(_){}});
@@ -54,11 +64,19 @@
   stats.onchange=function(){adapter.videoStats?.(stats.checked);};
   if(!config.isAdmin){node('p','Sign in to manage enhancement and the library.',view);return;}
   var enhancement=tab('Enhancement'),saved=tab('Jobs'),historyPane=tab('History'),security=tab('Security');
-  var data=await api('/api/settings');if(!body.closest('dialog')?.open)return;window.StreamActivity.setEnabled(data.tracking);
+  var data=await api('/api/settings');if(!body.isConnected)return;window.StreamActivity.setEnabled(data.tracking);
   node('h3','Server enhancement',enhancement);node('p','Your server does the work. Playback quality and Data saver stay specific to each browsing device. Phones and tablets control jobs and play their results. A job processes the original once, saves a separate result, and stops. It does not repeatedly enhance its own output.',enhancement);
   var enabledLabel=node('label','Enable enhancement on this server ',enhancement);enabledLabel.className='option-chip';var enabled=node('input',undefined,enabledLabel);enabled.type='checkbox';enabled.checked=data.enhancementEnabled;
   enabled.onchange=async function(){try{await api('/api/settings',{enhancementEnabled:enabled.checked});status.textContent=enabled.checked?'Enhancement enabled. Queued work can continue.':'Enhancement suspended. Completed checkpoints are retained.';}catch(e){error(e);}};
-  node('p',data.hardware.cpu+' · '+data.hardware.detectedMemoryGiB+' GiB visible RAM',enhancement);
+  var hardware=node('article',undefined,enhancement);hardware.className='hardware-allocation';node('h3','Resources available to this server',hardware);node('p',data.hardware.cpu,hardware);
+  node('p','OS / VM RAM: '+(data.hardware.osMemoryGiB??data.hardware.detectedMemoryGiB)+' GiB',hardware);
+  node('p','Container RAM ceiling: '+(data.hardware.memoryLimitGiB===null?'No additional ceiling detected':data.hardware.memoryLimitGiB!==undefined?data.hardware.memoryLimitGiB+' GiB':'Unavailable'),hardware);
+  node('p','Available CPU capacity: '+(data.hardware.effectiveCores??data.hardware.threads)+' cores'+(data.hardware.logicalThreads?' · '+data.hardware.logicalThreads+' OS-visible threads':''),hardware);
+  if(data.hardware.scope)node('small',data.hardware.scope,hardware);
+  var guidance=node('details',undefined,hardware);node('summary','Allocate more resources / GPU access',guidance);
+  guidance.addEventListener('toggle',function(){if(!current.open)return;if(guidance.open){if(window.StreamNavigation?.has('settings-detail'))return;if(enter('settings-detail',function(){guidance.open=false;},function(){guidance.open=true;})===false)guidance.open=false;}else if(window.StreamNavigation?.has('settings-detail'))window.StreamNavigation.leave('settings-detail');});
+  (data.hardware.guidance||['Docker or virtual-machine resource limits are configured on the server. This menu cannot grant hardware access.']).forEach(function(note){node('p',note,guidance);});
+  if(data.hardware.gpuNote)node('p',data.hardware.gpuNote,guidance);
   (data.hardware.gpu||[]).forEach(function(g){node('p',g.name+(g.unifiedMemory?' · shares system memory':' · '+Math.round(g.totalVramMiB/1024*10)/10+' GiB VRAM'),enhancement);});
   node('p','Recommended for native M3 Pro and a capable NVIDIA server: RIFE 4.6 for motion; Real-ESRGAN x4plus for realistic upscaling. Animation 2× is a separate choice for cartoons. Start with a short clip and review artifacts before batching.',enhancement);
   var device=select('Processing device',[['auto','Detect on this server'],['cpu','CPU (smoothing only)'],['gpu','Vulkan GPU / native Apple GPU']],enhancement);device.value=data.enhancementDevice;
@@ -73,7 +91,7 @@
   var batchSmooth=select('Batch smoothing',[['rife-v4.6','RIFE · 60 fps'],['ffmpeg','Optical flow · 60 fps (no model)'],['none','Original frame rate']],enhancement),batchScale=select('Batch upscaling',[['none','Original resolution'],['realesrgan-x4plus','Realistic 4×'],['realesr-animevideov3','Animation 2×']],enhancement);
   var consent=node('label','I want to process the current video library with these settings ',enhancement),confirm=node('input',undefined,consent);confirm.type='checkbox';
   button('Queue current videos',enhancement,async function(){if(!confirm.checked)throw Error('Check the batch confirmation first.');var result=await api('/api/enhancements/batch',{confirm:true,smoothing:batchSmooth.value,upscale:batchScale.value});status.textContent=result.queued+' videos accepted; '+result.errors.length+' could not be queued.';if(result.errors.length){var details=node('details',undefined,enhancement);node('summary','Videos needing attention',details);result.errors.forEach(function(e){node('p',e.filename+': '+e.error,details);});}});
-  node('h3','Saved jobs',saved);var list=node('div',undefined,saved);await jobs(list);
+  node('h3','Saved jobs',saved);var list=node('div',undefined,saved);await jobs(list);if(!body.isConnected)return;
   node('h3','Clean hosting library',saved);node('p','Export the latest matching enhancement for each video. Optionally include original photos and videos without a completed enhancement. Originals and unrelated destination files are never replaced. Export again to include newly finished jobs.',saved);
   var includeLabel=node('label','Include original photos and videos without enhancements ',saved),include=node('input',undefined,includeLabel);include.type='checkbox';include.checked=true;
   var exportInfo=node('p','',saved);function exportState(d){exportInfo.textContent=d.state+' · '+d.done+'/'+d.total+' files · '+d.directory+(d.error?' · '+d.error:'');}exportState(data.export);
@@ -88,19 +106,20 @@
   lock.onchange=async function(){try{await api('/api/settings',{requireLogin:lock.checked});status.textContent=lock.checked?'Library locked to signed-in users.':'Guest-visible items may now be viewed without signing in.';}catch(e){error(e);}};
   node('p','The owner passphrase is hashed on the server. Existing LDAP sign-in remains supported through LDAP_URL and LDAP_BIND_DN_TEMPLATE. For this small private library, the owner account can be shared among your trusted devices.',security);
   button('Sign out',security,async function(){await api('/api/logout',{});location.href='/';});
-  if(!body.closest('dialog')?.open)return;
-  poll=setInterval(function(){if(active==='Jobs'){jobs(list).catch(error);api('/api/clean-library').then(exportState).catch(error);}if(active==='Enhancement')refreshRuntime().catch(error);},4000);
+  if(!body.isConnected)return;
+  current._resumePolling=function(){clearInterval(poll);poll=setInterval(function(){if(!current.open)return;if(active==='Jobs'){jobs(list).catch(error);api('/api/clean-library').then(exportState).catch(error);}if(active==='Enhancement')refreshRuntime().catch(error);},4000);};if(current.open)current._resumePolling();
  }
  async function enhance(item,video){
-  var body=shell('Enhance video');node('p',item.filename,body);
+  if(dialog?.open)return;
+  var body=shell('Enhance video'),current=dialog;node('p',item.filename,body);
   node('p','Create a separate saved version. Processing continues on the server after you close this window. The original stays unchanged.',body);
   var smoothing=select('Smoothing',[['ffmpeg','60 fps · optical flow (CPU, no model)'],['rife-v4.6','60 fps · RIFE AI'],['none','Keep original frame rate']],body);
   var upscale=select('Upscaling',[['none','Original resolution'],['realesrgan-x4plus','Real-ESRGAN 4× · realistic'],['realesr-animevideov3','Real-ESRGAN 2× · animation']],body);
   node('p','Install tools and models from Settings → Enhancement first. Upscaling needs compatible server graphics hardware. Processing may be much slower than playback.',body);
   var list=node('div',undefined,body);
   button('Start saved enhancement',body,async function(){await api('/api/items/'+encodeURIComponent(item.id)+'/enhance',{smoothing:smoothing.value,upscale:upscale.value});status.textContent='Job saved.';await jobs(list,item,video);});
-  button('Play original',body,function(){video.dataset.sourceKind='original';delete video.dataset.sourceFps;video.src=item.urls.full;video.play().catch(function(){});dialog.close();});
-  await jobs(list,item,video);if(!body.closest('dialog')?.open)return;poll=setInterval(function(){jobs(list,item,video).catch(error);},3000);
+  button('Play original',body,function(){video.dataset.sourceKind='original';delete video.dataset.sourceFps;video.src=item.urls.full;video.play().catch(function(){});stepBack();});
+  await jobs(list,item,video);if(!body.closest('dialog')?.open)return;current._resumePolling=function(){clearInterval(poll);poll=setInterval(function(){if(current.open)jobs(list,item,video).catch(error);},3000);};current._resumePolling();
  }
  function savePending(){try{localStorage.setItem('stream-ui-pending',JSON.stringify(pendingUI));}catch(_){}}
  async function syncPreferences(){

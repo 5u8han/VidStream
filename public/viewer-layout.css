@@ -1,0 +1,34 @@
+/* The outer backdrop stays full screen; only the media card follows its source. */
+.lightbox .lightbox-card {
+  width: var(--viewer-card-width, min(640px, 78vw));
+  height: var(--viewer-card-height, auto);
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+  flex: none;
+}
+.lightbox-card .lightbox-stage {
+  flex: none;
+  padding: 0;
+  width: 100%;
+  height: var(--viewer-media-height, min(50dvh, 360px));
+}
+.lightbox-card .lightbox-media-wrap {
+  width: var(--viewer-media-width, 100%);
+  height: var(--viewer-media-height, 100%);
+  flex: none;
+}
+.lightbox-card .lightbox-media-wrap img,
+.lightbox-card .lightbox-media-wrap video {
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  height: 100%;
+}
+.lightbox-card .lightbox-nav { width: 36px; z-index: 3; background: transparent; }
+.lightbox-card .lightbox-nav svg { filter: drop-shadow(0 1px 3px #000); }
+.lightbox-card .lightbox-nav:hover { background: #0003; }
+.lightbox-card .lightbox-bar { min-width: 0; padding: 0 6px; }
+.lightbox-card .lightbox-actions { min-width: 0; }
+.lightbox-card .frame-counter { margin-right: 4px; padding: 5px 6px; }
+.lightbox-card .lightbox-actions .icon-btn { width: 34px; }
+.lightbox-card .info-panel, .lightbox-card .edit-panel { max-width: 100%; }

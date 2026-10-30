@@ -180,6 +180,7 @@
   main.appendChild(grid);
   var linksBottom = el('ul', { class: 'links-bottom' });
   var lightbox = buildLightbox();
+  var viewerLayout = window.StreamViewerLayout.attach(lightbox.card, lightbox.mediaWrap);
   if (bg) lightbox.root.classList.add('ambient');
   var toastEl = el('div', { class: 'toast' });
   var signInModal = buildSignInModal();
@@ -212,7 +213,7 @@
 
   function buildMenu() {
     var wrap = el('div', { class: 'menu-wrap' });
-    var trigger = el('button', { class: 'icon-btn', title: 'View options', 'aria-label': 'View options' }, icon('sliders'));
+    var trigger = el('button', { class: 'icon-btn control-launcher', title: 'View options', 'aria-label': 'View options' }, icon('sliders') + '<span>View</span>');
     var panel = el('div', { class: 'menu-panel' });
 
     function section(label) {
@@ -236,7 +237,6 @@
         if (opt.id === 'random') state.seed = String(Date.now());
         if(opt.id==='creator')clearGalleryFilters();
         state.sort = opt.id;
-        closeMenu();
         markSortSelected();
         resetAndLoad();
       });
@@ -258,7 +258,6 @@
       var item = el('button', { class: 'menu-item', 'data-has': opt.id }, '<span>' + opt.label + '</span>');
       item.addEventListener('click', function () {
         state.has = opt.id || null;
-        closeMenu();
         refreshContainsHighlight();
         resetAndLoad();
       });
@@ -343,7 +342,6 @@
         applyDensity(d.id);
         markDensitySelected();
         remeasureAndReflow();
-        closeMenu();
       });
       densitySection.appendChild(item);
     });
@@ -385,7 +383,7 @@
     randomButton.classList.toggle('selected',randomEnabled);uniformButton.classList.toggle('selected',!randomEnabled);
     panel.appendChild(layoutSection);
     var outlinesSection=section('Artist outlines');
-    [['off','Off'],['subtle','Fine tile borders'],['hover','On hover / focus']].forEach(function(option){var b=el('button',{class:'menu-item','data-artist-outlines':option[0],'aria-pressed':String(storageGet('stream-artist-outlines','off')===option[0])},option[1]);b.classList.toggle('selected',storageGet('stream-artist-outlines','off')===option[0]);b.onclick=function(){storageSet('stream-artist-outlines',option[0]);artistOutlines.setMode(option[0]);outlinesSection.querySelectorAll('[data-artist-outlines]').forEach(function(button){var chosen=button.dataset.artistOutlines===option[0];button.classList.toggle('selected',chosen);button.setAttribute('aria-pressed',String(chosen));});};outlinesSection.appendChild(b);});
+    [['off','Off'],['subtle','Fine tile borders'],['hover','On hover / focus']].forEach(function(option){var b=el('button',{class:'menu-item','data-artist-outlines':option[0],'aria-pressed':String(storageGet('stream-artist-outlines','off')===option[0])},option[1]);b.classList.toggle('selected',storageGet('stream-artist-outlines','off')===option[0]);b.onclick=function(){storageSet('stream-artist-outlines',option[0]);artistOutlines.setMode(option[0]);updateArtistSpacing(option[0]);outlinesSection.querySelectorAll('[data-artist-outlines]').forEach(function(button){var chosen=button.dataset.artistOutlines===option[0];button.classList.toggle('selected',chosen);button.setAttribute('aria-pressed',String(chosen));});};outlinesSection.appendChild(b);});
     var recolor=el('button',{class:'menu-item'},'Shuffle artist colors');recolor.onclick=function(){storageSet('stream-artist-palette',window.StreamActivity.uuid());grid.querySelectorAll('.tile').forEach(function(tile){tile.style.setProperty('--source-color',creatorColor(tile._item.creator));});artistOutlines.refresh();};outlinesSection.appendChild(recolor);
     outlinesSection.appendChild(el('p',{class:'menu-help'},'Fine borders around each tile. Hover highlights all visible media from the same artist.'));
     panel.appendChild(outlinesSection);
@@ -413,7 +411,6 @@
       item.addEventListener('click', function () {
         applyTheme(t.id);
         markThemeSelected();
-        closeMenu();
       });
       themeSection.appendChild(item);
     });
@@ -439,32 +436,55 @@
     markDensitySelected();
     markThemeSelected();
 
-    function openMenu() {
+    function showMenu() {
       panel.classList.add('open');
+      panel.style.setProperty('--menu-top', Math.max(8, header.getBoundingClientRect().bottom + 8) + 'px');
+      panel.inert = false;
+      trigger.setAttribute('aria-expanded', 'true');
       document.addEventListener('click', outsideClick, true);
     }
-    function closeMenu() {
+    function hideMenu() {
       panel.classList.remove('open');
+      panel.inert = true;
+      trigger.setAttribute('aria-expanded', 'false');
       document.removeEventListener('click', outsideClick, true);
+      trigger.focus({ preventScroll: true });
+    }
+    function openMenu() {
+      if (!window.StreamNavigation.enter('options', {back: hideMenu, forward: showMenu})) return;
+      showCategory(null); showMenu(); categories.querySelector('button').focus();
     }
     function outsideClick(e) {
-      if (!wrap.contains(e.target)) closeMenu();
+      if (!wrap.contains(e.target)) { e.preventDefault(); e.stopImmediatePropagation(); window.StreamNavigation.back(); }
     }
     trigger.addEventListener('click', function (e) {
       e.stopPropagation();
-      if (panel.classList.contains('open')) closeMenu();
+      if (panel.classList.contains('open')) window.StreamNavigation.back();
       else openMenu();
     });
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') closeMenu();
-    });
+      if (e.key === 'Escape' && panel.classList.contains('open') && !document.querySelector('dialog[open]')) { e.preventDefault(); e.stopImmediatePropagation(); window.StreamNavigation.back(); }
+    }, true);
 
     wrap.appendChild(trigger);
-    var categories=el('nav',{class:'view-tabs','aria-label':'View option categories'});
-    var sections=Array.from(panel.children);var currentCategory='Layout';
+    var categories=el('nav',{class:'view-categories','aria-label':'View option categories'});
+    var sections=Array.from(panel.children);var currentCategory=null;
+    var menuHead=el('div',{class:'menu-heading'}), backButton=el('button',{type:'button',class:'navigation-back','aria-label':'Back in View options'},'← Back'), menuTitle=el('strong',{},'View options');
+    menuHead.append(backButton,menuTitle);backButton.onclick=function(){window.StreamNavigation.back();};
     function categoryOf(section){var label=section.querySelector('.menu-label')?.textContent||'';return /Sort|Contains|Dates/.test(label)?'Filters':/Theme/.test(label)?'Theme':/Performance/.test(label)?'Playback':'Layout';}
-    ['Layout','Playback','Filters','Theme'].forEach(function(name){var button=el('button',{type:'button','aria-pressed':String(name===currentCategory)},name);button.addEventListener('click',function(){currentCategory=name;sections.forEach(function(section){section.hidden=categoryOf(section)!==name;});categories.querySelectorAll('button').forEach(function(b){b.setAttribute('aria-pressed',String(b.textContent===name));});});categories.appendChild(button);});
-    sections.forEach(function(section){section.hidden=categoryOf(section)!==currentCategory;});panel.prepend(categories);
+    function showCategory(name) {
+      currentCategory=name; categories.hidden=Boolean(name); menuTitle.textContent=name||'View options';backButton.textContent=name?'← View options':'← Gallery';
+      sections.forEach(function(section){section.hidden=!name||categoryOf(section)!==name;});panel.scrollTop=0;
+      if(!name)categories.querySelector('button')?.focus();
+    }
+    ['Layout','Playback','Filters','Theme'].forEach(function(name){
+      var button=el('button',{type:'button',class:'navigation-row'});button.textContent=name+' ›';
+      button.addEventListener('click',function(){
+        if(!window.StreamNavigation.enter('options-section',{back:function(){showCategory(null);button.focus();},forward:function(){showCategory(name);}}))return;
+        showCategory(name);backButton.focus();
+      });categories.appendChild(button);
+    });
+    showCategory(null);panel.prepend(menuHead,categories);panel.inert=true;trigger.setAttribute('aria-expanded','false');
     wrap.appendChild(panel);
     return wrap;
   }
@@ -571,7 +591,7 @@
     header._selectBtn = selectBtn;
 
     controls.appendChild(buildMenu());
-    var settingsButton=el('button',{class:'icon-btn',title:'Settings (/)', 'aria-label':'Settings'},icon('settings'));settingsButton.onclick=window.StreamSettings.open;controls.appendChild(settingsButton);
+    var settingsButton=el('button',{class:'icon-btn control-launcher',title:'Settings (/)', 'aria-label':'Settings'},icon('settings')+'<span>Settings</span>');settingsButton.onclick=window.StreamSettings.open;controls.appendChild(settingsButton);
 
     var rescanBtn = el('button', { class: 'icon-btn', title: 'Rescan library', 'aria-label': 'Rescan library' }, icon('refresh'));
     rescanBtn.addEventListener('click', function () {
@@ -1153,22 +1173,27 @@
 
   var artistOutlines=window.StreamArtistOutlines.install(grid,{mode:storageGet('stream-artist-outlines','off'),color:creatorColor});
   artistOutlines.setMode(storageGet('stream-artist-outlines','off'));
+  grid.style.setProperty('--gap',storageGet('stream-artist-outlines','off')==='off'?'0px':'1px');
+  function updateArtistSpacing(mode) { grid.style.setProperty('--gap', mode === 'off' ? '0px' : '1px'); remeasureAndReflow(); }
   var sentinel = el('li', { class: 'sentinel' });
   var statusEl = el('div', { class: 'grid-status' });
   statusEl.style.display = 'none';
 
   var columnWidth = 0;
+  var gridGap = 0, rowUnit = 1;
   function measureColumns() {
-    var cols = getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean);
+    var computed = getComputedStyle(grid);
+    var cols = computed.gridTemplateColumns.split(' ').filter(Boolean);
     columnWidth = cols.length ? parseFloat(cols[0]) : grid.clientWidth;
+    gridGap = parseFloat(computed.gap) || 0;
+    rowUnit = parseFloat(computed.gridAutoRows) || 1;
   }
 
   function applySpan(tile, item) {
     if (!columnWidth) measureColumns();
     var aspect = item.width && item.height ? item.width / item.height : 1;
-    var rowUnit = parseFloat(getComputedStyle(grid).getPropertyValue('grid-auto-rows')) || 4;
-    var gap = parseFloat(getComputedStyle(grid).getPropertyValue('gap')) || 3;
-    var width = tile.getBoundingClientRect().width || columnWidth;
+    var gap = gridGap;
+    var width = tile.classList.contains('tile-expanded') && window.innerWidth > 580 ? columnWidth * 2 + gap : columnWidth;
     var tileHeight = width / aspect;
     var span = Math.max(1, Math.ceil((tileHeight + gap) / (rowUnit + gap)));
     tile.style.gridRowEnd = 'span ' + span;
@@ -1914,6 +1939,7 @@
 
   var stopActivity = null;
   function releaseLightboxMedia() {
+    viewerLayout.setMedia(null);
     if (stopActivity) { stopActivity(); stopActivity = null; }
     if (stopStatsSampling) { stopStatsSampling(); stopStatsSampling = null; }
     if (bg) bg.detachAudio();
@@ -1942,6 +1968,7 @@
       if (slideshow.active) bindSlideshowEnded(media);
     }
     lightbox.mediaWrap.appendChild(media);
+    viewerLayout.setMedia(media, item);
     lightbox.root.classList.toggle('showing-video', item.type === 'video');
     lightbox.statsBtn.style.display = item.type === 'video' ? '' : 'none';
     lightbox.speed.style.display = item.type === 'video' ? '' : 'none';
