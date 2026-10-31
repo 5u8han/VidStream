@@ -2,7 +2,7 @@
  'use strict';
  var config=JSON.parse(document.getElementById('app').dataset.config||'{}'),dialog,content,status,returnFocus,poll,adapter={},pendingUI={},saveTimer;
  try{pendingUI=JSON.parse(localStorage.getItem('stream-ui-pending')||'{}');}catch(_){}
- var deviceKeys=['stream-data-saver','stream-max-previews','stream-preview-source','stream-viewer-blur','stream-video-stats'];deviceKeys.forEach(function(k){delete pendingUI[k];});
+ var deviceKeys=['stream-data-saver','stream-max-previews','stream-preview-source','stream-viewer-blur','stream-video-stats','stream-effects','stream-saved-filters','stream-pinned-actions'];deviceKeys.forEach(function(k){delete pendingUI[k];});
  Object.entries(Object.assign({},config.savedUI||{},pendingUI)).filter(function(entry){return !deviceKeys.includes(entry[0]);}).forEach(function(entry){try{localStorage.setItem(entry[0],entry[1]);}catch(_){}});
  try{var theme=localStorage.getItem('stream-theme');if(theme&&theme!=='system')document.documentElement.dataset.theme=theme;else document.documentElement.removeAttribute('data-theme');var density=localStorage.getItem('stream-density');if(density)document.documentElement.dataset.density=density;}catch(_){}
  window.StreamActivity.setEnabled(config.tracking!==false);
@@ -45,7 +45,7 @@
  async function open(){
   if(dialog?.open)return;
   var body=shell('Settings'),current=dialog,tabs=node('nav',undefined,body),panes={},buttons={},active=null;tabs.className='settings-categories';tabs.setAttribute('aria-label','Settings categories');
-  var descriptions={View:'Layout, player blur and playback details',Enhancement:'Hardware, models and processing',Jobs:'Saved enhancements and clean-library exports',History:'Activity recording and recent views',Security:'Sign-in, access and account'};
+  var descriptions={View:'Layout, player blur and playback details',Enhancement:'Hardware, models and processing',Jobs:'Saved enhancements and clean-library exports',Maintenance:'Work priorities, storage, backups and recovery',History:'Activity recording and recent views',Security:'Sign-in, access and account'};
   function show(name){active=name;tabs.hidden=!!name;Object.entries(panes).forEach(function(entry){entry[1].hidden=entry[0]!==name;});current._heading.textContent=name||'Settings';current._backButton.textContent=name?'← Settings':'Close';current._backButton.setAttribute('aria-label',name?'Back to settings':'Close settings');current.scrollTop=0;if(name){panes[name].tabIndex=-1;panes[name].focus({preventScroll:true});}else buttons[current._lastSection||'View']?.focus({preventScroll:true});}
   function root(){show(null);current._back=function(){if(current.open)current.close();};}
   function tab(name){var pane=node('section',undefined,body);pane.className='settings-pane';pane.hidden=true;pane.id='settings-'+name.toLowerCase();pane.setAttribute('aria-label',name);panes[name]=pane;var b=button('',tabs,function(){if(enter('settings-section',root,function(){show(name);current._back=root;})===false)return;current._lastSection=name;show(name);current._back=root;});b.className='settings-category';node('strong',name,b);node('small',descriptions[name],b);var arrow=node('span','›',b);arrow.setAttribute('aria-hidden','true');b.setAttribute('aria-controls',pane.id);buttons[name]=b;return pane;}
@@ -63,7 +63,7 @@
   try{stats.checked=localStorage.getItem('stream-video-stats')==='1';}catch(_){}
   stats.onchange=function(){adapter.videoStats?.(stats.checked);};
   if(!config.isAdmin){node('p','Sign in to manage enhancement and the library.',view);return;}
-  var enhancement=tab('Enhancement'),saved=tab('Jobs'),historyPane=tab('History'),security=tab('Security');
+  var enhancement=tab('Enhancement'),saved=tab('Jobs'),maintenance=tab('Maintenance'),historyPane=tab('History'),security=tab('Security');window.StreamWorkbench.maintenance(maintenance);
   var data=await api('/api/settings');if(!body.isConnected)return;window.StreamActivity.setEnabled(data.tracking);
   node('h3','Server enhancement',enhancement);node('p','Your server does the work. Playback quality and Data saver stay specific to each browsing device. Phones and tablets control jobs and play their results. A job processes the original once, saves a separate result, and stops. It does not repeatedly enhance its own output.',enhancement);
   var enabledLabel=node('label','Enable enhancement on this server ',enhancement);enabledLabel.className='option-chip';var enabled=node('input',undefined,enabledLabel);enabled.type='checkbox';enabled.checked=data.enhancementEnabled;
@@ -111,15 +111,7 @@
  }
  async function enhance(item,video){
   if(dialog?.open)return;
-  var body=shell('Enhance video'),current=dialog;node('p',item.filename,body);
-  node('p','Create a separate saved version. Processing continues on the server after you close this window. The original stays unchanged.',body);
-  var smoothing=select('Smoothing',[['ffmpeg','60 fps · optical flow (CPU, no model)'],['rife-v4.6','60 fps · RIFE AI'],['none','Keep original frame rate']],body);
-  var upscale=select('Upscaling',[['none','Original resolution'],['realesrgan-x4plus','Real-ESRGAN 4× · realistic'],['realesr-animevideov3','Real-ESRGAN 2× · animation']],body);
-  node('p','Install tools and models from Settings → Enhancement first. Upscaling needs compatible server graphics hardware. Processing may be much slower than playback.',body);
-  var list=node('div',undefined,body);
-  button('Start saved enhancement',body,async function(){await api('/api/items/'+encodeURIComponent(item.id)+'/enhance',{smoothing:smoothing.value,upscale:upscale.value});status.textContent='Job saved.';await jobs(list,item,video);});
-  button('Play original',body,function(){video.dataset.sourceKind='original';delete video.dataset.sourceFps;video.src=item.urls.full;video.play().catch(function(){});stepBack();});
-  await jobs(list,item,video);if(!body.closest('dialog')?.open)return;current._resumePolling=function(){clearInterval(poll);poll=setInterval(function(){if(current.open)jobs(list,item,video).catch(error);},3000);};current._resumePolling();
+  var body=shell('Enhance video');await window.StreamWorkbench.enhance(body,item,video,stepBack);
  }
  function savePending(){try{localStorage.setItem('stream-ui-pending',JSON.stringify(pendingUI));}catch(_){}}
  async function syncPreferences(){

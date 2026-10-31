@@ -29,21 +29,41 @@ require('./lib/security').initializeSecurity(cfg);
 const ai = new AiManager(cfg);
 
 const db = new Db(path.join(cfg.cacheDir, 'index.json'), cfg.dataDir);
+const coordinator = new (require('./lib/work-coordinator').WorkCoordinator)(db.store);
 if(!cfg.setupRequired)cfg.requireLogin=db.store.setting('requireLogin',cfg.requireLogin);
 const scanner = new Scanner(cfg, db, {
+  coordinator,
   onLog: (msg) => console.log(`[stream] ${msg}`),
 });
 
 const { MediaEditor } = require('./lib/media-editor');
 const { libraryHandlers } = require('./lib/handlers/library');
-const library = libraryHandlers(cfg, db, new MediaEditor(cfg, db, scanner));
+const editor = new MediaEditor(cfg, db, scanner);
+const library = libraryHandlers(cfg, db, {edit:(item,body)=>coordinator.run('edit',item.filename,()=>editor.edit(item,body),{heavy:true,priority:20})});
 const { EnhancementQueue } = require('./lib/enhancement-queue');
 const { settingsHandlers } = require('./lib/handlers/settings');
-const enhancements = new EnhancementQueue(cfg, db);
-const cleanLibrary = new (require('./lib/clean-library').CleanLibrary)(cfg,db,enhancements);
+const enhancements = new EnhancementQueue(cfg, db, {coordinator});
+const cleanLibrary = new (require('./lib/clean-library').CleanLibrary)(cfg,db,enhancements,coordinator);
 const resources = new (require('./lib/resource-monitor').ResourceMonitor)(cfg,db.store);
 const settings = settingsHandlers(cfg, db, enhancements, ai, cleanLibrary);
+const variants = new (require('./lib/variant-service').VariantService)(cfg,db,enhancements,scanner);
+const maintenance = new (require('./lib/maintenance').Maintenance)(cfg,db,enhancements);
+const playback = new (require('./lib/playback-service').PlaybackService)(cfg,db,coordinator);
+const workbench = require('./lib/handlers/workbench').workbenchHandlers(cfg,db,{queue:enhancements,variants,maintenance,coordinator,playback,scanner});
 const router = new Router();
+router.get('/api/work',workbench.status);
+router.post('/api/work/preset',workbench.preset);
+router.post('/api/items/:id/enhance-estimate',workbench.estimate);
+router.get('/api/items/:id/variants',workbench.variants);
+router.post('/api/items/:id/variants',workbench.variant);
+router.post('/api/items/:id/relink',workbench.relink);
+router.post('/api/items/:id/playback',workbench.playback);
+router.get('/api/items/:id/playback/video',workbench.playbackFile);
+router.get('/api/maintenance/storage',workbench.storage);
+router.post('/api/maintenance/backup',workbench.backup);
+router.get('/api/maintenance/backup/:name',workbench.backupFile);
+router.post('/api/maintenance/retention',workbench.retention);
+router.post('/api/maintenance/recover',workbench.recover);
 router.get('/api/settings', settings.get);
 router.get('/api/library-map',require('./lib/handlers/library-map').libraryMapHandler(cfg,db));
 router.get('/api/resources', async(req,res)=>{if(!isAdmin(req,cfg)){res.writeHead(403);return res.end();}res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');res.end(JSON.stringify(await resources.sample()));});
@@ -83,7 +103,7 @@ router.get('/media/:id/:variant', mediaHandler(cfg, db));
 router.get('/', pageHandler(cfg, db));
 router.get('/:id', pageHandler(cfg, db));
 
-const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/social-preview.png', '/settings.js', '/activity.js', '/resources.js', '/library-layout.js', '/artist-outlines.js', '/library-map.js', '/player-stats.js', '/viewer-layout.js', '/viewer-layout.css', '/navigation.js']);
+const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/social-preview.png', '/settings.js', '/activity.js', '/resources.js', '/library-layout.js', '/artist-outlines.js', '/library-map.js', '/player-stats.js', '/navigation.js', '/preview-controller.js', '/diagnostics.js', '/workbench.js']);
 const PUBLIC_DIR = path.join(ROOT, 'public');
 
 const server = http.createServer(async (req, res) => {
@@ -169,15 +189,14 @@ main().catch((err) => {
   process.exit(1);
 });
 
-process.on('SIGTERM', () => {
-  resources.stop();cleanLibrary.stop();
-  void enhancements.stop();
-  scanner.stopWatching();
-  server.close(() => process.exit(0));
-});
-process.on('SIGINT', () => {
-  resources.stop();cleanLibrary.stop();
-  void enhancements.stop();
-  scanner.stopWatching();
-  server.close(() => process.exit(0));
-});
+let shuttingDown=false;
+async function shutdown() {
+  if(shuttingDown)return;shuttingDown=true;
+  resources.stop();scanner.stopWatching();
+  const stopped=coordinator.stop();
+  const exportStopped=cleanLibrary.stop();
+  const closed=new Promise(resolve=>server.close(resolve));
+  await enhancements.stop();await scanner.waitForIdle();await exportStopped;await stopped;await closed;
+  db.close ? db.close() : db.store.close();process.exit(0);
+}
+for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>shutdown().catch(err=>{console.error('[stream] Shutdown error:',err.message);process.exit(1);}));

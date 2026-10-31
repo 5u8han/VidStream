@@ -21,7 +21,7 @@ test('server starts, serves health, and shuts down cleanly', { timeout: 15000 },
   const child = spawn(process.execPath, ['server.js'], {
     cwd: path.resolve(__dirname, '..'),
     env: { ...process.env, HOST: '127.0.0.1', PORT: String(port),
-      MEDIA_DIR: media, CACHE_DIR: path.join(dir, 'cache'),
+      MEDIA_DIR: media, CACHE_DIR: path.join(dir, 'cache'), DATA_DIR:path.join(dir,'data'), ORIGINALS_DIR:path.join(dir,'originals'),
       RESCAN_INTERVAL_MINUTES: '0' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

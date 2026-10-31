@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.8.0-dev.1 — VidStream-Dev-Test-1
+
+- Restored the larger 90% viewport player while retaining blur, native controls, background scrolling and layered navigation.
+- Added permanent media IDs, SQLite catalog paging, content/recipe separation, conservative move matching and verified manual relinking. Migration creates pre-schema-3 backups; older code needs a restored pre-migration database.
+- Staged imports show basic records/posters first; preview/analysis failures retain working media. Offline/missing sources retain their identities and history.
+- Added durable work status and Browse/Balanced/Process presets, a bounded foreground identity/poster lane, and one heavy operation at a time.
+- Added compatibility playback copies, five-second enhancement samples, synchronized comparison, recipes, output verification/provenance, active-version approval, confirmed publication to the source library, external original archives, restore and interrupted-publication recovery.
+- Made SDR/8-bit/CFR/AAC output policy explicit; unsupported HDR/high-depth/anamorphic enhancement is refused. Space admission uses a conservative working estimate.
+- Replaced gallery-sized SVG outlines with tile-local borders, released offscreen media sources/observers, batched tile insertion and added per-device effects and diagnostics. Active-preview settings remain user-controlled.
+- Added recent/unfinished/less-seen sorting, saved filters, pinned actions, per-item artist labels, storage accounting, consistent catalog snapshots and explicit raw-event retention.
+- Added a lightweight experimental native launcher and committed isolated Chromium regression checks to CI. Physical-device performance and cross-platform packaging remain separate validation work.
+
 ## 1.7.0
 
 - Media-shaped viewer cards fit the source resolution and aspect ratio, reserve toolbar/stats space, and resize when enhanced media or viewport dimensions change.

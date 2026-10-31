@@ -90,5 +90,5 @@ test('schema 1 migration preserves existing favorites and edit history',t=>{
  sql.prepare('INSERT INTO events VALUES(?,?,?,?,?)').run(1,'old.mp4','2026-01-01','edited','{}');sql.close();
  const migrated=new Db(path.join(root,'legacy-cache','index.json'),data);migrated.upsert({id:'old',relPath:'old.mp4'});
  assert.equal(migrated.get('old').favorite,true);assert.equal(migrated.get('old').bookmarked,true);assert.equal(migrated.store.history(migrated.get('old'))[0].action,'edited');
- assert.equal(migrated.store.sql.prepare('PRAGMA user_version').get().user_version,2);clearTimeout(migrated._saveTimer);migrated.store.close();
+ assert.equal(migrated.store.sql.prepare('PRAGMA user_version').get().user_version,3);clearTimeout(migrated._saveTimer);migrated.store.close();
 });

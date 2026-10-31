@@ -14,8 +14,10 @@ services:
       - ./media:/media/original
       - stream-cache:/app/.cache
       - stream-data:/app/data
+      - ./originals:/app/originals
     environment:
       DATA_DIR: /app/data
+      ORIGINALS_DIR: /app/originals/original
     env_file:
       - .env
     # A hard ceiling so a leak (or just a big library under heavy
