@@ -20,8 +20,8 @@
     function sample() { var now=performance.now(); if(!video.paused&&!video.seeking&&video.readyState>=3&&!document.hidden)seconds+=Math.min(2,(now-last)/1000);last=now; if(seconds>=10)send(); }
     function send() { if(seconds>.01){record(item,'watch',{seconds:Math.min(30,seconds),position:video.currentTime||0});seconds=0;} }
     var timer=setInterval(sample,1000);
-    ['play','pause','ended','seeked'].forEach(function(name){video.addEventListener(name,function(){sample();if(name==='pause'||name==='ended')send();record(item,name==='seeked'?'seek':name,{position:video.currentTime||0});});});
-    return function(){sample();send();clearInterval(timer);};
+    var listeners={};['play','pause','ended','seeked'].forEach(function(name){listeners[name]=function(){sample();if(name==='pause'||name==='ended')send();record(item,name==='seeked'?'seek':name,{position:video.currentTime||0});};video.addEventListener(name,listeners[name]);});
+    return function(){sample();send();clearInterval(timer);Object.keys(listeners).forEach(function(name){video.removeEventListener(name,listeners[name]);});};
   }
   setInterval(flush,5000);window.addEventListener('online',flush);document.addEventListener('visibilitychange',function(){if(document.hidden)void flush();});
   window.StreamActivity={uuid:uuid,record:record,bind:bind,flush:flush,setEnabled:function(value){enabled=value;},pending:function(){return pending().length;}};

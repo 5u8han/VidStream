@@ -9,9 +9,11 @@ because that project (great as it is) only handles photos. Video needed a
 different foundation, not a bolt-on — see [Why a rewrite](#why-a-rewrite-and-not-a-fork)
 below.
 
-## Version 1.7: media-shaped player and layered navigation
+## Development test 1: browsing, catalog and saved processing
 
-Opening media shows a centered card fitted to the source resolution and aspect ratio. Portrait videos open in narrow cards; smaller videos stay at their native size. Media scales down to fit the viewport, with toolbar/caption/stats space reserved. Desktop cards are capped at 78% viewport width and 80% height; mobile caps are 90% width and 86% height. Scroll with the pointer over the visible gallery around the player to browse underneath; click that background, use Close, or press Escape to dismiss it. The ambient mouse/audio effects remain available. Settings → View → **Viewer background blur** adjusts the backdrop from 0–30 px immediately; the player also has a settings shortcut. Blur stays local to each browser so slower devices can use 0 px.
+This branch is **VidStream-Dev-Test-1**, version **1.8.0-dev.1**. The existing main branch remains the v1.7.0 checkpoint. Read the [development and migration guide](docs/DEV_TEST_1.md) before using an existing library: the durable catalog upgrades to SQLite schema 3 and keeps a pre-migration snapshot. Going back to v1.7 requires restoring that snapshot, not just switching code.
+
+Opening media again shows the larger centered **90% browser-width and 90% browser-height** card, as in v1.6. Media fits within that card with native controls. Scroll with the pointer over the visible gallery around the player to browse underneath; click that background, use Close, or press Escape to dismiss it. Settings → View → **Viewer background blur** adjusts the backdrop from 0–30 px immediately. Blur and the new Off/Subtle/Full effects preset stay local to each browser.
 
 Settings and View options open at a category list. Selecting a category opens its section; selecting an option keeps that section open. The Back button, Escape, clicking the backdrop and browser Back move up one level at a time, including expanded hardware guidance. Browser Forward can restore the last screen. Gallery tile spacing is 0 px when artist outlines are off and 1 px when enabled; media still uses the chosen whole-frame/cropped framing preference.
 
@@ -19,7 +21,7 @@ If hardware settings report 2 GiB, the default Compose container ceiling is the 
 
 Video playback uses the browser's native controls and original file through HTTP range requests, which allow seeking without downloading the entire file first. The player adds a **0.25×–2× speed selector** and **Stats for nerds** (chart icon). Stats reuse the library/dashboard dock as the player footer and return it to normal after closing. They display file resolution, player viewport, source FPS when known, measured presented FPS, dropped/total frames, buffered seconds, playback speed/state, codecs, and original/enhanced source. Presented FPS is measured from browser frame callbacks; older browsers show an explicitly estimated value or unavailable counters. This is client playback telemetry, separate from the server resource dashboard. Stats run only while enabled in an open video and the choice stays local to that browser.
 
-Enhancement is a separate saved processing job; opening a video does not automatically upscale or smooth it. This release does not change originals, enhancement output paths, or archive behavior.
+Enhancement is a separate saved processing job; opening a video does not automatically upscale or smooth it. Render a five-second sample, compare it with the original, then queue a full version. Approving selects a separate saved result as the default player source. The additional **Publish & archive original** action explicitly replaces the hosting file and retains a verified original and recovery journal under `./originals/original` by default, outside `./media`. This action requires its own confirmation.
 
 ## Operate enhancement from the web
 
@@ -38,7 +40,7 @@ Keep both persistent volumes. No special **enhancement** build flag is required 
 
 1. Open **Settings → Enhancement** and choose **Install tools & recommended models**. The standard image already contains the small system libraries; this button downloads fixed, checksum-verified executables into the persistent data volume, plus RIFE 4.6 and Real-ESRGAN x4plus weights. No root installer, Docker socket, arbitrary executable URL, or rebuild is needed. Animation 2× is an optional separate model.
 2. Enable enhancement and leave **Processing device → Detect on this server**, or explicitly choose CPU/GPU. CPU supports optical-flow smoothing and RIFE; Real-ESRGAN needs a Vulkan GPU. Disabling enhancement suspends active work and keeps queued/checkpointed work; re-enabling lets it continue. Explicitly paused/error jobs still require Resume.
-3. Open a short video → **Enhance video**, choose smoothing/upscaling, and start. The job runs on the server even after closing the browser, saves a separate MP4, and stops. It does **one pass over the original**, not endless refinement or repeated processing of its own output. Inspect motion/texture artifacts and frame-to-frame flicker before processing a large library; frame upscaling cannot restore known ground truth from missing detail.
+3. Open a short video → **Enhance video**, choose smoothing/upscaling, and **Render 5-second sample** at a selected start time. Use **Compare original / result** before **Queue full video**. The job runs on the server even after closing the browser, saves a separate MP4, and stops. It does **one pass over the original**. Inspect motion/texture artifacts and frame-to-frame flicker before processing a large library. HDR/high-bit-depth and anamorphic enhancement are currently refused; supported output is explicitly SDR H.264/8-bit/CFR with AAC audio and no subtitle tracks.
 4. To prepare the library, choose batch options in Settings → Enhancement, tick the batch confirmation, and **Queue current videos**. Only currently indexed videos are queued; future imports require another batch. Matching saved jobs are reused. Jobs run one at a time. Monitor/pause/resume them under **Jobs**.
 5. Under Jobs, **Export / resume hosting library** creates `DATA_DIR/clean-library` (override with `CLEAN_LIBRARY_DIR`). It copies the newest matching completed enhancement for each video. The optional checkbox includes original photos and videos without a completed enhancement. Photos are copied unchanged; this release does not AI-enhance still images. Re-export after more jobs finish. This folder can become the media source of a separate hosting instance; do not point the enhancement source at its own export directory.
 
@@ -58,7 +60,7 @@ The dashboard polls every five seconds and displays CPU, RAM, free storage, phys
 
 On native macOS, IOKit provides Apple GPU utilization, shared-memory occupancy and storage-driver counters; netstat supplies network totals. Host counters include other applications. Node-only CPU/RAM are labeled and exclude native worker processes. Apple shared memory is not additional dedicated VRAM. Occupied Mac RAM includes caches, so it is not a memory-pressure reading. RAM occupancy is not RAM read/write bandwidth; NVIDIA memory-controller utilization is shown if available. Unavailable sensors are labeled **Unavailable**, never faked as zero. Observed read/write/network/cpu totals persist in SQLite across restarts, but activity while the server is stopped is not counted.
 
-The View options menu now has **Layout / Playback / Filters / Theme** sections, compact translucent controls, colored selected states and mobile-safe scrolling. Settings has separate View / Enhancement / Jobs / History / Security tabs.
+The View options menu has **Layout / Playback / Filters / Theme** sections, compact translucent controls, colored selected states and mobile-safe scrolling. Settings includes **Maintenance** for background-work presets, work status, storage measurements, catalog backups, relinking and interrupted-publication recovery. Recent opens, Continue watching, Less seen, saved filters and pinned actions are available from View options.
 
 Hardware references: [NVIDIA RTX 5090 specifications](https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/), [Docker GPU support](https://docs.docker.com/desktop/features/gpu/), [RIFE NCNN](https://github.com/nihui/rife-ncnn-vulkan), [Real-ESRGAN NCNN](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan).
 
@@ -81,13 +83,13 @@ git pull --ff-only
 docker compose up -d --build
 ```
 
-Compose adds `stream-data:/app/data` with `DATA_DIR=/app/data`. Favorites, bookmarks, pins, import dates, visibility choices, and revision events are committed synchronously to SQLite with WAL journaling. Metadata/preview scans cannot reset those records. The existing JSON media index and derivatives remain in `stream-cache`. On first use the existing import dates and visibility flags are migrated into the durable store. The underlying SQLite file must stay on local Docker storage rather than an SMB/NFS share.
+Compose uses `stream-data:/app/data` with `DATA_DIR=/app/data`. The catalog, permanent media identities, variants, favorites, activity and jobs live in SQLite with WAL journaling. Existing JSON catalog records import once; the JSON file is no longer authoritative. Derivatives remain in `stream-cache` and can be rebuilt. The SQLite file must stay on local storage rather than an SMB/NFS share. Compose also mounts `./originals:/app/originals` for publication archives; keep that directory when replacing application files.
 
 Without Compose, set `DATA_DIR` to a persistent local directory (default: `CACHE_DIR/library-data`). Node **22.13+** is required. When upgrading from a non-Compose 1.2 installation, retain the same `DATA_DIR` or copy its contents while Stream is stopped.
 
 **Backups:** stop Stream and back up the complete data directory/volume, cache volume, `.env`, media, and `.vidstream-originals`. Restart after the copy. Do not remove persistent volumes with `docker compose down -v`. Code updates do not erase data, but deleting a volume does. To restore an archived edit, stop Stream, consult that revision's `revision.json`, copy its `original.<ext>` back to the recorded library-relative path, then restart/rescan. Every revision retains a complete original. Automatic backup scheduling and an in-app restore browser would be useful next additions.
 
-Identity follows the library-relative file path, so changes to application slugs or rescanning the same path preserve choices. Moving/renaming files externally does not currently transfer their choices automatically; the old records remain available in the durable database. Stable content-based move detection is a recommended follow-up.
+Identity uses a permanent media ID. Unambiguous moves of an absent source are matched by content hash; present copies remain separate items. Ambiguous matches are retained rather than guessed. Maintenance offers a verified manual relink to an unclaimed path. Old link IDs remain aliases. Artist display labels can be changed independently of source paths.
 
 ### Models and offline placement
 
@@ -208,7 +210,7 @@ If the included archive was checked out from a Git repository already, skip `git
 
 ### File index and NAS tolerance
 
-The index remains JSON-based for simplicity and startup speed. An unavailable SMB/NAS directory is recorded as a scan error and no longer causes existing catalog entries to be deleted. Source files remain read-only with the SMB overlay; beta editing requires an explicitly writable mount; thumbnails and previews live separately. If source storage goes offline, existing cached images may remain visible, but opening original videos/files can fail until the source returns. Full-time availability is not a design goal.
+The catalog is durable SQLite; SQL handles filtering, ordering and paging while an in-memory record map supports existing media routes. An unavailable SMB/NAS directory is recorded as offline and missing files are retained with their history. Posters/basic metadata become available before preview generation and analysis. Source files remain read-only with the SMB overlay; editing/publication requires a writable mount. Existing cached media may remain visible while originals are offline.
 
 ## Quick start (Docker)
 
@@ -515,11 +517,11 @@ public/
   styles.css              theme tokens and all UI states
 ```
 
-Derivatives (thumbnails, posters, preview clips) are cached under
-`CACHE_DIR`, keyed by a content fingerprint that also covers your size and
-detection settings — so a rescan only reprocesses files that actually
-changed, and changing any of those settings reprocesses everything exactly
-once to pick it up.
+Derivatives (thumbnails, posters, preview clips) are cached under `CACHE_DIR`.
+Content versions and per-stage processing recipes are separate. A changed
+preview size rebuilds that stage without invalidating a saved enhancement
+of unchanged source bytes. Replacements are generated separately and
+promoted only after successful processing; failures retain existing previews.
 
 ## Why a rewrite, and not a fork
 
@@ -561,7 +563,7 @@ Activity is recorded in `DATA_DIR/library.sqlite`: the media path and ID, an ano
 
 ### Optional enhancement
 
-Open a video and choose **Enhance video**. Nothing is enhanced merely by browsing. Choose smoothing, upscaling, or both, then **Start saved enhancement**. The original is never replaced. Completed jobs offer playback and download of a separate MP4 with audio preserved (AAC). Jobs continue after closing the browser and can be paused/resumed in Settings.
+Open a video and choose **Enhance video**. Nothing is enhanced merely by browsing. Choose smoothing, upscaling, or both, render a selected five-second sample, compare, then queue a full video. Completed jobs offer playback/download and explicit approval. Originals remain unchanged unless you confirm **Publish & archive original**; that separate action preserves a verified archive and supports restore. Jobs continue after closing the browser and can be paused/resumed in Settings. The [development guide](docs/DEV_TEST_1.md) specifies output policy, storage and recovery limits.
 
 * **Optical flow to 60 fps:** included in the standard installation, uses FFmpeg's motion interpolation on the CPU, no model required. This is not AI. Motion interpolation can introduce artifacts around cuts, rapid movement or occlusion.
 * **RIFE 4.6 to 60 fps:** optional AI interpolation. Download its pinned data-only model from the official [RIFE NCNN repository](https://github.com/nihui/rife-ncnn-vulkan) through Settings. Supports CPU or Vulkan graphics hardware with the optional runtime.
@@ -577,7 +579,7 @@ Each enhancement saves a source snapshot, verifies it with SHA-256, saves AI out
 
 To move work to a more powerful server:
 
-1. Stop VidStream on the old server, then copy its **entire persistent data directory/volume** (`stream-data`, mounted at `/app/data` by default), including SQLite files and the `enhancements` and `enhancement-models` directories. Copy `stream-cache` too: it holds the catalog and object detection model downloads. Keep a backup of the originals.
+1. Stop VidStream on the old server, then copy its **entire persistent data directory/volume** (`stream-data`, mounted at `/app/data` by default), including SQLite, `enhancements` and `enhancement-models`. Copy source media and the separate originals archive. Copy `stream-cache` to retain previews and object detection model downloads; the catalog now lives in the data volume.
 2. Restore both volumes on the new server, preserve the media directory layout and mount paths, install the appropriate runtime/driver, then start VidStream there. Never start both hosts with these shared files; this is a single-host migration workflow, not distributed processing. The local worker lease is an additional guard, not a shared-network-storage guarantee.
 3. Queued/interrupted running jobs resume automatically. Explicitly paused/error jobs stay paused until **Resume** is selected. Once a source snapshot is complete, that job can resume even if the original NAS is temporarily offline. A partially copied source still requires the original to finish its verified snapshot.
 

@@ -1,16 +1,21 @@
 {
   "name": "stream",
-  "version": "1.7.0",
-  "description": "A self-hosted photo and video stream. Embedded SQLite, no build step, no npm dependencies \u2014 just Node.js, ffmpeg, ImageMagick, OpenCV, and Tesseract.",
+  "version": "1.8.0-dev.1",
+  "description": "A self-hosted photo and video stream. Embedded SQLite, no frontend build step and no runtime npm dependencies.",
   "license": "MIT",
   "private": true,
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "launcher": "node scripts/vidstream-launcher.js --open",
     "test": "node --test test/*.test.js",
-    "check": "node --check server.js && node --check public/app.js && node --check public/ambient.js && node --check public/settings.js && node --check public/activity.js && node --check lib/enhancement-queue.js && node --check lib/enhancement-runtime.js && node --check lib/clean-library.js && node --check lib/security.js && node --check lib/resource-monitor.js && node --check public/resources.js && node --check public/library-layout.js && node --check public/artist-outlines.js && node --check public/library-map.js && node --check lib/handlers/library-map.js && node --check public/player-stats.js && node --check public/navigation.js && node --check public/viewer-layout.js && node --check lib/hardware-limits.js"
+    "test:browser": "node test/browser-regression.cjs",
+    "check": "node scripts/check-syntax.js"
   },
   "engines": {
     "node": ">=22.13.0"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
   }
 }

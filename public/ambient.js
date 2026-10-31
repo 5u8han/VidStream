@@ -57,6 +57,11 @@
     document.body.classList.add('has-ambient');
 
     var W = 2, H = 2;
+    var mode = opts.mode || 'full', busy = false, scrolling = false, scrollTimer = null, raf = null, lastPaint = 0;
+    canvas.hidden = mode === 'off';
+    function blocked() { return mode === 'off' || busy || scrolling || document.hidden; }
+    function wake() { if (raf === null && !blocked()) raf = requestAnimationFrame(frame); }
+    function suspend() { if (raf !== null) cancelAnimationFrame(raf); raf = null; }
     function resize() {
       W = Math.max(2, Math.round(window.innerWidth * SCALE));
       H = Math.max(2, Math.round(window.innerHeight * SCALE));
@@ -78,7 +83,8 @@
 
     function spawn(x, y, rgb, r, vx, vy, life, depth, friction) {
       spawnedTotal++;
-      if (blobs.length >= MAX_BLOBS) blobs.shift();
+      if (blocked()) return;
+      if (blobs.length >= (mode === 'subtle' ? 8 : MAX_BLOBS)) blobs.shift();
       blobs.push({
         x: x, y: y, vx: vx, vy: vy, r: r, c: rgb, life: life, depth: depth,
         fr: friction || 0.985, decay: 0.0045 + Math.random() * 0.004,
@@ -142,8 +148,11 @@
     }
 
     function frame(t) {
-      requestAnimationFrame(frame);
-      if (document.hidden) return;
+      raf = null;
+      if (blocked()) return;
+      wake();
+      if (mode === 'subtle' && t - lastPaint < 32) return;
+      lastPaint = t;
       var now = t || Date.now();
 
       // Follow theme changes (the CSS variables are the source of truth).
@@ -201,11 +210,14 @@
       var y = window.scrollY || 0;
       scrollVel += y - lastScrollY;
       lastScrollY = y;
+      scrolling = true; suspend(); clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(function () { scrolling = false; wake(); }, 180);
     }, { passive: true });
 
     window.addEventListener('pointermove', function (e) {
       mouse.x = e.clientX * SCALE;
       mouse.y = e.clientY * SCALE;
+      if (blocked()) return;
       if (mouse.ex === null) { mouse.ex = mouse.x; mouse.ey = mouse.y; }
       var dx = mouse.x - mouse.ex, dy = mouse.y - mouse.ey;
       var step = MOUSE_EMIT_PX * SCALE;
@@ -220,13 +232,17 @@
       if (e.target.closest('button, a, input, select')) return;
       spawn(e.clientX*SCALE,e.clientY*SCALE,vivid(parseColor(hoverColor||accentStr)),60*SCALE,0,0,.65,.3);
     }, {passive:true});
-    requestAnimationFrame(frame);
+    document.addEventListener('visibilitychange', function () { if (document.hidden) suspend(); else wake(); });
+    wake();
 
     api = {
       watchTile: function (tile, color) {
         tile._bgColor = color;
         if (tileObserver) tileObserver.observe(tile);
       },
+      clearTiles: function () { if (tileObserver) tileObserver.disconnect(); visibleTiles.clear(); },
+      setBusy: function (value) { busy = Boolean(value); if (busy) suspend(); else wake(); },
+      setMode: function (value) { mode = ['off','subtle','full'].includes(value) ? value : 'full'; canvas.hidden = mode === 'off'; if (mode === 'off') suspend(); else wake(); },
       setHoverColor: function (color) { hoverColor = color; lastColor = color || lastColor; },
 
       // Taps the lightbox video's audio so the background can pulse with
@@ -257,7 +273,7 @@
         if (activeSource) { try { activeSource.disconnect(); } catch (e) { /* already gone */ } }
         activeSource = null;
       },
-      debug: function () { return { blobs: blobs.length, spawned: spawnedTotal, visibleTiles: visibleTiles.size, audioLevel: audioLevel }; },
+      debug: function () { return { blobs: blobs.length, spawned: spawnedTotal, visibleTiles: visibleTiles.size, audioLevel: audioLevel, mode:mode, busy:busy, scheduled:raf !== null }; },
     };
     return api;
   }
@@ -292,6 +308,7 @@
     }
     function kick() { if (!raf) raf = requestAnimationFrame(step); }
     host.addEventListener('pointermove', function (e) {
+      if (document.documentElement.dataset.effects !== 'full') return;
       var r = host.getBoundingClientRect();
       tx = e.clientX - r.left; ty = e.clientY - r.top;
       if (!active) { active = true; cx = hx = tx; cy = hy = ty; host.classList.add('fx-on'); }

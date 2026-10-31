@@ -34,3 +34,6 @@ coverage/
 *.sqlite-shm
 
 /work/
+
+# Verified original archives live outside the gallery and stay private.
+/originals/
