@@ -179,7 +179,10 @@ try {
     assert.equal(media.type, 'bind');
     assert.equal(media.source, mediaFolder);
     assert.equal(media.read_only, true);
-    assert.equal(media.bind.create_host_path, false);
+    // Compose versions differ in whether explicit false values survive JSON
+    // serialization. Both omitted and false represent the disabled setting;
+    // an enabled host-path creation flag must never pass this check.
+    assert.notEqual(media.bind.create_host_path, true);
     assert.equal(explicit.services.stream.environment.STREAM_MEDIA_PATH, '');
     fixedContainerSettings(explicit);
     persistentVolumes(explicit);
