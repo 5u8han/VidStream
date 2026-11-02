@@ -233,8 +233,12 @@
   }
 
   async function settings(pane) {
-    if (!pane || !config.isAdmin) return;
+    if (!pane) return;
     pane.replaceChildren(); pane.classList.add('node-settings');
+    if (!config.isAdmin) {
+      text('p', 'Owner sign-in required to manage nodes. Close Settings and choose Admin sign in.', pane, 'node-help');
+      return;
+    }
     var dialog = pane.closest('dialog'), initialized = false, poll = null;
     function alive() { return pane.isConnected && (!dialog || dialog.open); }
     var status = text('p', 'Loading library connections…', pane, 'node-status');

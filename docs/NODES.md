@@ -1,6 +1,6 @@
 # Independent VidStream libraries
 
-Branch **VidStream-node**, version **1.9.0-node.1**, starts from the saved design checkpoint `4510872`. Main and the design branch are unchanged. This remains downloadable, self-hosted software serving your own locally available media. There is no central VidStream cloud, upload service or account provider.
+Branch **VidStream-node**, version **1.9.0-node.2**, remains separate from consolidated **main 1.8.0**. The original node checkpoint `303ff6f` started from design checkpoint `4510872`; that design work and the earlier development work are now in main, and their separate branches are retired. This remains downloadable, self-hosted software serving your own locally available media. There is no central VidStream cloud, upload service or account provider.
 
 ## How it works
 
@@ -43,7 +43,9 @@ These are organizational examples, not a requirement to move any files. Kubernet
 4. On your starting instance, enter the other machine under **Other library address** → **Check library**. Review its name/address/identity, then **Add to switcher**.
 5. Use **Switch library** in the top center. Sign in on the destination when requested. Signing in to one instance does not grant access to another. The browser can remember each destination's ordinary session.
 
-The saved directory and node management are owner-only in this release. A discovered or saved connection never bypasses the destination's own media access rules. There is no password field for joining because the app does not store another machine's password; sign-in happens on the destination itself.
+The saved directory and node management are owner-only in this release. Guest Settings shows Nodes with a sign-in explanation instead of hiding the category. A discovered or saved connection never bypasses the destination's own media access rules. There is no password field for joining because the app does not store another machine's password; sign-in happens on the destination itself.
+
+If Nodes seems missing after rebuilding Docker, reload the browser's gallery home page. An open tab keeps its already-loaded JavaScript. In the reported case, a forced reload made Nodes appear. Settings now shows the running version/address, owner/guest state and **Nodes included**. Versioned asset URLs refresh the scripts on a new page load. An obsolete media link also now preserves the authenticated owner role instead of hiding owner settings. See the [branch comparison and update guide](BRANCHES.md).
 
 Keep every instance's data volume independent. Git source can be the same everywhere. Do **not** clone a live node's database/security files/session secret to create another node: that copies identity and security state. A fresh installation creates its own random persistent node ID. To move one existing node to replacement hardware, stop it and move its complete state deliberately; do not run two copies of that identity simultaneously.
 
@@ -82,7 +84,7 @@ git branch --show-current
 docker compose exec stream node -p "require('./package.json').version"
 ```
 
-`git branch --show-current` prints the active local branch. `docker compose exec stream node -p "require('./package.json').version"` reads the version inside the running container without changing files; expect `1.9.0-node.1`. A Docker rebuild is required for its existing container to use changed source. For a native installation, `node -p "require('./package.json').version"` reads the checkout's version without starting the app or changing files. The new node settings use existing SQLite settings, without a catalog schema migration.
+`git branch --show-current` prints the active local branch. `docker compose exec stream node -p "require('./package.json').version"` reads the version inside the running container without changing files; expect `1.9.0-node.2`. A Docker rebuild is required for its existing container to use changed source; reload the browser afterward. For a native installation, `node -p "require('./package.json').version"` reads the checkout's version without starting the app or changing files. The new node settings use existing SQLite settings, without a catalog schema migration. Switching between main/node can require signing in again; do not remove data or reset security files to resolve that.
 
 ## Optional discovery
 
@@ -121,6 +123,8 @@ On Docker Desktop, host networking is an opt-in feature from version 4.34 with p
 - For shared viewing away from home, every selected instance needs a browser-reachable route. A VPN or your existing per-node HTTPS reverse proxy may provide that; automatic discovery remains local. There is no added central tunnel/relay service.
 
 ## Validation
+
+The `1.9.0-node.2` consolidation update passed 132 unit/integration tests, 28 common generated-media browser checks and 21 multi-server browser checks with zero page errors. New cases verify loaded build/version/address, owner Nodes on obsolete media URLs, and an explanatory guest Nodes category without private directory requests or access. Main's consolidation is kept separate and passed its own checks.
 
 Validation on November 2, 2026: JavaScript syntax checks and all 128 unit/integration tests passed. All 26 existing player/design browser checks and 17 multi-server browser checks passed with zero page errors. The Linux host-network Compose overlay parsed successfully and retained the original media/data/cache/archive mounts. No Docker image was built or deployed for this revision. The actual-LAN smoke check on this Mac failed with multicast send `EHOSTUNREACH`; this network/OS limitation is surfaced in the app. Physical NAS/Legion discovery and Docker Desktop multicast remain deployment checks, not claimed successes.
 

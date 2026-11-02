@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.9.0-node.2 — node build visibility and common fixes
+
+- Brought the consolidated main fixes into the separate node branch without merging node features into main.
+- Added visible running-version/server/owner information and versioned assets; an existing tab must be reloaded after updates.
+- Preserved owner controls on obsolete media URLs and show Nodes with a sign-in explanation for guest views while retaining private API checks.
+- Updated guidance for the two remaining branches.
+
 ## 1.9.0-node.1 — VidStream-node
 
 - Added independent library nodes with persistent identities, saved connection directories and a top-center library switcher. Browsers stream directly from the selected server, without a central media proxy or shared catalog.
@@ -8,6 +15,14 @@
 - Scoped new session cookies/tokens to each instance so independent logins on the same hostname at different ports coexist. Existing sessions can migrate; malformed unrelated cookies no longer break authentication.
 - Kept the native launcher stopped when a late child readiness message arrives during/after shutdown.
 - Added portable manual-connection guidance, an optional Linux host-network Compose overlay, isolated multi-server browser tests and an optional actual-LAN smoke check. Automatic discovery remains dependent on OS/network/Docker multicast support.
+
+## 1.8.0 — consolidated main
+
+- Consolidated the already-merged development work and tested design checkpoint into main; node development stays separate.
+- Added a visible Settings build/version, server address and owner/guest indicator, plus versioned stylesheet/script URLs. Existing browser tabs still need a reload after server updates.
+- Fixed obsolete media links rendering authenticated owners as guests and hiding owner Settings categories. Guest private/missing links remain indistinguishable.
+- Shared the non-node malformed-cookie and late-launcher-readiness fixes with main; node discovery, connections and scoped node sessions remain separate.
+- Compared main, Dev and Design using the same generated-media browser checks; gallery/player geometry remains unchanged.
 
 ## 1.8.0-design.1 — VidStream-Design-Test-1
 

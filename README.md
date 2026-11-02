@@ -11,13 +11,17 @@ because that project (great as it is) only handles photos. Video needed a
 different foundation, not a bolt-on — see [Why a rewrite](#why-a-rewrite-and-not-a-fork)
 below.
 
-## Multiple machines: independent libraries
+## Multi-machine testing
 
-This branch is **VidStream-node**, version **1.9.0-node.1**, based on the saved design checkpoint. Run the same app on each machine with its own media and data. **Settings → Nodes** adds other servers by address or reviews optional nearby discovery; the top-center **Switch library** opens the selected machine directly. Each destination retains its own sign-in. Media is not copied, pooled or proxied through a central server. Read the [multi-machine setup guide](docs/NODES.md) for the two-machine walkthrough, Docker/network details and explained update commands.
+This branch is **VidStream-node**, version **1.9.0-node.2**. It includes the consolidated main fixes plus independent libraries, optional discovery and the top-center switcher. Main remains the single-library version **1.8.0**. The former Dev/Design branches are retired; only main and VidStream-node remain. Read the [node setup guide](docs/NODES.md) for adding machines, and [branch/update guide](docs/BRANCHES.md) for comparison and explained commands.
 
-## Design checkpoint: first visits and fresh logins
+## Main and node development
 
-The separate **VidStream-Design-Test-1** branch, version **1.8.0-design.1**, is the saved design checkpoint. Its sign-in, loading, welcome and first-visible-media entrances are retained here. Read the [design test guide](docs/DESIGN_TEST_1.md) for lifecycle behavior. Further design work is paused while node switching is developed separately.
+**main**, version **1.8.0**, contains the consolidated development and design work. **VidStream-node** remains separate for multi-machine libraries. The old Dev and Design branches have been incorporated into main and retired. Read the [branch comparison and update guide](docs/BRANCHES.md) for the tested differences and explained commands.
+
+Settings shows the running version, server address, owner/guest state and whether Nodes is included. After rebuilding/recreating a container, reload the browser page: an already-open tab continues running its previously loaded JavaScript. Styles and scripts carry versioned URLs on the next page load. Git source changes do not automatically replace code loaded in an open browser tab.
+
+The sign-in, loading, welcome and first-visible-media entrances are included in main. Read the [design behavior guide](docs/DESIGN_TEST_1.md) for the once-per-visit/login lifecycle. Media, processing settings and Docker volumes retain their existing behavior.
 
 ## Browsing, catalog and saved processing
 

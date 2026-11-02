@@ -13,6 +13,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const { once } = require('node:events');
 const { setTimeout: delay } = require('node:timers/promises');
 const { chromium } = require(process.env.STREAM_PLAYWRIGHT || 'playwright');
+const { version: expectedVersion } = require('../package.json');
 
 const root = path.resolve(__dirname, '..');
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'vidstream-node-browser-'));
@@ -166,6 +167,11 @@ async function run() {
   page.on('pageerror', error => report.pageErrors.push(error.message));
   await page.goto(a.url, { waitUntil: 'domcontentloaded' }); await gallery();
   await openNodesSettings();
+  const ownerBuild = await page.locator('.settings-build-info').innerText();
+  assert.ok(ownerBuild.includes('VidStream ' + expectedVersion));
+  assert.ok(ownerBuild.includes('Signed in as owner') && ownerBuild.includes('Nodes included'));
+  assert.ok(ownerBuild.includes(a.url), 'Settings identifies the actual running origin');
+  report.checks.push('owner settings identify running version, origin and included node support');
   await page.getByLabel('Library name', { exact: true }).fill('Wedding NAS');
   await page.getByLabel('This library address', { exact: true }).fill(a.url);
   await page.getByRole('button', { name: 'Save library settings', exact: true }).click();
@@ -176,6 +182,50 @@ async function run() {
   await until(async () => (await json(a, '/api/nodes')).peers.some(peer => peer.id === b.id && peer.url === b.url), 'Verified peer saved');
   await closeSettings();
   report.checks.push('manual address verification and owner-approved saved switcher entry', 'separate catalogs retain their own media');
+
+  // A stale media URL must not downgrade a valid owner session's UI to guest.
+  const missingLink = await page.goto(a.url + '/removed-node-test-link', { waitUntil: 'domcontentloaded' });
+  assert.equal(missingLink.status(), 404);
+  await gallery();
+  await openNodesSettings();
+  assert.ok((await page.locator('.settings-build-info').innerText()).includes('Signed in as owner'));
+  await page.getByLabel('Other library address', { exact: true }).waitFor();
+  await closeSettings();
+  await page.goto(a.url, { waitUntil: 'domcontentloaded' }); await gallery();
+  report.checks.push('authenticated dead media links retain owner Nodes settings');
+
+  // This changes only the generated fixture's access setting. A guest should
+  // discover the feature, without receiving the private directory or controls.
+  const sharedPhoto = (await json(a, '/api/items')).items.find(item => item.type === 'photo');
+  const guest = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  try {
+    await json(a, '/api/items/' + encodeURIComponent(sharedPhoto.id) + '/visibility', { guest: true });
+    await json(a, '/api/settings', { requireLogin: false });
+    const guestPage = await guest.newPage(), nodeRequests = [];
+    guestPage.on('pageerror', error => report.pageErrors.push(error.message));
+    guestPage.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/nodes')) nodeRequests.push(request.url()); });
+    await guestPage.goto(a.url, { waitUntil: 'domcontentloaded' }); await gallery(guestPage);
+    assert.deepEqual(await guestPage.locator('#grid .tile').evaluateAll(tiles => tiles.map(tile => tile._item.filename)), [sharedPhoto.filename]);
+    await guestPage.getByRole('button', { name: 'Settings', exact: true }).click();
+    const guestBuild = await guestPage.locator('.settings-build-info').innerText();
+    assert.ok(guestBuild.includes('VidStream ' + expectedVersion) && guestBuild.includes('Guest view') && guestBuild.includes('Nodes included'));
+    await guestPage.locator('.settings-category[aria-controls="settings-nodes"]').click();
+    const guestPane = guestPage.locator('#settings-nodes');
+    await guestPane.getByText('Owner sign-in required to manage nodes. Close Settings and choose Admin sign in.', { exact: true }).waitFor();
+    assert.equal(await guestPane.getByLabel('Other library address', { exact: true }).count(), 0);
+    assert.equal(await guestPane.locator('input,button,a').count(), 0);
+    assert.deepEqual(nodeRequests, [], 'Guest Nodes UI does not fetch any private node directory');
+    const directoryResponse = await guest.request.get(a.url + '/api/nodes');
+    assert.equal(directoryResponse.status(), 403);
+    assert.deepEqual(Object.keys(await directoryResponse.json()), ['error']);
+    assert.equal((await guest.request.post(a.url + '/api/nodes/remove', { data: { id: b.id } })).status(), 403);
+    assert.ok((await json(a, '/api/nodes')).peers.some(peer => peer.id === b.id), 'A guest cannot alter a saved connection');
+    report.checks.push('guest settings show Nodes and a clear owner-sign-in explanation', 'guest visibility preserves media filtering and private node API permissions');
+  } finally {
+    await guest.close();
+    await json(a, '/api/settings', { requireLogin: true });
+    await json(a, '/api/items/' + encodeURIComponent(sharedPhoto.id) + '/visibility', { guest: false });
+  }
 
   const trigger = await switcher();
   const bounds = await trigger.boundingBox();
