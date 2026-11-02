@@ -10,11 +10,9 @@ rclone.conf
 *.pem
 *.key
 
-# Never push personal media. Docker's default mount points at ./media.
-/media/*
-!/media/original/
-/media/original/*
-!/media/original/.gitkeep
+# Never push personal media, even if a local user creates this folder.
+# Docker media mounts are explicitly chosen by the operator.
+/media/
 
 # Python / editor / system outputs
 __pycache__/

@@ -1,12 +1,12 @@
 # Design behavior included in main
 
-The former **VidStream-Design-Test-1** checkpoint (`4510872`, version `1.8.0-design.1`) is now included in **main**, version **1.8.0**. The separate design branch has been retired; use main for these behaviors. Node development remains on VidStream-node.
+The former **VidStream-Design-Test-1** checkpoint (`4510872`, version `1.8.0-design.1`) is included in official **main 1.9.0**, together with the reviewed node work. The separate design branch has been retired. VidStream-node remains available for isolated future experiments.
 
 ## Permanent direction
 
 VidStream remains software people clone/download and run on their own machines, serving locally available media for easy viewing/sharing. It must not become a centrally operated service accepting media uploads into our cloud. Future plans should be checked against this goal.
 
-Multiple self-hosted nodes with distinct libraries and quick switching in the same interface are planned for a later revision. This design test does not create/discover/connect nodes or combine libraries.
+The original design checkpoint did not create/discover/connect nodes. Later node work is now included in official main; see [Nodes](NODES.md) for independent library switching. Neither design effects nor node switching combines disks, credentials or catalogs.
 
 ## The first experience
 
@@ -29,7 +29,7 @@ This identifies a **browser profile and site origin**, not physical hardware. An
 
 ## Use the consolidated main branch
 
-From your existing VidStream checkout, save any local source edits before switching. Keep your media paths and `.env` in place.
+From your existing VidStream checkout, save any local source edits before switching. Keep your media paths and `.env` in place. Before the first 1.9 Docker recreation, follow [storage upgrade steps](BRANCHES.md#retain-existing-storage-before-rebuilding): keep existing media/originals binds explicitly, because the base defaults changed.
 
 ```sh
 git fetch origin
@@ -41,7 +41,7 @@ docker compose up -d --build
 - `git fetch origin` downloads Git history and branch references; it does not alter working files, media, configuration or Docker data.
 - `git switch main` selects the consolidated main branch and updates tracked source files. It leaves ignored media/configuration and Docker volumes in place and refuses conflicting local edits.
 - `git pull --ff-only` updates the selected branch only if no merge is needed; it does not discard local changes or delete media/configuration/volumes.
-- `docker compose up -d --build` rebuilds the application from this branch and starts/recreates it in the background. It retains configured media mounts, `.env`, and named cache/data volumes. No volume removal command is needed.
+- `docker compose up -d --build` rebuilds the application and starts/recreates it in the background using the selected Compose configuration. It retains named volumes; include your existing local media/originals override before running it. No volume removal command is needed.
 
 To verify the selected source version:
 
@@ -50,7 +50,7 @@ git branch --show-current
 docker compose exec stream node -p "require('./package.json').version"
 ```
 
-`git branch --show-current` prints the active local branch. `docker compose exec stream node -p "require('./package.json').version"` reads the package version inside the running container without changing files; expect `1.8.0` on main. For native deployments, `node -p "require('./package.json').version"` reads the checkout's package version without starting the app or changing files. Rebuilding is required for an existing Docker container to use changed source files; reload the browser afterward.
+`git branch --show-current` prints the active local branch. `docker compose exec stream node -p "require('./package.json').version"` reads the package version inside the running container without changing files; expect `1.9.0` on main. For native deployments, `node -p "require('./package.json').version"` reads the checkout's package version without starting the app or changing files. Rebuilding is required for an existing Docker container to use changed source files; reload the browser afterward.
 
 Check a new browser profile, sign out/in, then reopen a still-authenticated browser. Try keyboard navigation, a narrow phone-sized window, all viewing themes and reduced motion. Generated test clips cannot establish physical-device playback performance on a large personal library.
 

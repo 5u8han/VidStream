@@ -9,15 +9,44 @@ services:
     # Or, once published: image: yourname/stream:latest
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      # Standard HTTP on the host; Node still listens on 4000 internally.
+      # Set STREAM_HTTP_PORT=8080 in .env if 80 is already occupied.
+      - "${STREAM_HTTP_PORT:-80}:4000"
     volumes:
-      - ./media:/media/original
       - stream-cache:/app/.cache
       - stream-data:/app/data
-      - ./originals:/app/originals
+      - stream-originals:/app/originals
+      # Choose your own existing host folder: set STREAM_MEDIA_PATH in .env,
+      # then uncomment this entire block. No repository media folder is used.
+      # - type: bind
+      #   source: ${STREAM_MEDIA_PATH:?Set STREAM_MEDIA_PATH to an existing absolute media folder}
+      #   target: /media/original
+      #   read_only: true
+      #   bind:
+      #     create_host_path: false
+      # Read-only permits viewing/enhancement copies, but not Quick edit or
+      # Publish & archive original. Set read_only: false only to allow writes.
+      # Existing installs: retain any previous /app/originals host bind in a
+      # local override until its archives have been deliberately migrated.
+      # Optional custom archive folder (outside your media tree):
+      # Comment the stream-originals entry above before enabling this block.
+      # - type: bind
+      #   source: ${STREAM_ORIGINALS_PATH:?Set STREAM_ORIGINALS_PATH to an existing archive folder}
+      #   target: /app/originals
+      #   bind:
+      #     create_host_path: false
     environment:
+      # PORT/HOST/MEDIA_DIR/CACHE_DIR in .env are native-run settings.
+      # Docker uses stable internal paths/port, independent of host choices.
+      PORT: "4000"
+      HOST: "0.0.0.0"
+      MEDIA_DIR: /media/original
+      CACHE_DIR: /app/.cache
       DATA_DIR: /app/data
       ORIGINALS_DIR: /app/originals/original
+      # These host-only Compose variables need not reach the app via env_file.
+      STREAM_MEDIA_PATH: ""
+      STREAM_ORIGINALS_PATH: ""
     env_file:
       - .env
     # A hard ceiling so a leak (or just a big library under heavy
@@ -61,8 +90,16 @@ services:
     security_opt: ["apparmor:unconfined"]
     volumes:
       - ./rclone.conf:/config/rclone/rclone.conf:ro
-      - ./media:/data:shared
       - rclone-vfs-cache:/cache
+      # Optional Linux shared mount. Configure rclone first, then uncomment
+      # this block AND the stream media bind above, using the same host path.
+      # Add bind.propagation: rslave to the stream bind; see README.
+      # - type: bind
+      #   source: ${STREAM_MEDIA_PATH:?Set STREAM_MEDIA_PATH to an existing mount folder}
+      #   target: /data
+      #   bind:
+      #     create_host_path: false
+      #     propagation: rshared
     # remote:path -> replace with what you named it in `rclone config`
     # (e.g. gdrive:Photos). --vfs-cache-mode full + a max-size keeps
     # only recently-viewed originals on local disk, evicting the rest,
@@ -81,4 +118,5 @@ services:
 volumes:
   stream-data:
   stream-cache:
+  stream-originals:
   rclone-vfs-cache:

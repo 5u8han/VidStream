@@ -1,6 +1,6 @@
 # Independent VidStream libraries
 
-Branch **VidStream-node**, version **1.9.0-node.2**, remains separate from consolidated **main 1.8.0**. The original node checkpoint `303ff6f` started from design checkpoint `4510872`; that design work and the earlier development work are now in main, and their separate branches are retired. This remains downloadable, self-hosted software serving your own locally available media. There is no central VidStream cloud, upload service or account provider.
+**Main 1.9.0 is the official release and includes Nodes.** The reviewed node checkpoint was merged into main at the user's request, preserving history. **VidStream-node** remains for isolated future experiments, not as a prerequisite for connecting libraries. The former Dev/Design branches are retired. This remains downloadable, self-hosted software serving your own locally available media, without a central VidStream cloud, upload service or account provider.
 
 ## How it works
 
@@ -38,7 +38,7 @@ These are organizational examples, not a requirement to move any files. Kubernet
 ## Start with two machines
 
 1. Install/run this branch on each machine using its own media folder and its own persistent data/cache volumes. Complete owner setup or use that instance's configured sign-in.
-2. Open each machine's address from the browser/device you will actually use. For example, a NAS at `http://192.168.1.50:4000` and a Legion at `http://192.168.1.60:4000`. These are examples; use your real addresses. A DHCP reservation or stable local DNS name helps keep them consistent.
+2. Open each machine's address from the browser/device you will actually use. For example, a NAS at `http://192.168.1.50/` and a Legion at `http://192.168.1.60/`. These are examples; use your real addresses. A DHCP reservation or stable local DNS name helps keep them consistent.
 3. On each instance, open **Settings → Nodes**. Set **Library name** and **This library address** to the address other devices can open. Save it. A Docker container's private bridge address, `host.docker.internal`, or `localhost` is not a general LAN address for your phone.
 4. On your starting instance, enter the other machine under **Other library address** → **Check library**. Review its name/address/identity, then **Add to switcher**.
 5. Use **Switch library** in the top center. Sign in on the destination when requested. Signing in to one instance does not grant access to another. The browser can remember each destination's ordinary session.
@@ -51,31 +51,31 @@ Keep every instance's data volume independent. Git source can be the same everyw
 
 Removing a connection removes only a directory entry. It does not delete media, previews, jobs, credentials or databases on either machine.
 
-## Download and run this branch
+## Download and run official main
 
-For an existing checkout, save local source edits first. Keep `.env`, media mounts and persistent volumes in place.
+For an existing checkout, save local source edits first. Keep `.env`, media mounts and persistent volumes in place. Before the first 1.9 recreation, follow [storage upgrade steps](BRANCHES.md#retain-existing-storage-before-rebuilding), especially retaining an old `./originals` archive bind.
 
 ```sh
 git fetch origin
-git switch VidStream-node
+git switch main
 git pull --ff-only
 docker compose up -d --build
 ```
 
 - `git fetch origin` downloads Git history and branch references. It does not change working files, media, configuration or Docker data.
-- `git switch VidStream-node` selects this branch and updates tracked source files. Git can create a local tracking branch from the matching remote branch. It preserves ignored media/configuration and Docker volumes and refuses conflicting local edits.
+- `git switch main` selects official main and updates tracked source files. It preserves ignored media/configuration and Docker volumes and refuses conflicting local edits.
 - `git pull --ff-only` updates this selected branch only if no merge is needed. It does not discard local changes or remove media/configuration/volumes.
-- `docker compose up -d --build` rebuilds and starts/recreates this machine's application in the background. Existing configured media mounts and named data/cache volumes are retained. It does not install or update another machine.
+- `docker compose up -d --build` rebuilds and starts/recreates this machine's application in the background. It retains named volumes and uses the explicitly configured media/archive mounts. Include an existing local override in the file list; the new base file alone no longer selects the former host media/originals paths. It does not install or update another machine.
 
 For a new machine with Git/Docker already installed, choose a parent folder for the software:
 
 ```sh
-git clone --branch VidStream-node https://github.com/5u8han/VidStream.git
+git clone --branch main https://github.com/5u8han/VidStream.git
 cd VidStream
 cp .env.example .env
 ```
 
-`git clone --branch VidStream-node` creates a new software checkout of this branch; it downloads no personal media or another node's runtime state. `cd VidStream` enters that new folder. `cp .env.example .env` creates a local configuration file from defaults; use it only in this new checkout, because it would replace an existing `.env`. Configure that machine's media mount and local settings before running the Docker start command above. Generate/retain separate security state on each machine. PowerShell users can use `Copy-Item .env.example .env` instead; it likewise copies defaults and must not overwrite an existing configured file.
+`git clone --branch main` creates a new software checkout of official main; it downloads no personal media or another node's runtime state. `cd VidStream` enters that new folder. `cp .env.example .env` creates a local configuration file from defaults; use it only in this new checkout, because it would replace an existing `.env`. Set `STREAM_MEDIA_PATH` to that machine's existing media folder and enable the commented read-only media bind in Compose, as shown in the [Docker quick start](../README.md#quick-start-docker), before running the Docker start command above. No media directory layout is bundled in the repository. Without an enabled media mount, the app has an empty library. New installs use a separate `stream-originals` volume for publication archives. Generate/retain separate security state on each machine. PowerShell users can use `Copy-Item .env.example .env` instead; it likewise copies defaults and must not overwrite an existing configured file.
 
 To verify the source selected on a machine:
 
@@ -84,7 +84,7 @@ git branch --show-current
 docker compose exec stream node -p "require('./package.json').version"
 ```
 
-`git branch --show-current` prints the active local branch. `docker compose exec stream node -p "require('./package.json').version"` reads the version inside the running container without changing files; expect `1.9.0-node.2`. A Docker rebuild is required for its existing container to use changed source; reload the browser afterward. For a native installation, `node -p "require('./package.json').version"` reads the checkout's version without starting the app or changing files. The new node settings use existing SQLite settings, without a catalog schema migration. Switching between main/node can require signing in again; do not remove data or reset security files to resolve that.
+`git branch --show-current` prints the active local branch. `docker compose exec stream node -p "require('./package.json').version"` reads the version inside the running container without changing files; expect `1.9.0` on official main. A Docker rebuild is required for its existing container to use changed source; reload the browser afterward. For a native installation, `node -p "require('./package.json').version"` reads the checkout's version without starting the app or changing files. The new node settings use existing SQLite settings, without a catalog schema migration. Changing server address/origin can require signing in again; do not remove data or reset security files to resolve that.
 
 ## Optional discovery
 
@@ -100,7 +100,7 @@ Automatic candidates use the packet source IPv4 address plus declared scheme/por
 
 ## Docker, NAS and native networking
 
-The standard Compose setup with published HTTP ports is the portable baseline for NAS, Linux and Docker Desktop. Manual connections work independently of multicast. Docker Desktop's internal bridge/container IPs are generally not reachable directly from a LAN browser. [Docker Desktop networking](https://docs.docker.com/desktop/features/networking/networking-how-tos/)
+The standard Compose setup publishes host HTTP port **80** to fixed container port **4000**. `STREAM_HTTP_PORT` selects another host port when needed. The public address can omit `:80`; it must still resolve on the viewer's network. `http://submac.local/` may work where the short name `submac` does not. A real TLS proxy is required for HTTPS/443. Update saved self/peer URLs if the public port changes. This published-port setup is the portable baseline for NAS, Linux and Docker Desktop. Manual connections work independently of multicast. Docker Desktop's internal bridge/container IPs are generally not reachable directly from a LAN browser. [Docker Desktop networking](https://docs.docker.com/desktop/features/networking/networking-how-tos/)
 
 For a **Linux Docker Engine** host where you want LAN multicast, an optional overlay uses host networking. Use a recent Compose version that understands `!reset`. First inspect the configuration:
 
@@ -109,7 +109,7 @@ docker compose -f docker-compose.yml -f docker-compose.nodes-host.yml config --q
 docker compose -f docker-compose.yml -f docker-compose.nodes-host.yml up -d --build
 ```
 
-`config --quiet` validates the combined Compose files without starting or changing containers. `up -d --build` applies the Linux host-network overlay, rebuilds and starts/recreates VidStream. This changes network isolation: HTTP and discovery use the host's ports directly and the overlay clears port publishing. Existing media mounts and data/cache volumes remain inherited from the base file; it does not delete them. An occupied host port must be resolved before starting. Do not use this overlay merely for manual connections.
+`config --quiet` validates the combined Compose files without starting or changing containers. `up -d --build` applies the Linux host-network overlay, rebuilds and starts/recreates VidStream. This changes network isolation: HTTP and discovery use the host's ports directly and the overlay clears port publishing. In that mode the overlay sets the app's listening port from `STREAM_HTTP_PORT` (80 by default); choose an available permitted port if necessary. Existing media mounts and data/cache volumes remain inherited from the base file; it does not delete them. An occupied host port must be resolved before starting. Do not use this overlay merely for manual connections.
 
 On Docker Desktop, host networking is an opt-in feature from version 4.34 with platform limitations. Multicast behavior still needs testing there; the Linux overlay is not a promise of automatic discovery on macOS/Windows. On Synology, availability depends on its container tooling/network mode; start with published HTTP and manual connections. Native VidStream can use the host network directly; its launcher must have **Allow devices on the local network to connect** enabled. The app cannot grant OS/VM/router permissions from its web menu. [Docker host networking](https://docs.docker.com/engine/network/drivers/host/), [Compose merge/reset behavior](https://docs.docker.com/reference/compose-file/merge/)
 
@@ -124,9 +124,9 @@ On Docker Desktop, host networking is an opt-in feature from version 4.34 with p
 
 ## Validation
 
-The `1.9.0-node.2` consolidation update passed 132 unit/integration tests, 28 common generated-media browser checks and 21 multi-server browser checks with zero page errors. New cases verify loaded build/version/address, owner Nodes on obsolete media URLs, and an explanatory guest Nodes category without private directory requests or access. Main's consolidation is kept separate and passed its own checks.
+The `1.9.0-node.2` consolidation update passed 132 unit/integration tests, 28 common generated-media browser checks and 21 multi-server browser checks with zero page errors. New cases verify loaded build/version/address, owner Nodes on obsolete media URLs, and an explanatory guest Nodes category without private directory requests or access. That tested checkpoint is now included in official main. Current release verification is recorded in the changelog.
 
-Validation on November 2, 2026: JavaScript syntax checks and all 128 unit/integration tests passed. All 26 existing player/design browser checks and 17 multi-server browser checks passed with zero page errors. The Linux host-network Compose overlay parsed successfully and retained the original media/data/cache/archive mounts. No Docker image was built or deployed for this revision. The actual-LAN smoke check on this Mac failed with multicast send `EHOSTUNREACH`; this network/OS limitation is surfaced in the app. Physical NAS/Legion discovery and Docker Desktop multicast remain deployment checks, not claimed successes.
+Historical `1.9.0-node.1` validation on November 2, 2026: JavaScript syntax checks and all 128 unit/integration tests passed. All 26 existing player/design browser checks and 17 multi-server browser checks passed with zero page errors. The Linux host-network Compose overlay parsed successfully and retained the original media/data/cache/archive mounts. No Docker image was built or deployed during that historical test run. A later `1.9.0-node.2` local deployment was separately verified; it does not establish physical multi-machine discovery. The actual-LAN smoke check on this Mac failed with multicast send `EHOSTUNREACH`; this network/OS limitation is surfaced in the app. Physical NAS/Legion discovery and Docker Desktop multicast remain deployment checks, not claimed successes.
 
 The isolated multi-server Chromium test starts independent temporary runtimes with generated photo/video media. It verifies manual joining, direct-origin playback, independent logins on one hostname, the locked destination/return link, outage/restart recovery, mobile layout, removal without media deletion, and a replacement server at the same address with a different identity. It does not touch personal media, real `.env`, persistent app data or Docker volumes.
 

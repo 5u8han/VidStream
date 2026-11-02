@@ -11,17 +11,13 @@ because that project (great as it is) only handles photos. Video needed a
 different foundation, not a bolt-on — see [Why a rewrite](#why-a-rewrite-and-not-a-fork)
 below.
 
-## Multi-machine testing
+## Official release and development
 
-This branch is **VidStream-node**, version **1.9.0-node.2**. It includes the consolidated main fixes plus independent libraries, optional discovery and the top-center switcher. Main remains the single-library version **1.8.0**. The former Dev/Design branches are retired; only main and VidStream-node remain. Read the [node setup guide](docs/NODES.md) for adding machines, and [branch/update guide](docs/BRANCHES.md) for comparison and explained commands.
+**main**, version **1.9.0**, is the official release and includes the consolidated catalog, player, design and independent-library node work. **VidStream-node** remains available for isolated future node experiments; users do not need it to connect libraries. Only these two development branches remain. Read the [node setup guide](docs/NODES.md) for adding machines and the [branch/update guide](docs/BRANCHES.md) for explained upgrade commands.
 
-## Main and node development
+Settings shows the running version, server address, owner/guest state and whether Nodes is included. After recreating a container, reload the browser: an open tab continues running its already-loaded JavaScript. Source, container and browser versions are separate states.
 
-**main**, version **1.8.0**, contains the consolidated development and design work. **VidStream-node** remains separate for multi-machine libraries. The old Dev and Design branches have been incorporated into main and retired. Read the [branch comparison and update guide](docs/BRANCHES.md) for the tested differences and explained commands.
-
-Settings shows the running version, server address, owner/guest state and whether Nodes is included. After rebuilding/recreating a container, reload the browser page: an already-open tab continues running its previously loaded JavaScript. Styles and scripts carry versioned URLs on the next page load. Git source changes do not automatically replace code loaded in an open browser tab.
-
-The sign-in, loading, welcome and first-visible-media entrances are included in main. Read the [design behavior guide](docs/DESIGN_TEST_1.md) for the once-per-visit/login lifecycle. Media, processing settings and Docker volumes retain their existing behavior.
+The current sign-in, loading, welcome and first-visible-media entrances are included in main. Their [once-per-visit/login lifecycle](docs/DESIGN_TEST_1.md) is unchanged in this release; further animation work remains separate.
 
 ## Browsing, catalog and saved processing
 
@@ -35,11 +31,13 @@ If hardware settings report 2 GiB, the default Compose container ceiling is the 
 
 Video playback uses the browser's native controls and original file through HTTP range requests, which allow seeking without downloading the entire file first. The player adds a **0.25×–2× speed selector** and **Stats for nerds** (chart icon). Stats reuse the library/dashboard dock as the player footer and return it to normal after closing. They display file resolution, player viewport, source FPS when known, measured presented FPS, dropped/total frames, buffered seconds, playback speed/state, codecs, and original/enhanced source. Presented FPS is measured from browser frame callbacks; older browsers show an explicitly estimated value or unavailable counters. This is client playback telemetry, separate from the server resource dashboard. Stats run only while enabled in an open video and the choice stays local to that browser.
 
-Enhancement is a separate saved processing job; opening a video does not automatically upscale or smooth it. Render a five-second sample, compare it with the original, then queue a full version. Approving selects a separate saved result as the default player source. The additional **Publish & archive original** action explicitly replaces the hosting file and retains a verified original and recovery journal under `./originals/original` by default, outside `./media`. This action requires its own confirmation.
+Enhancement is a separate saved processing job; opening a video does not automatically upscale or smooth it. Render a five-second sample, compare it with the original, then queue a full version. Approving selects a separate saved result as the default player source. The additional **Publish & archive original** action explicitly replaces the hosting file and retains a verified original and recovery journal outside the media tree: `/app/originals/original` in Docker's persistent `stream-originals` volume by default, or `./originals/original` natively. This action requires its own confirmation.
 
 ## Operate enhancement from the web
 
 ### Start or upgrade
+
+New installations should first follow [Quick start](#quick-start-docker). Existing installations must retain their media mount and any old host-bound originals archive; see [upgrade storage](docs/BRANCHES.md#retain-existing-storage-before-rebuilding).
 
 ```sh
 git pull --ff-only
@@ -48,7 +46,7 @@ docker compose up -d --build
 
 `git pull --ff-only` downloads the current branch's committed updates and applies them only when no merge is needed. `docker compose up -d --build` rebuilds and starts/recreates the application in the background with the current configuration; it retains the media mounts and named data/cache volumes.
 
-Keep both persistent volumes. No special **enhancement** build flag is required anymore. If no password or LDAP is configured, the library is locked until owner setup is complete. Obtain the one-time owner setup code from `docker compose logs stream`, open the site, and create an owner username and a passphrase of at least 10 characters. The passphrase is stored as a salted scrypt hash under `DATA_DIR/security.json`; the one-time code is removed after setup. **Logout now returns to the sign-in screen**, rather than granting admin again. Existing `ADMIN_PASSWORD`/LDAP deployments keep their authentication. Settings → Security controls whether the whole library requires sign-in or explicitly guest-visible media can be browsed publicly. Keep HTTPS for remote access. If the local owner passphrase is lost, stop the server, move `DATA_DIR/security.json` to a private backup, and restart to create a new owner using the new setup code. This requires filesystem control and invalidates old sessions; media and library preferences remain in place.
+Keep data, cache and originals storage. No special **enhancement** build flag is required anymore. If no password or LDAP is configured, the library is locked until owner setup is complete. Use `docker compose logs stream` to read the container's startup logs without changing files; they include the private one-time owner setup code. Open the site, and create an owner username and a passphrase of at least 10 characters. The passphrase is stored as a salted scrypt hash under `DATA_DIR/security.json`; the one-time code is removed after setup. **Logout now returns to the sign-in screen**, rather than granting admin again. Existing `ADMIN_PASSWORD`/LDAP deployments keep their authentication. Settings → Security controls whether the whole library requires sign-in or explicitly guest-visible media can be browsed publicly. Keep HTTPS for remote access. If the local owner passphrase is lost, stop the server, move `DATA_DIR/security.json` to a private backup, and restart to create a new owner using the new setup code. This requires filesystem control and invalidates old sessions; media and library preferences remain in place.
 
 ### How enhancement works
 
@@ -89,7 +87,7 @@ Hardware references: [NVIDIA RTX 5090 specifications](https://www.nvidia.com/en-
 
 ### Update an existing deployment
 
-Keep your existing `.env`, media mount, and `stream-cache` volume. Merge any local Compose customization when pulling:
+Keep your existing `.env`, media mount, data/cache volumes and originals archive. Read the [storage upgrade steps](docs/BRANCHES.md#retain-existing-storage-before-rebuilding) before the first 1.9 rebuild; the old implicit media/originals host binds are no longer defaults. Merge local Compose customization deliberately when pulling:
 
 ```sh
 git pull --ff-only
@@ -97,11 +95,13 @@ git pull --ff-only
 docker compose up -d --build
 ```
 
-Compose uses `stream-data:/app/data` with `DATA_DIR=/app/data`. The catalog, permanent media identities, variants, favorites, activity and jobs live in SQLite with WAL journaling. Existing JSON catalog records import once; the JSON file is no longer authoritative. Derivatives remain in `stream-cache` and can be rebuilt. The SQLite file must stay on local storage rather than an SMB/NFS share. Compose also mounts `./originals:/app/originals` for publication archives; keep that directory when replacing application files.
+`git pull --ff-only` updates source only if no merge is needed and preserves local changes. `docker compose up -d --build` rebuilds/recreates the configured app in the background; it retains the selected mounts and named volumes. `VIDEO_PREVIEW_FPS=60` is a configuration value, not another command.
+
+Compose uses `stream-data:/app/data` with `DATA_DIR=/app/data`. The catalog, permanent media identities, variants, favorites, activity and jobs live in SQLite with WAL journaling. Existing JSON catalog records import once; the JSON file is no longer authoritative. Derivatives remain in `stream-cache` and can be rebuilt. The SQLite file must stay on local storage rather than an SMB/NFS share. New Compose installs use `stream-originals:/app/originals` for publication archives. If an older deployment used `./originals:/app/originals`, keep that exact host bind in a local override so existing archives and recovery journals remain reachable. Changing the default does not move old archives; never delete them when replacing source files.
 
 Without Compose, set `DATA_DIR` to a persistent local directory (default: `CACHE_DIR/library-data`). Node **22.13+** is required. When upgrading from a non-Compose 1.2 installation, retain the same `DATA_DIR` or copy its contents while Stream is stopped.
 
-**Backups:** stop Stream and back up the complete data directory/volume, cache volume, `.env`, media, and `.vidstream-originals`. Restart after the copy. Do not remove persistent volumes with `docker compose down -v`. Code updates do not erase data, but deleting a volume does. To restore an archived edit, stop Stream, consult that revision's `revision.json`, copy its `original.<ext>` back to the recorded library-relative path, then restart/rescan. Every revision retains a complete original. Automatic backup scheduling and an in-app restore browser would be useful next additions.
+**Backups:** stop Stream and back up the complete data directory/volume, cache volume, `.env`, media, the separate originals archive/volume, and `.vidstream-originals`. Restart after the copy. Do not remove persistent volumes with `docker compose down -v`. Code updates do not erase data, but deleting a volume does. To restore an archived edit, stop Stream, consult that revision's `revision.json`, copy its `original.<ext>` back to the recorded library-relative path, then restart/rescan. Every revision retains a complete original. Automatic backup scheduling and an in-app restore browser would be useful next additions.
 
 Identity uses a permanent media ID. Unambiguous moves of an absent source are matched by content hash; present copies remain separate items. Ambiguous matches are retained rather than guessed. Maintenance offers a verified manual relink to an unclaimed path. Old link IDs remain aliases. Artist display labels can be changed independently of source paths.
 
@@ -194,6 +194,8 @@ The default image **does not** install large PyTorch/Ultralytics packages or dow
 STREAM_AI_STACK=true docker compose up -d --build
 ```
 
+`STREAM_AI_STACK=true docker compose up -d --build` rebuilds the app with optional CPU detection dependencies and recreates it in the background. Existing configured media, archive and data/cache storage are retained; no model or enhancement is enabled just by this command.
+
 Open the admin dashboard. It shows supported downloadable models. Choose a model, click Download, then Save AI settings with Enable selected, then Rescan. Weights survive rebuilds in the persistent `.cache` volume; AI preferences live in the persistent `DATA_DIR` volume (legacy settings are migrated automatically). The UI does not support arbitrary model URLs or arbitrary Python execution.
 
 For Linux with an NVIDIA GPU, install NVIDIA drivers and NVIDIA Container Toolkit **on the host**. The Compose GPU overlay passes hardware into the container:
@@ -202,6 +204,8 @@ For Linux with an NVIDIA GPU, install NVIDIA drivers and NVIDIA Container Toolki
 STREAM_AI_STACK=true STREAM_AI_ACCELERATOR=cuda \
   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 ```
+
+The two environment assignments select the optional CUDA detection build; the Compose command combines the base and GPU definitions, builds and starts/recreates the app with GPU access. Keep any local media/archive override in the file list too. It retains the selected persistent storage and requires the host driver/toolkit to be ready.
 
 The dashboard shows what Docker exposes. Choose CUDA:0 after validating that the container can run CUDA-enabled PyTorch and `nvidia-smi`; otherwise choose CPU/Auto. GPU passthrough can't be activated by a webpage; it is a Docker host deployment decision. macOS Docker Desktop generally cannot pass through a Mac's Metal GPU to this Linux container. Support for ROCm/AMD/Jetson would require additional build and runtime paths.
 
@@ -220,6 +224,8 @@ git remote add origin https://github.com/YOUR_USERNAME/stream.git
 git push -u origin main
 ```
 
+`git init -b main` creates local Git metadata with a main branch. `git add .` stages non-ignored source, so inspect it before committing; it must not include media or secrets. `git status --short` displays those staged/local changes. `git commit` records the staged source locally. `git remote add origin` records your chosen GitHub repository address. `git push -u origin main` uploads that committed history and sets its tracking branch. None of these commands runs Docker or intentionally deletes media; adding/pushing a private file would publish it to that repository.
+
 If the included archive was checked out from a Git repository already, skip `git init`. Never `git add -f` a secret or personal media. Set repo visibility **private** while you check the original Claude code, local credentials and license obligations. `npm test` executes the new regression tests, and GitHub Actions runs the same checks on pushes/PRs.
 
 ### File index and NAS tolerance
@@ -228,17 +234,37 @@ The catalog is durable SQLite; SQL handles filtering, ordering and paging while 
 
 ## Quick start (Docker)
 
-```bash
-cp .env.example .env
-# edit .env — at minimum, set TITLE and URL
-mkdir -p media
-docker compose up -d
-```
+There is no bundled media directory layout. Keep your files where they already live and explicitly mount the folder you want to show.
 
-Put photos and videos in `./media` (subfolders become albums). Visit
-`http://localhost:4000`. New files are picked up automatically; if you'd
-rather trigger it by hand, POST to `/api/rescan` or use the refresh icon in
-the header.
+1. On a **new installation only**, create the local configuration:
+
+   ```sh
+   cp .env.example .env
+   ```
+
+   `cp` copies the supplied defaults to `.env`. It would replace an existing `.env`, so keep an existing installation's configuration instead. This does not copy media or change Docker data.
+2. In `.env`, set `STREAM_MEDIA_PATH` to your existing absolute media-folder path. Set `URL` to this machine's viewer-reachable address, for example `http://submac.local`. These are configuration values, not commands. In `docker-compose.yml`, uncomment the media bind example under `stream.volumes`; keep its target `/media/original`, `read_only: true` and `create_host_path: false`. A missing source path then fails clearly instead of creating an empty host folder. Existing deployment overrides can supply the mount instead; keep them in your chosen Compose file list.
+3. Build and start the application:
+
+   ```sh
+   docker compose up -d --build stream
+   ```
+
+   This builds the current source and starts/recreates only the app in the background, using your chosen media mount and persistent data/cache/originals volumes. It does not move or delete media. With no media mount enabled, the app starts with an empty library.
+
+Open `http://localhost/` on that machine, or its reachable LAN hostname/address on another device. Subfolders of the chosen source become albums; no copies into the Git checkout are needed. New files are picked up automatically when the filesystem supports watching. Use the header refresh control for a manual rescan.
+
+The read-only example supports viewing and saved enhancement outputs, but **Quick edit and Publish & archive original require an explicitly writable media mount**. Change `read_only` only if you want those actions to replace source files. Data/cache and the separate originals archive remain writable independently.
+
+Mounting under a stable container path avoids using the host's absolute path in normal media settings. It does not hide host paths from Docker administrators or protect a compromised host; authorized library information still includes media-relative paths and metadata. [Docker bind mounts](https://docs.docker.com/engine/storage/bind-mounts/)
+
+### Addresses and ports
+
+Compose publishes **HTTP port 80** by default and keeps the app's internal port fixed at **4000**. Use `http://submac/` if your LAN already resolves that hostname, or often `http://submac.local/` on Apple networks. Port publishing does not register DNS names. If port 80 is occupied (common on a NAS) or restricted by rootless Docker, set `STREAM_HTTP_PORT=8080` in `.env` and use `http://hostname:8080/`. Recreate the app after changing this value. Keep `URL` and **Settings → Nodes → This library address**, plus any saved peer addresses, aligned with the actual public address.
+
+Port 80 is the standard for HTTP. Port **443 requires real HTTPS**, normally a reverse proxy with a valid certificate; mapping plaintext HTTP onto 443 does not enable TLS. A proxy can route to container port 4000 without publishing a second public application port. Native runs retain their configurable `PORT` default of 4000; the optional Linux host-network overlay uses `STREAM_HTTP_PORT` directly because it bypasses Docker port publishing. [Compose port publishing](https://docs.docker.com/reference/compose-file/services/#ports)
+
+For deployment regression checks, `npm run test:compose` resolves temporary Compose configurations for ports, explicit mounts, overlays and existing storage. It requires Docker Compose, but starts no containers, uses no personal configuration and deletes only its temporary fixtures afterward.
 
 ### ARM and x86
 
@@ -252,8 +278,7 @@ publish a single image that runs on both:
 scripts/build-multiarch.sh yourname/stream:latest --push
 ```
 
-(The ARM half built on an x86 box runs under QEMU and is slow, mainly the
-PyTorch install — set `ENABLE_OBJECT_DETECTION=false` to skip it.)
+`scripts/build-multiarch.sh` asks Docker Buildx to build and push an ARM/x86 image under the supplied registry name. `--push` publishes it and requires registry access; it does not deploy the app or copy personal media. The ARM half on an x86 builder uses emulation and can be slow. The optional large AI build dependencies are controlled by `STREAM_AI_STACK`, not by the runtime detection toggle.
 
 ## Quick start (no Docker)
 
@@ -262,10 +287,19 @@ with OpenCV (`python3 -c "import cv2"` should not error), and `tesseract`
 on your PATH. Detection features degrade gracefully (skipped, not crashed)
 if any of these aren't installed.
 
-```bash
+Set `MEDIA_DIR` in the native `.env` to your chosen existing media folder; also choose persistent local `DATA_DIR`, `CACHE_DIR` and `ORIGINALS_DIR`. Native `PORT` defaults to 4000 and is separate from Docker's `STREAM_HTTP_PORT` publishing setting.
+
+```sh
 cp .env.example .env
+```
+
+Use `cp` only on a new installation: it creates `.env` from defaults and would overwrite an existing configuration. Edit the native paths, then start the app:
+
+```sh
 node server.js
 ```
+
+`node server.js` starts the server in this terminal with those settings; it reads the chosen library and writes derivatives/state to the configured persistent folders. It does not move source media; stop it before opening that state with another instance. The `python3 -c "import cv2"` check above only verifies the optional Python module can load.
 
 ## Deploying with Cloudflare
 
@@ -291,7 +325,7 @@ no exposed home IP, TLS handled for you.
    ADMIN_USERNAME=you
    ADMIN_PASSWORD=<long and random>
    ```
-3. `docker compose --profile tunnel up -d --build`
+3. `docker compose --profile tunnel up -d --build` builds and starts/recreates the app plus the optional outbound tunnel in the background. It retains the selected media/archive mounts and persistent volumes; keep your local Compose override included. It does not upload the library into a VidStream cloud.
 
 Session cookies get the `Secure` flag automatically when Cloudflare reports
 HTTPS. For a second gate in front of the app, add a Cloudflare Access policy to
@@ -316,28 +350,13 @@ has mature, actively-maintained backends for Google Drive, Dropbox,
 Mega, S3, and 40+ others, and mounting one as a local-looking folder means
 Stream's existing scanner just works against it — no app changes needed.
 
-```bash
-rclone config    # one-time: authenticate the remote you want (e.g. "gdrive")
-docker compose --profile remote up -d
-```
+Prefer mounting a remote with rclone **on the Docker host**, then use that existing mount as `STREAM_MEDIA_PATH` in the read-only media bind described above. VidStream still runs on your machine; remote storage is optional and is not a VidStream hosting service.
 
-The `rclone` service in `docker-compose.yml` mounts `remote:path` at
-`./media` with VFS caching enabled — recently-viewed originals stay
-cached locally for speed, older ones get evicted, and the *derivatives*
-Stream generates (thumbnails, posters — the actually-expensive-to-regenerate,
-cheap-to-store part) live in the separate `stream-cache` volume regardless.
-That combination is what keeps local disk use low without re-downloading
-constantly.
+`rclone config` opens rclone's interactive connection setup and saves credentials in its own configuration; it does not deploy VidStream or copy the library. If using it, keep that configuration private. Configure and test your host mount with rclone's own instructions before starting VidStream.
 
-The rclone mount is `--read-only`, so Stream can never modify or delete
-anything on your remote. A caveat on the sidecar container: a FUSE mount made
-inside one container and shared with another depends on Linux mount
-propagation, which Docker Desktop (macOS/Windows) doesn't support well. The
-more robust route is to run `rclone mount` on the *host* (a systemd service)
-and bind-mount that folder into Stream like any other — treat the compose
-profile as the advanced/Linux option. If your files live on a Synology/NAS
-share rather than a cloud provider, use SMB directly instead — see
-[Running on a NAS](#running-on-a-nas).
+The optional `remote` profile is an advanced Linux alternative. Its host mount example is commented out too: choose an existing shared mountpoint through `STREAM_MEDIA_PATH`, enable the rclone bind, and enable the app's media bind for the same host path. Container-to-container FUSE sharing requires deliberately configured host mount propagation; the rclone side must propagate its mount outward and the app side must receive it. An ordinary private bind is insufficient. Docker Desktop does not provide the same propagation behavior; use a host mount instead.
+
+After that explicit configuration, `docker compose --profile remote up -d` starts/recreates the configured app and rclone services in the background, retaining persistent storage. The supplied rclone mount is read-only. It uses VFS caching so recently viewed originals remain local while derivatives stay in `stream-cache`. No default `./media` folder is created or populated.
 
 Two explicit exceptions, so this isn't oversold:
 - **Google Photos** isn't supported, by anyone, anymore — Google removed
@@ -353,12 +372,7 @@ Two explicit exceptions, so this isn't oversold:
 
 ## Running on a NAS
 
-Stream only ever *reads* `MEDIA_DIR`. Everything it writes — the index,
-thumbnails, posters, preview clips, the generated session secret — goes to
-`CACHE_DIR` (the `stream-cache` Docker volume). Durable user choices live in `DATA_DIR`; beta edits archive originals beside your library in `.vidstream-originals`. (A
-test that scans, serves thumbnails and originals, downloads a zip and rescans
-leaves the media folder byte-for-byte unchanged.) Mount the library read-only
-for a hard guarantee.
+Browsing, scans and derivative generation read the source collection; previews and the session secret live in `stream-cache`, while the catalog, history and jobs live in `stream-data`. Quick edit and publication are explicit actions that can replace source files when the mount is writable. Keep the source bind read-only to prevent those writes. Publication archives use the separate `stream-originals` volume by default; Quick edit's `.vidstream-originals` revisions live alongside source media and also require write access.
 
 - **Docker runs on the Synology/QNAP/TrueNAS itself:** bind-mount the shared
   folder directly — no network filesystem involved:
@@ -369,19 +383,18 @@ for a hard guarantee.
   # .env: SMB_HOST, SMB_SHARE, SMB_USER, SMB_PASS  (a dedicated read-only account)
   docker compose -f docker-compose.yml -f docker-compose.smb.yml up -d --build
   ```
+  This Compose command combines the base service and read-only SMB mount, builds and starts/recreates them in the background, and retains data/cache/originals storage. Keep a local originals override in the file list when upgrading an older host-bound archive. It does not copy files into the checkout or write to the share.
   The Docker *host* needs `cifs-utils`. Change notifications don't cross an SMB
   mount, so the override polls (`SMB_RESCAN_MINUTES`, default 15) instead of
   watching. Avoid commas in the SMB password — they separate mount options.
 - **NFS, or an SMB share you'd rather mount yourself:** mount it on the host
-  (`mount -t nfs nas:/photos /mnt/photos`) and bind-mount that path. A symlink
+  using your OS's share-mount tools, then bind-mount that existing path. A symlink
   *on the host* works too; a symlink *inside* the container wouldn't resolve.
 
 ## Configuration
 
 Everything is a `.env` variable — see [`.env.example`](.env.example) for the
-full list with comments. Nothing is required; an empty `.env` runs with
-sensible defaults (fully public, no sign-in, detection on, three responsive
-sizes per derivative).
+full list with comments. Without a media mount the Docker app starts with an empty library. Without configured credentials or LDAP, initial owner setup locks the app until completed. Existing credentials and explicitly guest-visible sharing keep their configured behavior. Host folder selection belongs to deployment configuration; the app sees the container media path.
 
 ## Supported formats and the "unsupported" list
 
@@ -442,7 +455,7 @@ the resulting tags through `lib/scanner.js` → `lib/db.js` →
 
 Three modes, depending on what you set:
 
-1. **Nothing set** — fully public.
+1. **No configured credentials or LDAP** — locked first-time owner setup; use the private startup code to create the owner. It does not silently grant public administrator access.
 2. **`ADMIN_PASSWORD`** (optionally `ADMIN_USERNAME`) — two tiers. Signed-out
    visitors see only items you've marked guest-visible (the eye icon on a tile,
    in the lightbox, per album, or in bulk from the selection bar); signing in
@@ -520,9 +533,9 @@ lib/
   vision-faces.js          face/cat presence (calls vision/detect.py)
   vision-ocr.js            text extraction (calls the tesseract CLI)
   vision-hash.js            perceptual hashing for duplicate grouping
-  db.js                   JSON-backed in-memory index (query/paginate/sort/
-                         search/guest-visibility/duplicate-grouping)
-  auth.js                 signed-cookie admin sessions (no user accounts)
+  db.js, library-store.js  durable SQLite catalog plus in-memory media lookup
+                         (query/paginate/search/visibility/history/jobs)
+  auth.js                 owner setup, passphrase/LDAP sign-in and signed sessions
   router.js, serve-file.js, handlers/   a small hand-rolled HTTP layer,
                          including HTTP Range support for video scrubbing
 public/
@@ -557,8 +570,8 @@ That model runs into real trouble with video specifically:
   bundler-vs-platform errors on setup.
 
 Given that, extending the Ruby codebase would mean fighting its foundation
-at every step. Stream keeps the parts that made the original good — no
-database, `.env`-driven config, Docker-first, drop-files-and-go simplicity,
+at every step. Stream keeps the parts that made the original good — `.env`-driven
+config, Docker-first operation, folder-based simplicity,
 progressive-loading tiles, unique permalinks, RSS — and rebuilds the
 storage and processing model around a folder you point at (not a git repo)
 with ffmpeg/OpenCV/Tesseract as the processing dependencies, so photos and
@@ -597,6 +610,6 @@ To move work to a more powerful server:
 2. Restore both volumes on the new server, preserve the media directory layout and mount paths, install the appropriate runtime/driver, then start VidStream there. Never start both hosts with these shared files; this is a single-host migration workflow, not distributed processing. The local worker lease is an additional guard, not a shared-network-storage guarantee.
 3. Queued/interrupted running jobs resume automatically. Explicitly paused/error jobs stay paused until **Resume** is selected. Once a source snapshot is complete, that job can resume even if the original NAS is temporarily offline. A partially copied source still requires the original to finish its verified snapshot.
 
-For Docker volume migration, use `docker volume inspect` to identify your actual Compose-prefixed volume names, and back up/restore **both volumes while the application is stopped**. Do not run `docker compose down -v` during upgrades: it deletes the persistent volumes. Updating normally is `git pull --ff-only` followed by your chosen `docker compose … up -d --build` command.
+For Docker migration, `docker volume inspect` displays the storage details for a volume you name without changing it; use it to identify your actual Compose-prefixed volumes. Back up/restore data, cache and originals storage **while the application is stopped**. Do not run `docker compose down -v` during upgrades: it deletes the persistent volumes. Updating normally uses `git pull --ff-only` to advance source without merging or discarding local edits, then your chosen `docker compose … up -d --build` to rebuild/recreate the app with its existing configured storage. Retain a pre-1.9 originals host bind explicitly; see the [upgrade guide](docs/BRANCHES.md#retain-existing-storage-before-rebuilding).
 
 Durable file writes, checksums and SQLite transactions protect completed checkpoints against ordinary process/network interruptions. They cannot guarantee zero loss from damaged storage, deleted volumes, unsent browser events or a power failure during unfinished work. Maintain backups. Already completed frames/segments survive; the current unfinished frame/segment may need to be rerun. Changing enhancement options creates a separate job rather than reusing incompatible output.

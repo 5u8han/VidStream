@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.9.0 — Integrated main and explicit Docker storage
+
+- Merged the reviewed node branch into main, preserving both histories. Main is the official release with independent library switching; future node experiments can remain on VidStream-node.
+- Removed the repository media-folder skeleton and automatic host media bind. Operators explicitly enable an existing folder at the stable container path `/media/original`; the commented example is read-only and rejects missing host paths.
+- Published standard HTTP port 80 by default, configurable with `STREAM_HTTP_PORT`, while keeping the container's HTTP port at 4000. HTTPS/443 still requires proper TLS termination; hostname resolution remains a LAN responsibility.
+- Kept catalog/cache volumes and moved new installations' default archive storage to the persistent `stream-originals` volume. Existing archive binds must be retained when upgrading until deliberately migrated.
+- Updated installation, upgrade and node-address guidance. Existing private deployment overrides continue to supply external media and archives. No new animation or gallery behavior is introduced here.
+- Validation: 132 unit/integration tests, 28 common generated-media browser checks, 21 independent-library browser checks and 14 Docker configuration checks passed. Both browser suites reported zero page errors. This release was not deployed automatically; the user will pull and rebuild it.
+
 ## 1.9.0-node.2 — node build visibility and common fixes
 
 - Brought the consolidated main fixes into the separate node branch without merging node features into main.

@@ -1,6 +1,6 @@
 # Catalog and processing changes included in main
 
-The former `VidStream-Dev-Test-1` checkpoint (`f18cfd8`, version `1.8.0-dev.1`) was merged into main. Main now also includes the design work and is version `1.8.0`. The old development branch has been retired. The original pre-migration checkpoint was main v1.7.0, commit `479b1da`.
+The former `VidStream-Dev-Test-1` checkpoint (`f18cfd8`, version `1.8.0-dev.1`) was merged into main. Official main is now version `1.9.0` and also includes the design and reviewed node-library work. VidStream-node remains for isolated future experiments. The old development branch has been retired. The original pre-migration checkpoint was main v1.7.0, commit `479b1da`.
 
 These catalog, browsing and processing changes are included in main. The larger v1.6 player is restored: the card occupies 90% of browser width and height, fits media inside it, and keeps the blurred gallery scrollable around it.
 
@@ -14,7 +14,7 @@ On first startup this branch upgrades SQLite to **schema 3**. It creates a consi
 
 ## Use the branch
 
-Run these inside the existing repository after preserving data and any local source/configuration edits:
+Run these inside the existing repository after preserving data and any local source/configuration edits. Before recreating a pre-1.9 deployment, retain its existing media and originals host binds explicitly; see the [storage upgrade guide](BRANCHES.md#retain-existing-storage-before-rebuilding). The new base file has no active media bind and new installs use a named originals volume.
 
 ```sh
 git fetch origin
@@ -26,7 +26,7 @@ docker compose up -d --build
 - `git fetch origin` downloads repository history and branch pointers; it does not replace working files or media.
 - `git switch main` selects the consolidated main branch. Git refuses conflicting local edits; resolve those deliberately rather than forcing the switch.
 - `git pull --ff-only` updates that branch only when it can advance without creating a merge.
-- `docker compose up -d --build` rebuilds and starts/recreates the application in the background. It retains named data/cache volumes and existing media mounts, and starts the schema migration when the app opens the old database. Check your customized media mount before running it.
+- `docker compose up -d --build` rebuilds and starts/recreates the application in the background using the selected Compose files. It retains named volumes and starts the schema migration when the app opens an old database. Keep your local media/originals override included; implicit old host binds are no longer part of the base file.
 
 Do not remove Docker volumes to upgrade. Application files, media and durable state are separate things.
 
@@ -64,7 +64,7 @@ Presets cannot grant RAM, CPU cores or GPU access. Docker/VM limits and drivers 
 3. Compare original/result. Original controls drive both views and original audio is used. Samples cannot become the full-media default or be published.
 4. Estimate a full job after the sample, then Queue full video. Runtime estimates include queue/startup effects and are approximate. Space estimates are conservative working estimates, not reservations against unrelated processes consuming disk.
 5. Review the full result. Approve & use by default selects a separate enhanced variant and preserves the original source.
-6. Optionally confirm Publish & archive original. This writes the enhanced MP4 into the source library and retains a checksum-verified original and recovery journal outside media. File extension can change to MP4. Existing unrelated destinations are refused. Archive location defaults to `./originals/original`; Compose mounts `./originals` separately. Use `ORIGINALS_DIR` for another location outside the source tree.
+6. Optionally confirm Publish & archive original. This writes the enhanced MP4 into the source library and retains a checksum-verified original and recovery journal outside media. File extension can change to MP4. Existing unrelated destinations are refused. Native archive location defaults to `./originals/original`; new Compose installs use `/app/originals/original` in the separate persistent `stream-originals` volume. Existing host-bound originals must keep their original bind explicitly so old archives remain reachable; no automatic archive migration occurs. Use `ORIGINALS_DIR` for another location outside the media tree.
 7. Restore archived original checks both current and archived bytes before restoring the prior source. Maintenance → Recover interrupted publication conservatively rolls unfinished journaled publication/restore operations back to verified originals. Unknown/changed files remain for manual review. No recovery action deletes the archive.
 
 Publication requires writable media and archive storage. Extension-changing publication uses atomic no-overwrite hard links on the media filesystem; if that filesystem does not support the operation it fails safely, retaining its journal/archive. Ordinary same-path replacement uses an atomic rename after verification. Files changed externally during an operation are treated conservatively, but concurrent external writers should still be stopped.

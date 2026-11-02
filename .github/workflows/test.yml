@@ -20,6 +20,8 @@ jobs:
           python3 -m py_compile lib/vision/*.py
       - name: Unit tests
         run: npm test
+      - name: Docker deployment configuration
+        run: npm run test:compose
       - name: Install browser test engine
         run: npx playwright install --with-deps chromium
       - name: Browser regression checks

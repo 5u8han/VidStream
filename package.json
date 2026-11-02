@@ -1,6 +1,6 @@
 {
   "name": "stream",
-  "version": "1.9.0-node.2",
+  "version": "1.9.0",
   "description": "A self-hosted photo and video stream. Embedded SQLite, no frontend build step and no runtime npm dependencies.",
   "license": "MIT",
   "private": true,
@@ -11,6 +11,7 @@
     "test": "node --test test/*.test.js",
     "test:browser": "node test/browser-regression.cjs",
     "test:nodes": "node test/node-browser-regression.cjs",
+    "test:compose": "node test/compose-config.cjs",
     "test:node-lan": "node test/node-lan-smoke.cjs",
     "check": "node scripts/check-syntax.js"
   },

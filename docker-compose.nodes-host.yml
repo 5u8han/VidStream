@@ -6,3 +6,6 @@ services:
   stream:
     network_mode: host
     ports: !reset []
+    environment:
+      # Published ports are bypassed in host mode; listen on this host port.
+      PORT: "${STREAM_HTTP_PORT:-80}"
