@@ -11,6 +11,10 @@ because that project (great as it is) only handles photos. Video needed a
 different foundation, not a bolt-on — see [Why a rewrite](#why-a-rewrite-and-not-a-fork)
 below.
 
+## Multi-machine testing
+
+This branch is **VidStream-node**, version **1.9.0-node.2**. It includes the consolidated main fixes plus independent libraries, optional discovery and the top-center switcher. Main remains the single-library version **1.8.0**. The former Dev/Design branches are retired; only main and VidStream-node remain. Read the [node setup guide](docs/NODES.md) for adding machines, and [branch/update guide](docs/BRANCHES.md) for comparison and explained commands.
+
 ## Main and node development
 
 **main**, version **1.8.0**, contains the consolidated development and design work. **VidStream-node** remains separate for multi-machine libraries. The old Dev and Design branches have been incorporated into main and retired. Read the [branch comparison and update guide](docs/BRANCHES.md) for the tested differences and explained commands.

@@ -29,6 +29,10 @@ require('./lib/security').initializeSecurity(cfg);
 const ai = new AiManager(cfg);
 
 const db = new Db(path.join(cfg.cacheDir, 'index.json'), cfg.dataDir);
+const nodes = new (require('./lib/node-manager').NodeManager)(cfg, db.store);
+cfg.sessionCookieName = 'stream_session_' + nodes.id.replace(/-/g, '');
+Object.defineProperty(cfg, 'node', { get: () => ({ id: nodes.id, name: nodes.descriptor().name }) });
+const nodeHandlers = require('./lib/handlers/nodes').nodesHandlers(cfg, nodes);
 const coordinator = new (require('./lib/work-coordinator').WorkCoordinator)(db.store);
 if(!cfg.setupRequired)cfg.requireLogin=db.store.setting('requireLogin',cfg.requireLogin);
 const scanner = new Scanner(cfg, db, {
@@ -51,6 +55,13 @@ const maintenance = new (require('./lib/maintenance').Maintenance)(cfg,db,enhanc
 const playback = new (require('./lib/playback-service').PlaybackService)(cfg,db,coordinator);
 const workbench = require('./lib/handlers/workbench').workbenchHandlers(cfg,db,{queue:enhancements,variants,maintenance,coordinator,playback,scanner});
 const router = new Router();
+router.get('/api/node-info', nodeHandlers.info);
+router.get('/api/nodes', nodeHandlers.list);
+router.post('/api/nodes/settings', nodeHandlers.settings);
+router.post('/api/nodes/probe', nodeHandlers.probe);
+router.post('/api/nodes/add', nodeHandlers.add);
+router.post('/api/nodes/remove', nodeHandlers.remove);
+router.post('/api/nodes/refresh', nodeHandlers.refresh);
 router.get('/api/work',workbench.status);
 router.post('/api/work/preset',workbench.preset);
 router.post('/api/items/:id/enhance-estimate',workbench.estimate);
@@ -83,9 +94,9 @@ router.post('/api/items/:id/preferences', library.preferences);
 router.post('/api/items/:id/edit', library.edit);
 router.get('/health', healthHandler(cfg, db));
 router.get('/feed.xml', feedHandler(cfg, db));
-router.post('/api/setup', setupHandler(cfg));
+router.post('/api/setup', setupHandler(cfg, { onSetup: () => nodes.restartDiscovery() }));
 router.post('/api/login', loginHandler(cfg));
-router.post('/api/logout', logoutHandler());
+router.post('/api/logout', logoutHandler(cfg));
 router.get('/api/items', itemsHandler(cfg, db));
 router.get('/api/item/:id', itemHandler(cfg, db));
 router.get('/api/library-status', libraryStatusHandler(cfg, scanner));
@@ -103,7 +114,7 @@ router.get('/media/:id/:variant', mediaHandler(cfg, db));
 router.get('/', pageHandler(cfg, db));
 router.get('/:id', pageHandler(cfg, db));
 
-const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/design.css', '/entrance.js', '/social-preview.png', '/settings.js', '/activity.js', '/resources.js', '/library-layout.js', '/artist-outlines.js', '/library-map.js', '/player-stats.js', '/navigation.js', '/preview-controller.js', '/diagnostics.js', '/workbench.js']);
+const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/design.css', '/entrance.js', '/nodes.js', '/nodes.css', '/social-preview.png', '/settings.js', '/activity.js', '/resources.js', '/library-layout.js', '/artist-outlines.js', '/library-map.js', '/player-stats.js', '/navigation.js', '/preview-controller.js', '/diagnostics.js', '/workbench.js']);
 const PUBLIC_DIR = path.join(ROOT, 'public');
 
 const server = http.createServer(async (req, res) => {
@@ -130,7 +141,7 @@ const server = http.createServer(async (req, res) => {
   // REQUIRE_LOGIN: signed-out visitors can reach only the login endpoint
   // and a login-only page shell -- no gallery UI, media, API, or feed.
   if ((cfg.setupRequired || (cfg.requireLogin && authConfigured(cfg))) && !isAdmin(req, cfg)) {
-    const open = pathname === '/api/login' || pathname === '/api/setup' || pathname === '/api/logout' || pathname === '/health';
+    const open = pathname === '/api/login' || pathname === '/api/setup' || pathname === '/api/logout' || pathname === '/health' || pathname === '/api/node-info';
     if (!open) {
       if (pathname.startsWith('/api/') || pathname.startsWith('/media/') || pathname === '/feed.xml') {
         res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -172,6 +183,7 @@ async function main() {
   // long time; it must never make the entire website unavailable on startup.
   server.listen(cfg.port, cfg.host, () => {
     console.log(`[stream] ${cfg.title} listening on http://${cfg.host}:${cfg.port}`);
+    nodes.start();
     console.log('[stream] Scanning in the background...');
     scanner.scan()
       .catch((err) => console.error('[stream] Initial scan failed:', err))
@@ -193,6 +205,7 @@ let shuttingDown=false;
 async function shutdown() {
   if(shuttingDown)return;shuttingDown=true;
   resources.stop();scanner.stopWatching();
+  await nodes.stop();
   const stopped=coordinator.stop();
   const exportStopped=cleanLibrary.stop();
   const closed=new Promise(resolve=>server.close(resolve));
