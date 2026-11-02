@@ -6,6 +6,10 @@
   --motion-enter: 360ms;
   --motion-settle: cubic-bezier(.2, .75, .25, 1);
 }
+.settings-build-info { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 5px 12px; margin: 0 0 14px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: 12px; }
+.settings-build-info strong { font-weight: 600; }
+.settings-build-info span { color: var(--text-muted); }
+.settings-build-info small { grid-column: 1 / -1; color: var(--text-muted); font: 10px/1.5 var(--font-mono); overflow-wrap: anywhere; }
 
 /* A quiet frame for controls; the media retains the strongest visual weight. */
 .header .filter-select,

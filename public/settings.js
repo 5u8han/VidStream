@@ -44,7 +44,12 @@
  }
  async function open(){
   if(dialog?.open)return;
-  var body=shell('Settings'),current=dialog,tabs=node('nav',undefined,body),panes={},buttons={},active=null;tabs.className='settings-categories';tabs.setAttribute('aria-label','Settings categories');
+  var body=shell('Settings'),current=dialog;
+  var build=node('section',undefined,body);build.className='settings-build-info';build.setAttribute('aria-label','Running application');
+  node('strong','VidStream '+(config.version||'unknown version'),build);
+  node('span',config.isAdmin?'Signed in as owner':'Guest view',build);
+  node('small',location.origin+' · '+(config.features?.nodes?'Nodes included':'Single-library build'),build);
+  var tabs=node('nav',undefined,body),panes={},buttons={},active=null;tabs.className='settings-categories';tabs.setAttribute('aria-label','Settings categories');
   var descriptions={View:'Layout, player blur and playback details',Enhancement:'Hardware, models and processing',Jobs:'Saved enhancements and clean-library exports',Maintenance:'Work priorities, storage, backups and recovery',History:'Activity recording and recent views',Security:'Sign-in, access and account'};
   function show(name){active=name;tabs.hidden=!!name;Object.entries(panes).forEach(function(entry){entry[1].hidden=entry[0]!==name;});current._heading.textContent=name||'Settings';current._backButton.textContent=name?'← Settings':'Close';current._backButton.setAttribute('aria-label',name?'Back to settings':'Close settings');current.scrollTop=0;if(name){panes[name].tabIndex=-1;panes[name].focus({preventScroll:true});}else buttons[current._lastSection||'View']?.focus({preventScroll:true});}
   function root(){show(null);current._back=function(){if(current.open)current.close();};}

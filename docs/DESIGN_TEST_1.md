@@ -1,6 +1,6 @@
-# Design test 1
+# Design behavior included in main
 
-Branch: **VidStream-Design-Test-1**. Version: **1.8.0-design.1**. Based on the main checkpoint at `97672d8`; main is not changed by this branch.
+The former **VidStream-Design-Test-1** checkpoint (`4510872`, version `1.8.0-design.1`) is now included in **main**, version **1.8.0**. The separate design branch has been retired; use main for these behaviors. Node development remains on VidStream-node.
 
 ## Permanent direction
 
@@ -27,19 +27,19 @@ The first visible batch gets a short fade/8 px rise: at most 18 participants, a 
 
 This identifies a **browser profile and site origin**, not physical hardware. Another browser/profile, another server address, cleared site data or private browsing can count as a new visitor. No fingerprinting or device registry is added. Local storage keys begin `stream-entrance-v1:`; these are separate from media activity and synced viewing preferences.
 
-## Try the branch
+## Use the consolidated main branch
 
 From your existing VidStream checkout, save any local source edits before switching. Keep your media paths and `.env` in place.
 
 ```sh
 git fetch origin
-git switch VidStream-Design-Test-1
+git switch main
 git pull --ff-only
 docker compose up -d --build
 ```
 
 - `git fetch origin` downloads Git history and branch references; it does not alter working files, media, configuration or Docker data.
-- `git switch VidStream-Design-Test-1` selects this test branch and updates tracked source files. On a fresh checkout Git can create a tracking branch from the matching remote branch. It leaves ignored media/configuration and Docker volumes in place and refuses conflicting local edits.
+- `git switch main` selects the consolidated main branch and updates tracked source files. It leaves ignored media/configuration and Docker volumes in place and refuses conflicting local edits.
 - `git pull --ff-only` updates the selected branch only if no merge is needed; it does not discard local changes or delete media/configuration/volumes.
 - `docker compose up -d --build` rebuilds the application from this branch and starts/recreates it in the background. It retains configured media mounts, `.env`, and named cache/data volumes. No volume removal command is needed.
 
@@ -47,10 +47,10 @@ To verify the selected source version:
 
 ```sh
 git branch --show-current
-node -p "require('./package.json').version"
+docker compose exec stream node -p "require('./package.json').version"
 ```
 
-`git branch --show-current` prints the active local branch. The Node command reads the package version without starting the app or changing files; expect `1.8.0-design.1`. Rebuilding is required for an existing Docker container to use changed source files.
+`git branch --show-current` prints the active local branch. `docker compose exec stream node -p "require('./package.json').version"` reads the package version inside the running container without changing files; expect `1.8.0` on main. For native deployments, `node -p "require('./package.json').version"` reads the checkout's package version without starting the app or changing files. Rebuilding is required for an existing Docker container to use changed source files; reload the browser afterward.
 
 Check a new browser profile, sign out/in, then reopen a still-authenticated browser. Try keyboard navigation, a narrow phone-sized window, all viewing themes and reduced motion. Generated test clips cannot establish physical-device playback performance on a large personal library.
 

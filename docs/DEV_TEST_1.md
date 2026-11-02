@@ -1,8 +1,8 @@
-# VidStream development test 1
+# Catalog and processing changes included in main
 
-Branch: `VidStream-Dev-Test-1`. Version: `1.8.0-dev.1`. Checkpoint: main v1.7.0, commit `479b1da`.
+The former `VidStream-Dev-Test-1` checkpoint (`f18cfd8`, version `1.8.0-dev.1`) was merged into main. Main now also includes the design work and is version `1.8.0`. The old development branch has been retired. The original pre-migration checkpoint was main v1.7.0, commit `479b1da`.
 
-This is a development branch for testing the catalog, browsing and processing changes together. It has not been merged into main. The larger v1.6 player is restored: the card occupies 90% of browser width and height, fits media inside it, and keeps the blurred gallery scrollable around it.
+These catalog, browsing and processing changes are included in main. The larger v1.6 player is restored: the card occupies 90% of browser width and height, fits media inside it, and keeps the blurred gallery scrollable around it.
 
 ## Before testing with existing data
 
@@ -18,13 +18,13 @@ Run these inside the existing repository after preserving data and any local sou
 
 ```sh
 git fetch origin
-git switch VidStream-Dev-Test-1
+git switch main
 git pull --ff-only
 docker compose up -d --build
 ```
 
 - `git fetch origin` downloads repository history and branch pointers; it does not replace working files or media.
-- `git switch VidStream-Dev-Test-1` selects the dev branch. Git refuses conflicting local edits; resolve those deliberately rather than forcing the switch.
+- `git switch main` selects the consolidated main branch. Git refuses conflicting local edits; resolve those deliberately rather than forcing the switch.
 - `git pull --ff-only` updates that branch only when it can advance without creating a merge.
 - `docker compose up -d --build` rebuilds and starts/recreates the application in the background. It retains named data/cache volumes and existing media mounts, and starts the schema migration when the app opens the old database. Check your customized media mount before running it.
 

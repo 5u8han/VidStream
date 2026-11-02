@@ -94,6 +94,16 @@ async function run() {
   await page.addInitScript(() => localStorage.setItem('stream-max-previews', '8'));
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.locator('.video-tile').first().waitFor();
+  const missingPage = await page.goto('/missing-media-branch-check', { waitUntil: 'domcontentloaded' });
+  assert.equal(missingPage.status(), 404);
+  await page.locator('.video-tile').first().waitFor();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  assert.ok((await page.getByRole('region', { name: 'Running application', exact: true }).innerText()).includes('Signed in as owner'));
+  await page.locator('.settings-category[aria-controls="settings-enhancement"]').waitFor();
+  await page.keyboard.press('Escape'); await navDepth(0);
+  report.checks.push('obsolete media links retain owner settings');
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.locator('.video-tile').first().waitFor();
   const first = await page.locator('.video-tile').first().evaluate(tile => tile._item);
   await page.locator('.video-tile').first().click();
   await page.waitForFunction(() => document.querySelector('.lightbox video')?.readyState >= 1);
@@ -129,7 +139,13 @@ async function run() {
   await page.keyboard.press('Escape'); await navDepth(1); await page.keyboard.press('Escape'); await navDepth(0);
   report.checks.push('tile-local outlines', 'options Back/Forward', 'saved views');
 
-  await settingsSection('view'); await page.keyboard.press('Escape'); await navDepth(1); await page.goForward(); await navDepth(2);
+  await settingsSection('view');
+  const buildInfo = page.getByRole('region', { name: 'Running application', exact: true });
+  assert.ok((await buildInfo.innerText()).includes(require('../package.json').version));
+  assert.ok((await buildInfo.innerText()).includes('Signed in as owner'));
+  assert.ok((await buildInfo.innerText()).includes(baseURL));
+  report.checks.push('visible running version, server address and owner state');
+  await page.keyboard.press('Escape'); await navDepth(1); await page.goForward(); await navDepth(2);
   await page.keyboard.press('Escape'); await navDepth(1); await page.keyboard.press('Escape'); await navDepth(0);
   report.checks.push('settings Back/Forward');
   await page.getByRole('combobox', { name: 'Filter by type', exact: true }).selectOption('photo');

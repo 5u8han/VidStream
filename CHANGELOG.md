@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.8.0 — consolidated main
+
+- Consolidated the already-merged development work and tested design checkpoint into main; node development stays separate.
+- Added a visible Settings build/version, server address and owner/guest indicator, plus versioned stylesheet/script URLs. Existing browser tabs still need a reload after server updates.
+- Fixed obsolete media links rendering authenticated owners as guests and hiding owner Settings categories. Guest private/missing links remain indistinguishable.
+- Shared the non-node malformed-cookie and late-launcher-readiness fixes with main; node discovery, connections and scoped node sessions remain separate.
+- Compared main, Dev and Design using the same generated-media browser checks; gallery/player geometry remains unchanged.
+
 ## 1.8.0-design.1 — VidStream-Design-Test-1
 
 - Recorded the permanent self-hosted product direction: downloadable software serving the user's own locally available media.
