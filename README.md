@@ -3,15 +3,21 @@
 A self-hosted photo *and video* stream. Drop files in a folder, and they
 show up — embedded SQLite for durable library choices, no database server, no build step, no cloud dependency. Optional AI is off by default.
 
+VidStream will remain software you download/clone and run on your own machine, serving your locally available media for viewing and sharing. It is not a centrally operated media-upload/cloud-hosting service. Optional remote access still connects to your own server.
+
 Stream is a from-scratch spiritual successor to
 [waschinski/photo-stream](https://github.com/waschinski/photo-stream), built
 because that project (great as it is) only handles photos. Video needed a
 different foundation, not a bolt-on — see [Why a rewrite](#why-a-rewrite-and-not-a-fork)
 below.
 
-## Development test 1: browsing, catalog and saved processing
+## Design test 1: first visits and fresh logins
 
-This branch is **VidStream-Dev-Test-1**, version **1.8.0-dev.1**. The existing main branch remains the v1.7.0 checkpoint. Read the [development and migration guide](docs/DEV_TEST_1.md) before using an existing library: the durable catalog upgrades to SQLite schema 3 and keeps a pre-migration snapshot. Going back to v1.7 requires restoring that snapshot, not just switching code.
+This branch is **VidStream-Design-Test-1**, version **1.8.0-design.1**, based on the merged main checkpoint. It adds a refined sign-in surface, actual loading feedback, a compact welcome notice and a short entrance for the first visible media tiles. Read the [design test guide](docs/DESIGN_TEST_1.md) for lifecycle behavior and test instructions. Media, processing settings and Docker volumes keep their existing behavior. Multi-node switching belongs to a future revision.
+
+## Browsing, catalog and saved processing
+
+The browsing/catalog work from **VidStream-Dev-Test-1** has been merged into main. Read the [development and migration guide](docs/DEV_TEST_1.md) before upgrading a library older than that checkpoint: the durable catalog upgrades to SQLite schema 3 and keeps a pre-migration snapshot. Going back to v1.7 requires restoring that snapshot, not just switching code.
 
 Opening media again shows the larger centered **90% browser-width and 90% browser-height** card, as in v1.6. Media fits within that card with native controls. Scroll with the pointer over the visible gallery around the player to browse underneath; click that background, use Close, or press Escape to dismiss it. Settings → View → **Viewer background blur** adjusts the backdrop from 0–30 px immediately. Blur and the new Off/Subtle/Full effects preset stay local to each browser.
 

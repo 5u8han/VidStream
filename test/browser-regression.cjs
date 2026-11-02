@@ -14,6 +14,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const { once } = require('node:events');
 const { setTimeout: delay } = require('node:timers/promises');
 const { chromium } = require(process.env.STREAM_PLAYWRIGHT || 'playwright');
+const { checkDesignEntrance } = require('./design-browser-checks.cjs');
 
 const root = path.resolve(__dirname, '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'vidstream-browser-'));
@@ -88,6 +89,7 @@ async function run() {
   context = await browser.newContext({ baseURL, viewport: { width: 1280, height: 800 } });
   await json('/api/login', { username: 'qa', password: 'browser-regression-passphrase' });
   await until(async () => { const status = await json('/api/library-status'); return !status.scanning && status.stats.videoCount === 17 && status.stats.photoCount === 36; }, 'generated library import', 60000);
+  await checkDesignEntrance({ browser, baseURL, report });
   page = await context.newPage(); page.on('pageerror', error => report.pageErrors.push(error.message));
   await page.addInitScript(() => localStorage.setItem('stream-max-previews', '8'));
   await page.goto('/', { waitUntil: 'domcontentloaded' });

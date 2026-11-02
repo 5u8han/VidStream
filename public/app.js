@@ -4,6 +4,7 @@
   var appEl = document.getElementById('app');
   var CONFIG = JSON.parse(appEl.dataset.config || '{}');
   var INITIAL_ITEM = appEl.dataset.initial ? JSON.parse(appEl.dataset.initial) : null;
+  var entrance = window.StreamEntrance;
 
   var prefersReducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   var canHover = matchMedia('(hover: hover)').matches;
@@ -137,6 +138,7 @@
   function applyEffects(mode) {
     effectsMode = mode; storageSet('stream-effects', mode); document.documentElement.dataset.effects = mode;
     if (bg) bg.setMode(mode);
+    if (mode !== 'full') entrance?.cancel();
   }
 
   function applyTheme(theme) {
@@ -209,6 +211,7 @@
 
   renderHeader();
   renderBottomLinks();
+  entrance?.shell(header);
   if (window.StreamAmbient) {
     window.StreamAmbient.bindHoverFx(header);
     window.StreamAmbient.bindHoverFx(linksBottom);
@@ -1224,8 +1227,9 @@
   grid.style.setProperty('--gap',storageGet('stream-artist-outlines','off')==='off'?'0px':'1px');
   function updateArtistSpacing(mode) { grid.style.setProperty('--gap', mode === 'off' ? '0px' : '1px'); remeasureAndReflow(); }
   var sentinel = el('li', { class: 'sentinel' });
-  var statusEl = el('div', { class: 'grid-status' });
+  var statusEl = el('div', { class: 'grid-status', role: 'status', 'aria-live': 'polite' });
   statusEl.style.display = 'none';
+  main.appendChild(statusEl);
 
   var columnWidth = 0;
   var gridGap = 0, rowUnit = 1;
@@ -1280,7 +1284,9 @@
     state.loading = true;
     var myToken = state.loadToken;
     statusEl.style.display = 'block';
-    statusEl.textContent = 'Loading…';
+    grid.setAttribute('aria-busy', 'true');
+    if (entrance) entrance.loading(statusEl);
+    else statusEl.textContent = 'Loading…';
     var requestStarted = performance.now(), responseRecorded = false;
     return fetch(apiUrl(state.cursor))
       .then(function (r) { return r.json().then(function (data) {
@@ -1300,17 +1306,26 @@
           measureColumns();
           data.items.forEach(function (item) { addTile(item, batch); });
           grid.appendChild(batch);
+          entrance?.gallery(grid, Boolean(INITIAL_ITEM));
         }
         state.cursor = data.nextCursor;
         state.done = !data.nextCursor;
         statusEl.style.display = 'none';
+        entrance?.loaded(statusEl);
+        grid.setAttribute('aria-busy', 'false');
         state.loading = false;
         grid.appendChild(sentinel);
+        if (!INITIAL_ITEM) entrance?.welcome(appEl);
       })
       .catch(function () {
         if (!responseRecorded) window.StreamDiagnostics?.catalogResponse(requestStarted, 0);
         if (myToken !== state.loadToken) return;
-        statusEl.textContent = 'Could not load — check your connection and try again.';
+        entrance?.loaded(statusEl);
+        statusEl.textContent = 'Could not load your library. ';
+        var retry = el('button', { type: 'button', class: 'load-retry' }, 'Try again');
+        retry.onclick = loadMore;
+        statusEl.appendChild(retry);
+        grid.setAttribute('aria-busy', 'false');
         state.loading = false;
       });
   }
@@ -2074,6 +2089,7 @@
   }
 
   function openLightbox(item, fromGrid) {
+    entrance?.dismissWelcome();
     if (!lb.open) lb.returnFocus = document.activeElement;
     if(lb.open)window.StreamActivity.record(lb.item,'close');
     window.StreamActivity.record(item,'open');
@@ -2206,13 +2222,16 @@
   function buildSignInModal(opts) {
     var setup = CONFIG.setupRequired;
     var locked = Boolean(opts && opts.locked);
-    var scrim = el('div', { class: 'modal-scrim' + (locked ? ' locked' : '') });
-    var card = el('form', { class: 'modal-card' });
+    var scrim = el('div', { class: 'modal-scrim' + (locked ? ' locked' : ''), 'aria-hidden': 'true' });
+    scrim.inert = true;
+    var card = el('form', { class: 'modal-card signin-card', 'aria-label': setup ? 'Set up owner' : 'Sign in' });
     card.appendChild(el('div', { class: 'modal-mark', 'aria-hidden': 'true' }));
+    card.appendChild(el('p', { class: 'signin-eyebrow' }, 'Your media · Your machine'));
     var heading = el('h1');
     heading.textContent = locked ? CONFIG.title : 'Sign in';
     card.appendChild(heading);
     var sub = el('p', { class: 'modal-sub' }, locked ? 'This stream is private. Sign in to continue.' : 'Sign in to see the full library.');
+    sub.setAttribute('role', 'status');
     card.appendChild(sub);
     var userInput = el('input', { type: 'text', name: 'username', placeholder: 'Username', autocomplete: 'username', autocapitalize: 'none', spellcheck: 'false' });
     userInput.setAttribute('aria-label','Username');if(setup)userInput.value='owner';
@@ -2229,21 +2248,40 @@
       card.appendChild(cancel);
     }
     scrim.appendChild(card);
+    var returnFocus = null;
 
     function open() {
+      returnFocus = document.activeElement;
+      scrim.inert = false;
+      scrim.setAttribute('aria-hidden', 'false');
       scrim.classList.add('open');
+      entrance?.signIn(card);
       setTimeout(function () { userInput.focus(); }, 50);
     }
     function close() {
       if (locked) return; // the locked screen has nothing behind it to go back to
       scrim.classList.remove('open');
+      if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+      scrim.inert = true;
+      scrim.setAttribute('aria-hidden', 'true');
       input.value = '';
     }
+    card.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && !locked) {
+        event.preventDefault(); event.stopPropagation(); close();
+      } else if (event.key === 'Tab') {
+        var controls = Array.from(card.querySelectorAll('input, button')).filter(function (control) { return !control.disabled; });
+        var first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    });
     if (cancel) cancel.addEventListener('click', close);
     scrim.addEventListener('click', function (e) { if (e.target === scrim) close(); });
     card.addEventListener('submit', function (e) {
       e.preventDefault();
       submit.disabled = true;
+      submit.textContent = setup ? 'Creating owner…' : 'Signing in…';
       fetch(setup?'/api/setup':'/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2251,15 +2289,16 @@
       })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
         .then(function (res) {
-          if (res.ok) { location.reload(); return; }
+          if (res.ok) { entrance?.state.signedIn(); location.reload(); return; }
           submit.disabled = false;
+          submit.textContent = setup ? 'Create owner & lock library' : 'Sign in';
           card.classList.add('modal-shake');
           sub.textContent = res.data.error || 'Incorrect username or password.';
           input.value = '';
           input.focus();
           setTimeout(function () { card.classList.remove('modal-shake'); }, 400);
         })
-        .catch(function () { submit.disabled = false; sub.textContent = 'Something went wrong. Try again.'; });
+        .catch(function () { submit.disabled = false; submit.textContent = setup ? 'Create owner & lock library' : 'Sign in'; sub.textContent = 'Something went wrong. Try again.'; });
     });
 
     return { root: scrim, open: open, close: close };

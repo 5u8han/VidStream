@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.8.0-design.1 — VidStream-Design-Test-1
+
+- Recorded the permanent self-hosted product direction: downloadable software serving the user's own locally available media.
+- Added theme-aware sign-in polish, keyboard focus handling, real loading/error/retry feedback and a compact dismissible welcome notice without a blocking splash screen.
+- Added browser-local first-visit/fresh-login state. Successful sign-in or owner setup rearms the experience; an authenticated reload/browser reopening does not. Empty/error responses retain the first media entrance for a later usable batch.
+- Replaced repeated tile insertion animations with a bounded first-visible-batch entrance (up to 18 tiles, at most 600 ms total). Reduced motion, Data saver and Subtle/Off effects skip decoration. No new dependencies, grid spacing changes, or player size changes.
+- Added isolated lifecycle and Chromium checks. Multi-node library switching remains deferred.
+
 ## 1.8.0-dev.1 — VidStream-Dev-Test-1
 
 - Restored the larger 90% viewport player while retaining blur, native controls, background scrolling and layered navigation.

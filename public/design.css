@@ -1,0 +1,213 @@
+/* Design test: original styles informed by the local Design research.
+   Semantic theme roles, brief state feedback, and explicitly owned entrances.
+   Nothing here changes gallery geometry or promotes every tile to a layer. */
+:root {
+  --motion-feedback: 140ms;
+  --motion-enter: 360ms;
+  --motion-settle: cubic-bezier(.2, .75, .25, 1);
+}
+
+/* A quiet frame for controls; the media retains the strongest visual weight. */
+.header .filter-select,
+.header .control-launcher,
+.menu-panel .navigation-row,
+.stream-settings .settings-category {
+  transition: background-color var(--motion-feedback) ease,
+    border-color var(--motion-feedback) ease,
+    color var(--motion-feedback) ease;
+}
+.header .control-launcher:hover {
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--border));
+  background: color-mix(in srgb, var(--accent) 17%, var(--surface));
+  color: var(--text);
+}
+.header .filter-select:focus-visible,
+.signin-card input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* The sign-in surface is deliberately opaque: it must read over any media. */
+.modal-card.signin-card {
+  width: min(368px, calc(100vw - 32px));
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  flex-shrink: 0;
+  gap: 14px;
+  padding: 34px 30px 28px;
+  border-radius: 22px;
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+  box-shadow: var(--shadow), 0 24px 72px #0002;
+}
+.signin-card > * { flex-shrink: 0; }
+.signin-card .modal-mark {
+  width: 44px;
+  height: 44px;
+  margin-bottom: 2px;
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+.signin-card .modal-mark::after { inset: 13px; }
+.signin-card h1 {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 25px;
+  line-height: 1.18;
+  letter-spacing: -.035em;
+  font-weight: 600;
+}
+.signin-card .modal-sub { line-height: 1.55; }
+.signin-eyebrow,
+.entrance-eyebrow {
+  margin: 0;
+  color: var(--text-muted);
+  font: 500 10px/1.4 var(--font-mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.signin-card input {
+  min-height: 44px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--surface-2) 60%, var(--surface));
+  border-radius: 10px;
+  transition: border-color var(--motion-feedback) ease;
+}
+.signin-card input:hover { border-color: color-mix(in srgb, var(--text-muted) 60%, var(--border)); }
+.signin-card button[type="submit"] { min-height: 44px; border-radius: 10px; }
+.signin-card button[type="submit"]:disabled { cursor: wait; opacity: .65; }
+.signin-card .modal-cancel { min-height: 32px; }
+
+/* A small welcome note sits above the summary, never between grid rows.
+   It doesn't intercept gestures outside its own visible rectangle. */
+.entrance-welcome {
+  position: fixed;
+  z-index: 46;
+  left: max(16px, env(safe-area-inset-left));
+  bottom: max(100px, calc(env(safe-area-inset-bottom) + 88px));
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 32px;
+  align-items: start;
+  gap: 12px;
+  width: min(380px, calc(100vw - 32px));
+  padding: 17px 12px 17px 17px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 16px;
+  box-shadow: var(--shadow), 0 10px 36px #0002;
+}
+.entrance-welcome[hidden],
+.lb-open .entrance-welcome { display: none; }
+.entrance-mark {
+  width: 28px;
+  height: 28px;
+  margin-top: 2px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+}
+.entrance-mark::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.entrance-title {
+  display: block;
+  margin: 4px 0 5px;
+  font-size: 18px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -.025em;
+  overflow-wrap: anywhere;
+}
+.entrance-copy { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.entrance-dismiss {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font: 24px/1 var(--font-display);
+}
+.entrance-dismiss:hover { color: var(--text); background: var(--surface-2); border-color: var(--border); }
+
+/* Real loading status only; no fullscreen gate or fabricated percentage. */
+.grid-status.entrance-loading { padding: 34px 16px; }
+.entrance-loading-mark {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  margin-right: 10px;
+  vertical-align: -4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--accent) 0 3px, transparent 3.5px);
+  animation: entrance-loading-pulse 700ms ease-in-out 6;
+}
+.entrance-loading-copy { font-size: 12px; letter-spacing: -.02em; }
+.load-retry { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; padding: 8px; }
+
+/* Replace the old every-insertion tile effect with an explicit first batch.
+   JS caps the participant count and removes the class after completion. */
+.tile { animation: none; }
+.entrance-shell { animation: entrance-shell var(--motion-enter) var(--motion-settle) backwards; }
+.signin-card.entrance-card { animation: entrance-card 420ms var(--motion-settle) backwards; }
+.tile.entrance-tile {
+  animation: entrance-tile var(--motion-enter) var(--motion-settle) var(--entrance-delay, 0ms) backwards;
+}
+.entrance-welcome-reveal { animation: entrance-welcome 420ms var(--motion-settle) backwards; }
+.signin-card.modal-shake { animation: shake 320ms ease; }
+
+@keyframes entrance-shell { from { opacity: .35; } to { opacity: 1; } }
+@keyframes entrance-card {
+  from { opacity: 0; transform: translateY(10px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes entrance-tile {
+  from { opacity: .15; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes entrance-welcome {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes entrance-loading-pulse {
+  0%, 100% { opacity: .45; transform: scale(.92); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+/* CSS is a second guard; the lifecycle owner also skips creating motion. */
+[data-effects="off"] .entrance-shell,
+[data-effects="off"] .entrance-card,
+[data-effects="off"] .entrance-tile,
+[data-effects="off"] .entrance-welcome-reveal,
+[data-effects="off"] .entrance-loading-mark,
+[data-effects="subtle"] .entrance-shell,
+[data-effects="subtle"] .entrance-card,
+[data-effects="subtle"] .entrance-tile,
+[data-effects="subtle"] .entrance-welcome-reveal,
+[data-effects="subtle"] .entrance-loading-mark { animation: none; }
+
+@media (max-width: 600px) {
+  .modal-card.signin-card { padding: 28px 24px 22px; border-radius: 18px; }
+  .entrance-welcome { left: 12px; width: calc(100vw - 24px); gap: 10px; padding: 14px 10px 14px 14px; }
+  .entrance-title { font-size: 17px; }
+  .entrance-dismiss { width: 36px; height: 36px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .entrance-shell,
+  .signin-card.entrance-card,
+  .tile.entrance-tile,
+  .entrance-welcome-reveal,
+  .entrance-loading-mark,
+  .signin-card.modal-shake { animation: none; }
+}
