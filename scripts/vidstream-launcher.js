@@ -228,7 +228,7 @@ class NativeLauncher {
       this.child = child;
       child.stdout?.on('data', (data) => {
         this.log(data);
-        if (String(data).includes('listening on')) this.state = 'running';
+        if (this.child === child && this.state === 'starting' && String(data).includes('listening on')) this.state = 'running';
       });
       child.stderr?.on('data', (data) => this.log(data));
       child.once('error', (error) => {

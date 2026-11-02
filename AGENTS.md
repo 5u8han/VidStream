@@ -8,4 +8,4 @@ VidStream is downloadable, self-hosted software. People clone/download it, run i
 
 Keep browsing and playback fast. Design polish must preserve dense, zero-gutter media layouts, browser-local effects choices, reduced-motion support, and immediate controls. Animation must not block access or introduce ongoing work across the whole media catalog.
 
-Multi-node library switching is a planned future revision. Do not build it as part of the first-visit design work.
+Multi-node library switching is developed separately on VidStream-node. Each machine keeps its own media, database, security and jobs. Discovery provides untrusted identity/address hints; it must not copy credentials or silently join/replicate libraries. Prefer direct browser-to-node playback and manual address fallback. No central cloud, shared writable SQLite, automatic disk pooling or Kubernetes requirement.

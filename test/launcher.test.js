@@ -26,10 +26,11 @@ test('native launcher remains local, starts/stops one child, and preserves confi
   await fs.mkdir(media); await fs.writeFile(path.join(media, 'keep.txt'), 'source');
   const reservation = http.createServer(); reservation.listen(0, '127.0.0.1'); await once(reservation, 'listening');
   const appPort = reservation.address().port; await new Promise(resolve => reservation.close(resolve));
-  let spawned = 0, spawnOptions;
+  let spawned = 0, spawnOptions, lastChild;
   function spawnChild(_executable, _args, options) {
     spawned++; spawnOptions = options;
     const child = new EventEmitter(); child.pid = process.pid; child.stdout = new PassThrough(); child.stderr = new PassThrough();
+    lastChild = child;
     child.kill = signal => { queueMicrotask(() => child.emit('close', 0, signal)); return true; };
     setTimeout(() => child.stdout.write('[stream] Stream listening on http://127.0.0.1:' + appPort + '\n'), 5);
     return child;
@@ -53,6 +54,8 @@ test('native launcher remains local, starts/stops one child, and preserves confi
   assert.equal(spawnOptions.env.ORIGINALS_DIR, path.join(data, 'originals', 'original'));
   assert.equal((await post('/api/start', {})).status, 400);
   const stopped = await post('/api/stop', {}); assert.equal(stopped.status, 200); assert.equal(launcher.status().state, 'stopped');
+  lastChild.stdout.write('[stream] Delayed listening on announcement after shutdown\n');
+  assert.equal(launcher.status().state, 'stopped', 'Late readiness output cannot revive a stopped node');
   assert.equal(await fs.readFile(path.join(media, 'keep.txt'), 'utf8'), 'source');
   const again = new NativeLauncher({ dataDir: data, probe: () => [] }); await again.load();
   assert.equal(again.config.mediaDir, media); assert.equal(again.config.cacheDir, cache);

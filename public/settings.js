@@ -45,7 +45,7 @@
  async function open(){
   if(dialog?.open)return;
   var body=shell('Settings'),current=dialog,tabs=node('nav',undefined,body),panes={},buttons={},active=null;tabs.className='settings-categories';tabs.setAttribute('aria-label','Settings categories');
-  var descriptions={View:'Layout, player blur and playback details',Enhancement:'Hardware, models and processing',Jobs:'Saved enhancements and clean-library exports',Maintenance:'Work priorities, storage, backups and recovery',History:'Activity recording and recent views',Security:'Sign-in, access and account'};
+  var descriptions={View:'Layout, player blur and playback details',Nodes:'Other machines and library switching',Enhancement:'Hardware, models and processing',Jobs:'Saved enhancements and clean-library exports',Maintenance:'Work priorities, storage, backups and recovery',History:'Activity recording and recent views',Security:'Sign-in, access and account'};
   function show(name){active=name;tabs.hidden=!!name;Object.entries(panes).forEach(function(entry){entry[1].hidden=entry[0]!==name;});current._heading.textContent=name||'Settings';current._backButton.textContent=name?'← Settings':'Close';current._backButton.setAttribute('aria-label',name?'Back to settings':'Close settings');current.scrollTop=0;if(name){panes[name].tabIndex=-1;panes[name].focus({preventScroll:true});}else buttons[current._lastSection||'View']?.focus({preventScroll:true});}
   function root(){show(null);current._back=function(){if(current.open)current.close();};}
   function tab(name){var pane=node('section',undefined,body);pane.className='settings-pane';pane.hidden=true;pane.id='settings-'+name.toLowerCase();pane.setAttribute('aria-label',name);panes[name]=pane;var b=button('',tabs,function(){if(enter('settings-section',root,function(){show(name);current._back=root;})===false)return;current._lastSection=name;show(name);current._back=root;});b.className='settings-category';node('strong',name,b);node('small',descriptions[name],b);var arrow=node('span','›',b);arrow.setAttribute('aria-hidden','true');b.setAttribute('aria-controls',pane.id);buttons[name]=b;return pane;}
@@ -63,6 +63,7 @@
   try{stats.checked=localStorage.getItem('stream-video-stats')==='1';}catch(_){}
   stats.onchange=function(){adapter.videoStats?.(stats.checked);};
   if(!config.isAdmin){node('p','Sign in to manage enhancement and the library.',view);return;}
+  var nodesPane=tab('Nodes');window.StreamNodes?.settings(nodesPane);
   var enhancement=tab('Enhancement'),saved=tab('Jobs'),maintenance=tab('Maintenance'),historyPane=tab('History'),security=tab('Security');window.StreamWorkbench.maintenance(maintenance);
   var data=await api('/api/settings');if(!body.isConnected)return;window.StreamActivity.setEnabled(data.tracking);
   node('h3','Server enhancement',enhancement);node('p','Your server does the work. Playback quality and Data saver stay specific to each browsing device. Phones and tablets control jobs and play their results. A job processes the original once, saves a separate result, and stops. It does not repeatedly enhance its own output.',enhancement);

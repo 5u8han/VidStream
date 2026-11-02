@@ -11,9 +11,13 @@ because that project (great as it is) only handles photos. Video needed a
 different foundation, not a bolt-on — see [Why a rewrite](#why-a-rewrite-and-not-a-fork)
 below.
 
-## Design test 1: first visits and fresh logins
+## Multiple machines: independent libraries
 
-This branch is **VidStream-Design-Test-1**, version **1.8.0-design.1**, based on the merged main checkpoint. It adds a refined sign-in surface, actual loading feedback, a compact welcome notice and a short entrance for the first visible media tiles. Read the [design test guide](docs/DESIGN_TEST_1.md) for lifecycle behavior and test instructions. Media, processing settings and Docker volumes keep their existing behavior. Multi-node switching belongs to a future revision.
+This branch is **VidStream-node**, version **1.9.0-node.1**, based on the saved design checkpoint. Run the same app on each machine with its own media and data. **Settings → Nodes** adds other servers by address or reviews optional nearby discovery; the top-center **Switch library** opens the selected machine directly. Each destination retains its own sign-in. Media is not copied, pooled or proxied through a central server. Read the [multi-machine setup guide](docs/NODES.md) for the two-machine walkthrough, Docker/network details and explained update commands.
+
+## Design checkpoint: first visits and fresh logins
+
+The separate **VidStream-Design-Test-1** branch, version **1.8.0-design.1**, is the saved design checkpoint. Its sign-in, loading, welcome and first-visible-media entrances are retained here. Read the [design test guide](docs/DESIGN_TEST_1.md) for lifecycle behavior. Further design work is paused while node switching is developed separately.
 
 ## Browsing, catalog and saved processing
 

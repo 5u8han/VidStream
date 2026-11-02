@@ -1,6 +1,6 @@
 {
   "name": "stream",
-  "version": "1.8.0-design.1",
+  "version": "1.9.0-node.1",
   "description": "A self-hosted photo and video stream. Embedded SQLite, no frontend build step and no runtime npm dependencies.",
   "license": "MIT",
   "private": true,
@@ -10,6 +10,8 @@
     "launcher": "node scripts/vidstream-launcher.js --open",
     "test": "node --test test/*.test.js",
     "test:browser": "node test/browser-regression.cjs",
+    "test:nodes": "node test/node-browser-regression.cjs",
+    "test:node-lan": "node test/node-lan-smoke.cjs",
     "check": "node scripts/check-syntax.js"
   },
   "engines": {

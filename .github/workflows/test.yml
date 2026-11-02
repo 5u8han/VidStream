@@ -25,3 +25,6 @@ jobs:
       - name: Browser regression checks
         timeout-minutes: 8
         run: npm run test:browser
+      - name: Independent node browser checks
+        timeout-minutes: 8
+        run: npm run test:nodes

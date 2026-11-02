@@ -32,6 +32,7 @@
     appEl.innerHTML = '';
     var lockedModal = buildSignInModal({ locked: true });
     appEl.appendChild(lockedModal.root);
+    window.StreamNodes?.mountLocked(appEl);
     lockedModal.open();
     return;
   }
@@ -666,6 +667,7 @@
 
     header.appendChild(title);
     header.appendChild(controls);
+    window.StreamNodes?.mount(header);
   }
 
   // ---------------------------------------------------------------
