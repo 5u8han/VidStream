@@ -100,7 +100,9 @@ async function gallery(target = page) {
 }
 async function openNodesSettings() {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.locator('.settings-category[aria-controls="settings-nodes"]').click();
+  await page.waitForFunction(() => window.StreamNavigation.depth() === 1);
+  await page.locator('#settings-nodes > summary').click();
+  await page.waitForFunction(() => window.StreamNavigation.depth() === 2);
   await page.getByLabel('Other library address', { exact: true }).waitFor();
 }
 async function closeSettings() {
@@ -209,7 +211,8 @@ async function run() {
     await guestPage.getByRole('button', { name: 'Settings', exact: true }).click();
     const guestBuild = await guestPage.locator('.settings-build-info').innerText();
     assert.ok(guestBuild.includes('VidStream ' + expectedVersion) && guestBuild.includes('Guest view') && guestBuild.includes('Nodes included'));
-    await guestPage.locator('.settings-category[aria-controls="settings-nodes"]').click();
+    await guestPage.locator('#settings-nodes > summary').click();
+    await guestPage.waitForFunction(() => window.StreamNavigation.depth() === 2);
     const guestPane = guestPage.locator('#settings-nodes');
     await guestPane.getByText('Owner sign-in required to manage nodes. Close Settings and choose Admin sign in.', { exact: true }).waitFor();
     assert.equal(await guestPane.getByLabel('Other library address', { exact: true }).count(), 0);

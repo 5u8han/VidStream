@@ -63,8 +63,8 @@ services:
     memswap_limit: ${STREAM_MEM_LIMIT:-2g}
 
   # --- Optional: expose this on a subdomain via Cloudflare, no open
-  # firewall ports needed. See "Deploying with Cloudflare" in the
-  # README for the one-time setup in the Cloudflare dashboard.
+  # firewall ports needed. Configure the tunnel with Cloudflare and supply
+  # CLOUDFLARE_TUNNEL_TOKEN in .env; this opt-in profile is not needed on a LAN.
   # Run with: docker compose --profile tunnel up -d
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -78,8 +78,8 @@ services:
 
   # --- Optional: mount remote storage (Google Drive, Dropbox, etc.) as
   # a local-looking folder that Stream scans normally, instead of
-  # paying for local disk space for your whole library. See "Remote
-  # storage" in the README for the one-time `rclone config` setup.
+  # paying for local disk space for your whole library. Configure rclone
+  # separately, then explicitly enable its shared-mount examples below.
   # Run with: docker compose --profile remote up -d
   rclone:
     image: rclone/rclone:latest

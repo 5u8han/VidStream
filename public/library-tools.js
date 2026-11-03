@@ -119,6 +119,7 @@
       storage.textContent = [
         'Original media: ' + amount(r.originalMediaBytes),
         'Preview cache: ' + amount(r.cacheBytes),
+        'Application data: ' + amount(r.dataBytes),
         'Original archive: ' + amount(r.archiveBytes),
         'Free on data disk: ' + amount(r.freeBytes),
         r.note,

@@ -19,7 +19,9 @@ const { checkDesignEntrance } = require('./design-browser-checks.cjs');
 const root = path.resolve(__dirname, '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'vidstream-browser-'));
 const media = path.join(temp, 'media');
-const report = { checks: [], pageErrors: [] };
+const runtime = path.join(temp, 'app');
+const screenshotDirectory = process.env.STREAM_BROWSER_SCREENSHOTS;
+const report = { checks: [], pageErrors: [], screenshots: [], retiredRequests: [] };
 let child, browser, context, page, output = '';
 
 async function until(check, message, timeout = 30000) {
@@ -47,22 +49,50 @@ async function escapeToGallery() {
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !document.querySelector('.lightbox.open') && !document.querySelector('dialog[open]') && location.pathname === '/');
 }
+async function openSettings(target = page) {
+  await target.getByRole('button', { name: 'Settings', exact: true }).click();
+  await target.waitForFunction(() => window.StreamNavigation.depth() === 1 && document.querySelector('dialog.stream-settings[open]'));
+}
 async function settingsSection(name) {
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await navDepth(1);
-  await page.locator('.settings-category[aria-controls="settings-' + name + '"]').click();
+  await openSettings();
+  await page.locator('#settings-' + name + ' > summary').click();
   await navDepth(2);
 }
-async function waitJob(itemId, preview) {
-  return until(async () => {
-    const data = await json('/api/enhancements?item=' + encodeURIComponent(itemId));
-    const job = data.jobs.find(job => Boolean(job.options.preview) === preview);
-    if (job && ['paused', 'failed', 'cancelled'].includes(job.state)) throw Error('Enhancement failed: ' + JSON.stringify(job));
-    return job?.state === 'completed' ? job : null;
-  }, (preview ? 'sample' : 'full') + ' enhancement completion', 60000);
+async function screenshot(target, name) {
+  if (!screenshotDirectory) return;
+  fs.mkdirSync(screenshotDirectory, { recursive: true });
+  await target.evaluate(() => {
+    getSelection()?.removeAllRanges(); document.activeElement?.blur();
+    document.querySelector('.view-panel.open, dialog.stream-settings[open]')?.scrollTo(0, 0);
+  });
+  await target.waitForTimeout(250); // Allow theme/control color transitions to finish.
+  const filename = path.join(screenshotDirectory, name + '.png');
+  await target.screenshot({ path: filename });
+  report.screenshots.push(filename);
+}
+async function assertFits(target, selector, description) {
+  const layout = await target.locator(selector).evaluate(element => {
+    const box = element.getBoundingClientRect();
+    return { x: box.x, right: box.right, y: box.y, bottom: box.bottom,
+      width: innerWidth, height: innerHeight, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth,
+      documentWidth: document.documentElement.scrollWidth };
+  });
+  assert.ok(layout.x >= -1 && layout.right <= layout.width + 1 && layout.y >= -1 && layout.bottom <= layout.height + 1,
+    description + ' fits its viewport: ' + JSON.stringify(layout));
+  assert.ok(layout.scrollWidth <= layout.clientWidth + 1 && layout.documentWidth <= layout.width + 1,
+    description + ' has no horizontal clipping: ' + JSON.stringify(layout));
+}
+async function range(target, label, value) {
+  const slider = target.getByRole('slider', { name: label, exact: true });
+  await slider.evaluate((element, value) => { element.value = value; element.dispatchEvent(new Event('input', { bubbles: true })); }, String(value));
+  assert.equal(await slider.inputValue(), String(value));
 }
 
 async function run() {
+  // Isolate the application too, so its .env parser cannot read personal configuration.
+  fs.mkdirSync(runtime);
+  for (const directory of ['lib', 'public', 'scripts']) fs.cpSync(path.join(root, directory), path.join(runtime, directory), { recursive: true });
+  for (const filename of ['server.js', 'package.json']) fs.copyFileSync(path.join(root, filename), path.join(runtime, filename));
   fs.mkdirSync(media);
   tool(['-f', 'lavfi', '-i', 'testsrc2=size=64x96:rate=24', '-t', '8', '-an', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', path.join(media, 'sample.mp4')]);
   tool(['-f', 'lavfi', '-i', 'testsrc2=size=240x180:rate=1', '-frames:v', '1', '-threads', '1', path.join(temp, 'poster.jpg')]);
@@ -75,8 +105,8 @@ async function run() {
   const port = reservation.address().port; await new Promise(resolve => reservation.close(resolve));
   const baseURL = 'http://127.0.0.1:' + port;
   child = spawn(process.execPath, ['server.js'], {
-    cwd: root,
-    env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), MEDIA_DIR: media, CACHE_DIR: path.join(temp, 'cache'), DATA_DIR: path.join(temp, 'data'),
+    cwd: runtime,
+    env: { PATH: process.env.PATH, TMPDIR: temp, NODE_DISCOVERY: '0', HOST: '127.0.0.1', PORT: String(port), MEDIA_DIR: media, CACHE_DIR: path.join(temp, 'cache'), DATA_DIR: path.join(temp, 'data'),
       ORIGINALS_DIR: path.join(temp, 'originals'), REQUIRE_LOGIN: '1', ADMIN_USERNAME: 'qa', ADMIN_PASSWORD: 'browser-regression-passphrase',
       SESSION_SECRET: 'browser-regression-session-secret-123456789', WATCH_FOR_CHANGES: '0', RESCAN_INTERVAL_MINUTES: '0',
       ENABLE_FACE_DETECTION: '0', ENABLE_PET_DETECTION: '0', ENABLE_OCR: '0', ENABLE_DUPLICATE_DETECTION: '0', ENABLE_OBJECT_DETECTION: '0',
@@ -91,6 +121,10 @@ async function run() {
   await until(async () => { const status = await json('/api/library-status'); return !status.scanning && status.stats.videoCount === 17 && status.stats.photoCount === 36; }, 'generated library import', 60000);
   await checkDesignEntrance({ browser, baseURL, report });
   page = await context.newPage(); page.on('pageerror', error => report.pageErrors.push(error.message));
+  context.on('request', request => {
+    const endpoint = new URL(request.url()).pathname;
+    if (/^\/api\/enhancements(?:\/|$)/.test(endpoint) || /^\/api\/items\/[^/]+\/variants(?:\/|$)/.test(endpoint)) report.retiredRequests.push(request.url());
+  });
   await page.addInitScript(() => localStorage.setItem('stream-max-previews', '8'));
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.locator('.video-tile').first().waitFor();
@@ -99,7 +133,8 @@ async function run() {
   await page.locator('.video-tile').first().waitFor();
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   assert.ok((await page.getByRole('region', { name: 'Running application', exact: true }).innerText()).includes('Signed in as owner'));
-  await page.locator('.settings-category[aria-controls="settings-enhancement"]').waitFor();
+  await page.getByRole('group', { name: 'Theme', exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: /Enhance|Jobs/ }).count(), 0);
   await page.keyboard.press('Escape'); await navDepth(0);
   report.checks.push('obsolete media links retain owner settings');
   await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -127,27 +162,82 @@ async function run() {
   assert.equal(await page.locator('.lightbox video[src]').count(), 0, 'Closed player must release its source');
 
   await page.getByRole('button', { name: 'View options', exact: true }).click(); await navDepth(1);
-  await page.getByRole('button', { name: 'Layout ›', exact: true }).click(); await navDepth(2);
-  await page.getByRole('button', { name: 'Fine tile borders', exact: true }).click();
+  const size = page.getByRole('slider', { name: 'Media size', exact: true });
+  assert.equal(await size.count(), 1, 'Media size has one direct slider');
+  assert.ok(await size.evaluate(element => document.activeElement === element), 'View options focuses its immediate size control');
+  assert.equal(await page.getByRole('button', { name: /^(Layout|Playback|Filters) ›$/ }).count(), 0);
+  await range(page, 'Media size', 240);
+  const defaultSpacing = await page.locator('#grid').evaluate(grid => { const style = getComputedStyle(grid); return [style.rowGap, style.columnGap, style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft]; });
+  assert.deepEqual(defaultSpacing, ['0px', '0px', '0px', '0px', '0px', '0px'], 'The default gallery remains zero-gutter');
+  await page.getByRole('button', { name: 'Fine borders', exact: true }).click();
   assert.equal(await page.locator('.artist-outline-layer').count(), 0);
   assert.equal(await page.locator('#grid').evaluate(grid => grid.dataset.artistOutlines), 'subtle');
-  await page.keyboard.press('Escape'); await navDepth(1); await page.goForward(); await navDepth(2); await page.goBack(); await navDepth(1);
-  await page.getByRole('button', { name: 'Filters ›', exact: true }).click(); await navDepth(2);
+  const gallerySpacing = await page.locator('#grid').evaluate(grid => { const style = getComputedStyle(grid); return [style.rowGap, style.columnGap, style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft]; });
+  assert.deepEqual(gallerySpacing, ['1px', '1px', '1px', '1px', '1px', '1px'], 'Optional fine borders keep one-pixel gallery spacing');
+  assert.equal(await page.evaluate(() => localStorage.getItem('stream-tile-size')), '240');
+  await screenshot(page, 'desktop-view-options');
+  await page.keyboard.press('Escape'); await navDepth(0);
+  assert.ok(await page.getByRole('button', { name: 'View options', exact: true }).evaluate(element => document.activeElement === element));
+  await page.goForward(); await navDepth(1);
+  assert.equal(await size.inputValue(), '240');
+  await page.locator('details.view-advanced > summary').click(); await navDepth(1);
   await page.getByLabel('Saved view name', { exact: true }).fill('Regression view');
   await page.getByRole('button', { name: 'Save current view', exact: true }).click();
   assert.ok(await page.getByLabel('Saved views', { exact: true }).locator('option').count() > 1);
-  await page.keyboard.press('Escape'); await navDepth(1); await page.keyboard.press('Escape'); await navDepth(0);
-  report.checks.push('tile-local outlines', 'options Back/Forward', 'saved views');
+  await page.keyboard.press('Escape'); await navDepth(0);
+  report.checks.push('flat View options and one persistent size slider', 'tile-local outlines and zero-gutter gallery', 'options focus and Back/Forward', 'saved views in native More controls');
 
-  await settingsSection('view');
+  await page.keyboard.press('/'); await navDepth(1);
+  await page.locator('dialog.stream-settings[open]').waitFor();
+  for (const name of ['Appearance', 'Video player', 'Library', 'Access']) assert.ok(await page.getByRole('heading', { name, exact: true }).isVisible());
+  const theme = page.getByRole('group', { name: 'Theme', exact: true });
+  const effects = page.getByRole('group', { name: 'Visual effects', exact: true });
+  await theme.getByRole('button', { name: 'Light', exact: true }).click();
+  await effects.getByRole('button', { name: 'Subtle', exact: true }).click();
+  await range(page, 'Viewer background blur', 17);
+  await page.getByRole('checkbox', { name: 'Show Stats for nerds in video player', exact: true }).check();
+  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--viewer-blur').trim()), '17px');
   const buildInfo = page.getByRole('region', { name: 'Running application', exact: true });
   assert.ok((await buildInfo.innerText()).includes(require('../package.json').version));
   assert.ok((await buildInfo.innerText()).includes('Signed in as owner'));
   assert.ok((await buildInfo.innerText()).includes(baseURL));
-  report.checks.push('visible running version, server address and owner state');
-  await page.keyboard.press('Escape'); await navDepth(1); await page.goForward(); await navDepth(2);
+  assert.equal(await page.locator('.settings-category').count(), 0);
+  assert.equal(await page.getByRole('button', { name: /Enhance|Jobs/ }).count(), 0);
+  await screenshot(page, 'desktop-settings');
+  await page.keyboard.press('Escape'); await navDepth(0);
+  await openSettings();
+  assert.equal(await theme.getByRole('button', { name: 'Light', exact: true }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await effects.getByRole('button', { name: 'Subtle', exact: true }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.getByRole('slider', { name: 'Viewer background blur', exact: true }).inputValue(), '17');
+  assert.equal(await page.getByRole('checkbox', { name: 'Show Stats for nerds in video player', exact: true }).isChecked(), true);
+  const preferences = await page.evaluate(() => Object.fromEntries(['stream-effects', 'stream-viewer-blur', 'stream-video-stats'].map(key => [key, localStorage.getItem(key)])));
+  assert.deepEqual(preferences, { 'stream-effects': 'subtle', 'stream-viewer-blur': '17', 'stream-video-stats': '1' });
+  const settings = await json('/api/settings');
+  for (const key of Object.keys(preferences)) assert.equal(settings.ui?.[key], undefined, key + ' remains browser-local');
+  report.checks.push('direct Appearance/player/library/access cards and keyboard shortcut', 'visible running version, server address and owner state', 'persistent browser-local blur, effects and Stats');
+
+  await page.locator('#settings-maintenance > summary').click(); await navDepth(2);
+  await page.locator('#settings-history > summary').click(); await navDepth(2);
+  await page.waitForFunction(() => document.querySelectorAll('.settings-detail[open]').length === 1 && document.querySelector('#settings-history').open);
+  assert.equal(await page.locator('.settings-detail[open]').count(), 1, 'Advanced cards form one accordion');
+  assert.equal(await page.locator('#settings-history').getAttribute('open'), '');
+  await page.keyboard.press('Escape'); await navDepth(1);
+  assert.equal(await page.locator('.settings-detail[open]').count(), 0);
+  assert.ok(await page.locator('#settings-history > summary').evaluate(element => document.activeElement === element), 'Back focuses the advanced summary');
+  await page.goForward(); await navDepth(2);
+  assert.equal(await page.locator('#settings-history').getAttribute('open'), '', 'Forward restores the last advanced card');
+  await page.goBack(); await navDepth(1); await page.goBack(); await navDepth(0);
+  await page.goForward(); await navDepth(1); await page.goForward(); await navDepth(2);
+  assert.equal(await page.locator('#settings-history').getAttribute('open'), '');
   await page.keyboard.press('Escape'); await navDepth(1); await page.keyboard.press('Escape'); await navDepth(0);
-  report.checks.push('settings Back/Forward');
+  report.checks.push('advanced accordion shares one Settings history level', 'Settings keyboard focus and Back/Forward restore the last detail');
+
+  await page.getByRole('button', { name: 'View options', exact: true }).click(); await navDepth(1);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click(); await navDepth(1);
+  await page.locator('dialog.stream-settings[open]').waitFor();
+  assert.equal(await page.locator('.view-panel.open').count(), 0);
+  await page.keyboard.press('Escape'); await navDepth(0);
+  report.checks.push('one-click View options to Settings handoff');
   await page.getByRole('combobox', { name: 'Filter by type', exact: true }).selectOption('photo');
   await page.waitForFunction(() => document.querySelectorAll('.tile').length > 0 && !document.querySelector('.video-tile'));
   assert.equal(await page.locator('.tile video[src]').count(), 0, 'Filter reset must release preview sources');
@@ -159,7 +249,8 @@ async function run() {
   report.checks.push('filter cleanup', 'offscreen preview source budget');
 
   await page.getByRole('button', { name: 'View options', exact: true }).click(); await navDepth(1);
-  await page.getByRole('button', { name: 'Playback ›', exact: true }).click(); await navDepth(2);
+  if (await page.locator('details.view-advanced').getAttribute('open') === null) await page.locator('details.view-advanced > summary').click();
+  await navDepth(1);
   await page.getByRole('button', { name: 'Check playback smoothness', exact: true }).click();
   const diagnosticOutput = page.getByLabel('Copyable diagnostic results', { exact: true });
   await diagnosticOutput.waitFor({ timeout: 10000 });
@@ -181,25 +272,14 @@ async function run() {
   report.checks.push('maintenance work/storage status');
   await page.keyboard.press('Escape'); await navDepth(1); await page.keyboard.press('Escape'); await navDepth(0);
 
+  assert.equal(await page.getByRole('button', { name: /Enhance video|Enhance|Jobs/ }).count(), 0);
   await page.locator('.video-tile').evaluateAll((tiles, id) => tiles.find(tile => tile._item.id === id).click(), first.id);
-  await page.getByRole('button', { name: 'Enhance video', exact: true }).click(); await navDepth(1);
-  await page.getByRole('button', { name: 'Estimate full job', exact: true }).click();
-  await page.getByRole('button', { name: 'Render 5-second sample', exact: true }).click();
-  const sample = await waitJob(first.id, true); assert.ok(sample.options.preview); assert.ok(sample.duration <= 5);
-  const sampleCard = page.locator('dialog[open] article').filter({ has: page.locator('strong', { hasText: 'Sample · completed' }) });
-  await sampleCard.getByRole('button', { name: 'Compare original / result', exact: true }).click();
-  assert.equal(await page.locator('.enhancement-comparison video').count(), 2);
-  assert.equal(await sampleCard.getByRole('button', { name: 'Approve & use by default', exact: true }).count(), 0, 'Samples must not be activatable as full media');
-  await page.getByRole('button', { name: 'Queue full video', exact: true }).click();
-  const full = await waitJob(first.id, false); assert.ok(!full.options.preview);
-  const fullCard = page.locator('dialog[open] article').filter({ has: page.locator('strong', { hasText: 'Full version · completed' }) });
-  await fullCard.getByRole('button', { name: 'Approve & use by default', exact: true }).click();
-  await until(async () => (await json('/api/items/' + first.id + '/variants')).item.activeVariant === full.id, 'approved active version');
-  await page.keyboard.press('Escape'); await navDepth(0);
-  await page.waitForFunction(() => !document.querySelector('.enhancement-comparison video[src]'));
-  assert.equal(await page.locator('.enhancement-comparison video[src]').count(), 0, 'Closed comparison must release both sources');
+  await page.waitForFunction(() => document.querySelector('.lightbox.open video')?.readyState >= 1);
+  await page.locator('.video-stats').waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Enhance video', exact: true }).count(), 0);
   await escapeToGallery();
-  report.checks.push('short CPU sample', 'original/result comparison', 'full-version approval', 'modal source cleanup');
+  assert.equal(await page.locator('.lightbox video[src]').count(), 0);
+  report.checks.push('Stats preference applies to player and player cleanup', 'retired enhancement controls stay absent');
 
   const touchContext = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   await touchContext.addCookies(await context.cookies());
@@ -211,13 +291,41 @@ async function run() {
   assert.ok(Math.abs(touchBox.width - 351) <= 1 && Math.abs(touchBox.height - 759.6) <= 1, 'Touch viewer must fit the viewport: ' + JSON.stringify(touchBox));
   await touchPage.locator('.lightbox.open').tap({ position: { x: 4, y: 400 } });
   await touchPage.waitForFunction(() => !document.querySelector('.lightbox.open'));
-  await touchPage.getByRole('button', { name: 'Settings', exact: true }).tap();
-  await touchPage.locator('.settings-category[aria-controls="settings-view"]').tap();
-  await touchPage.getByRole('button', { name: 'Back to settings', exact: true }).tap();
+  await openSettings(touchPage);
+  await touchPage.getByRole('slider', { name: 'Viewer background blur', exact: true }).waitFor();
   await touchPage.getByRole('button', { name: 'Close settings', exact: true }).tap();
   await touchPage.waitForFunction(() => window.StreamNavigation.depth() === 0);
   await touchContext.close();
-  report.touchPlayer = touchBox; report.checks.push('touch player/open-close and nested settings');
+  report.touchPlayer = touchBox; report.checks.push('touch player/open-close and direct Settings');
+
+  for (const width of [320, 390, 640]) {
+    const responsive = await browser.newContext({ baseURL, viewport: { width, height: 844 }, reducedMotion: 'reduce' });
+    await responsive.addCookies(await context.cookies());
+    const screen = await responsive.newPage();
+    screen.on('pageerror', error => report.pageErrors.push(error.message));
+    await screen.goto('/', { waitUntil: 'domcontentloaded' });
+    await screen.locator('#grid .tile').first().waitFor();
+    const welcome = screen.getByRole('button', { name: 'Dismiss welcome', exact: true });
+    if (await welcome.count()) await welcome.click();
+    await openSettings(screen);
+    await assertFits(screen, 'dialog.stream-settings[open]', width + 'px Settings');
+    const themeOverflow = await screen.locator('.settings-theme-choices .settings-choice').evaluateAll(buttons => buttons.filter(button => button.scrollWidth > button.clientWidth + 1).map(button => button.textContent));
+    assert.deepEqual(themeOverflow, [], width + 'px theme labels do not clip');
+    if (width === 320) await screenshot(screen, 'mobile-320-settings');
+    await screen.keyboard.press('Escape'); await screen.waitForFunction(() => window.StreamNavigation.depth() === 0);
+    await screen.getByRole('button', { name: 'View options', exact: true }).click();
+    await screen.waitForFunction(() => window.StreamNavigation.depth() === 1);
+    await assertFits(screen, '.view-panel.open', width + 'px View options');
+    assert.equal(await screen.getByRole('slider', { name: 'Media size', exact: true }).count(), 1);
+    if (width === 320 || width === 640) await screenshot(screen, width === 320 ? 'mobile-320-view-options' : 'tablet-640-view-options');
+    await screen.locator('details.view-advanced > summary').click();
+    await assertFits(screen, '.view-panel.open', width + 'px expanded View options');
+    await screen.getByLabel('Saved view name', { exact: true }).scrollIntoViewIfNeeded();
+    assert.ok(await screen.getByLabel('Saved view name', { exact: true }).isVisible());
+    await responsive.close();
+  }
+  report.checks.push('320/390/640px Settings and View options fit without clipped controls', 'mobile theme labels and expanded More controls remain reachable');
+  assert.deepEqual(report.retiredRequests, [], 'Settings, View options and player never request retired enhancement APIs');
   assert.deepEqual(report.pageErrors, []);
   console.log(JSON.stringify(report, null, 2));
 }

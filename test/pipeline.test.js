@@ -33,7 +33,7 @@ test('coordinator prioritizes visible work and never overlaps heavy tasks', asyn
     started.push(name); if (options.heavy) peak = Math.max(peak, ++heavy);
     await delay(15); if (options.heavy) heavy--; return name;
   }, options);
-  await Promise.all([run('enhancement', { heavy: true }), run('export', { heavy: true }), run('poster', {})]);
+  await Promise.all([run('preview', { heavy: true }), run('analysis', { heavy: true }), run('poster', {})]);
   assert.equal(started[0], 'poster'); assert.equal(peak, 1);
   assert.equal(work.status().recent.filter(task => task.state === 'completed').length, 3);
 });
@@ -46,38 +46,38 @@ test('nested work shares a permit, interrupted tasks remain visible, and stop se
   const restarted = new WorkCoordinator(db.store);
   assert.equal(restarted.status().recent.find(task => task.id === 'interrupted').state, 'interrupted');
   let release; const gate = new Promise(resolve => { release = resolve; });
-  const active = restarted.run('enhancement', 'active', () => gate, { heavy: true });
+  const active = restarted.run('preview', 'active', () => gate, { heavy: true });
   await delay(0);
-  const queued = restarted.run('export', 'queued', async () => {}); const rejected = assert.rejects(queued, /stopped/);
+  const queued = restarted.run('metadata', 'queued', async () => {}); const rejected = assert.rejects(queued, /stopped/);
   restarted.stop(); await rejected; release(); await active;
 });
 
-test('browse mode permits one identity/poster task alongside a long enhancement, but bounds the extra work', async t => {
+test('browse mode permits one identity/poster task alongside a long preview, but bounds the extra work', async t => {
   const { db } = fixture(t), work = new WorkCoordinator(db.store); work.setPreset('browse');
   const started = [];
-  let releaseEnhancement, releasePoster;
-  const enhancementGate = new Promise(resolve => { releaseEnhancement = resolve; });
+  let releasePreview, releasePoster;
+  const previewGate = new Promise(resolve => { releasePreview = resolve; });
   const posterGate = new Promise(resolve => { releasePoster = resolve; });
-  const enhancement = work.run('enhancement', 'long enhancement', async () => {
-    started.push('enhancement'); await enhancementGate;
+  const encoding = work.run('preview', 'long preview', async () => {
+    started.push('encoding'); await previewGate;
   }, { heavy: true });
   await delay(0);
-  const exportJob = work.run('export', 'heavy export', async () => { started.push('export'); }, { heavy: true });
-  const preview = work.run('preview', 'background preview', async () => { started.push('preview'); });
+  const analysis = work.run('analysis', 'object analysis', async () => { started.push('analysis'); }, { heavy: true });
+  const metadata = work.run('metadata', 'background metadata', async () => { started.push('metadata'); });
   const firstPoster = work.run('poster', 'visible poster', async () => { started.push('poster 1'); await posterGate; });
   const secondPoster = work.run('poster', 'next visible poster', async () => { started.push('poster 2'); });
   await delay(0);
-  assert.deepEqual(started, ['enhancement', 'poster 1']);
+  assert.deepEqual(started, ['encoding', 'poster 1']);
   assert.equal(work.status().active.length, 2);
   assert.equal(work.status().active.filter(task => task.heavy).length, 1);
   assert.equal(work.status().queued.length, 3);
   releasePoster(); await firstPoster; await secondPoster;
-  assert.deepEqual(started, ['enhancement', 'poster 1', 'poster 2']);
+  assert.deepEqual(started, ['encoding', 'poster 1', 'poster 2']);
   const identity = work.run('metadata', 'content identity', async () => { started.push('identity'); }, { priority: 15 });
   await identity;
-  assert.deepEqual(started, ['enhancement', 'poster 1', 'poster 2', 'identity']);
-  releaseEnhancement(); await Promise.all([enhancement, preview, exportJob]);
-  assert.ok(started.indexOf('preview') < started.indexOf('export'));
+  assert.deepEqual(started, ['encoding', 'poster 1', 'poster 2', 'identity']);
+  releasePreview(); await Promise.all([encoding, metadata, analysis]);
+  assert.ok(started.indexOf('metadata') < started.indexOf('analysis'));
   await work.stop();
 });
 
@@ -142,9 +142,6 @@ test('forced reconciliation detects replacement bytes even when size and modific
   fs.utimesSync(source, modified, modified);
   const scanner = new Scanner(cfg, db); await scanner.scan();
   const before = { ...[...db.items.values()][0] };
-  const job = { id: 'old-source-enhancement', itemId: before.id, mediaId: before.mediaId,
-    sourceVersion: before.sourceVersion, sourceFingerprint: before.fingerprint, state: 'completed', options: { fps: 60 } };
-  db.store.saveJob(job); assert.equal(db.store.jobMatches(before, job), true);
   execFileSync('convert', ['-size', '64x48', 'xc:blue', 'BMP3:' + source]);
   fs.utimesSync(source, modified, modified);
   const stat = fs.statSync(source);
@@ -154,7 +151,6 @@ test('forced reconciliation detects replacement bytes even when size and modific
   assert.equal(after.mediaId, before.mediaId);
   assert.notEqual(after.sourceHash, before.sourceHash);
   assert.notEqual(after.sourceVersion, before.sourceVersion);
-  assert.equal(db.store.jobMatches(after, db.store.job(job.id)), false);
 });
 
 test('video metadata is available before preview encoding, then native frame rate is retained', { skip: !hasFfmpeg }, async t => {

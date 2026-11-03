@@ -82,7 +82,7 @@ test('legacy JSON imports once into a durable catalog with a consistent pre-migr
   assert.equal(reopened.store.sql.prepare('PRAGMA user_version').get().user_version, 3);
 });
 
-test('relink retains identity, preferences, history, activity, variants and job paths atomically', (t) => {
+test('relink retains identity, preferences and history while retired records remain unchanged', (t) => {
   const f = fixture(t),
     db = f.open(),
     clip = item();
@@ -105,6 +105,7 @@ test('relink retains identity, preferences, history, activity, variants and job 
     options: {},
     state: 'completed'
   });
+  const retiredJob = db.store.sql.prepare('SELECT data FROM enhancement_jobs WHERE id=?').get('job').data;
   const permanent = clip.mediaId;
   db.relocate(clip, 'renamed/new-name.mp4');
   assert.equal(clip.mediaId, permanent);
@@ -115,7 +116,8 @@ test('relink retains identity, preferences, history, activity, variants and job 
   assert.equal(db.store.activityStats(clip).position, 12);
   assert.equal(db.store.history(clip)[0].action, 'relocated');
   assert.equal(db.store.variants(clip)[0].id, 'enhanced');
-  assert.equal(db.store.job('job').relPath, 'renamed/new-name.mp4');
+  assert.equal(db.store.sql.prepare('SELECT data FROM enhancement_jobs WHERE id=?').get('job').data, retiredJob);
+  assert.equal(db.store.job('job').relPath, 'artist/clip.mp4');
   const again = f.open('new-cache');
   assert.equal(again.get('clip').relPath, 'renamed/new-name.mp4');
   assert.equal(again.get('clip').mediaId, permanent);
@@ -141,7 +143,7 @@ test('byte-identical separate copies are distinct and old slug aliases survive a
   assert.equal(db.count(), 2);
 });
 
-test('processing recipes do not invalidate source-matching enhancement jobs', (t) => {
+test('catalog recipe and source updates preserve retired job records verbatim', (t) => {
   const f = fixture(t),
     db = f.open(),
     clip = item();
@@ -154,19 +156,19 @@ test('processing recipes do not invalidate source-matching enhancement jobs', (t
     options,
     state: 'completed'
   });
+  const original = db.store.sql.prepare('SELECT data FROM enhancement_jobs WHERE id=?').get('job').data;
   const same = item('clip', { fingerprint: '1000:123:preview-two' });
   db.upsert(same);
   assert.equal(same.sourceVersion, clip.sourceVersion);
-  assert.equal(db.store.matchingJob(same, options).id, 'job');
+  assert.equal(db.store.sql.prepare('SELECT data FROM enhancement_jobs WHERE id=?').get('job').data, original);
   const hashed = item('clip', { fingerprint: '1000:123:preview-three', sourceHash: 'sha256-here' });
   db.upsert(hashed);
-  assert.equal(db.store.matchingJob(hashed, options).id, 'job');
-  assert.equal(db.store.job('job').sourceVersion, 'sha256-here');
+  assert.equal(db.store.sql.prepare('SELECT data FROM enhancement_jobs WHERE id=?').get('job').data, original);
   db.upsert(item('clip', { fingerprint: '2000:999:preview-three', sourceHash: 'changed-bytes' }));
-  assert.equal(db.store.matchingJob(db.get('clip'), options), null);
+  assert.equal(db.store.sql.prepare('SELECT data FROM enhancement_jobs WHERE id=?').get('job').data, original);
 });
 
-test('active versions survive restart and explicit original URLs remain available', (t) => {
+test('retired variants survive restart as inert data while playback uses the local original', (t) => {
   const f = fixture(t),
     db = f.open(),
     clip = item();
@@ -184,11 +186,13 @@ test('active versions survive restart and explicit original URLs remain availabl
     saved = again.get('clip'),
     cfg = { thumbnailSizes: [320], posterSizes: [320], largeSizes: [1280] };
   const serialized = publicItem(saved, cfg, true);
-  assert.match(serialized.urls.full, /\/api\/enhancements\/result\/video/);
+  assert.match(serialized.urls.full, /\/media\/clip\/original/);
   assert.match(serialized.urls.original, /\/media\/clip\/original/);
-  assert.equal(serialized.activeVariantTech.frameRate, 60);
-  assert.equal(serialized.variants[0].path, undefined);
-  assert.deepEqual(publicItem(saved, cfg, false).variants, []);
+  assert.equal(serialized.activeVariantTech, undefined);
+  assert.equal(serialized.variants, undefined);
+  assert.equal(serialized.activeVariant, undefined);
+  assert.equal(publicItem(saved, cfg, false).variants, undefined);
+  assert.equal(again.store.variants(saved)[0].path, '/private/result.mp4');
   saved.sourceVersion = 'new-original';
   assert.match(publicItem(saved, cfg, true).urls.full, /\/media\/clip\/original/);
 });

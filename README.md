@@ -97,7 +97,7 @@ Updating preserves historical enhancement records and files but removes their pr
 | Your explicit `/media/original` mount | Photos/videos you choose to serve |
 | `stream-data` at `/app/data` | Catalog, permanent identities, history, accounts, settings and backups |
 | `stream-cache` at `/app/.cache` | Thumbnails, previews and session state; existing optional recognition weights |
-| `stream-originals` at `/app/originals` | Original archives on new Docker installations; retain an existing host bind when upgrading |
+| `stream-originals` at `/app/originals` | Preserved original archives from earlier releases; retain an existing host bind when upgrading |
 
 Stop the app before copying its complete persistent state, then restart it after the copy. Back up media separately as well; a catalog snapshot does not contain the media itself. A preview cache can be rebuilt, but its session secret and any downloaded recognition weights are worth preserving. Keep the live SQLite database on the server's local storage, not a shared writable SMB/NFS database. Never remove volumes to fix a sign-in or missing-mount issue. [SQLite WAL limitations](https://sqlite.org/wal.html)
 

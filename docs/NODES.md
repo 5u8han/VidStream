@@ -1,6 +1,6 @@
 # Independent VidStream libraries
 
-**Main 1.9.0 is the official release and includes Nodes.** The reviewed node checkpoint was merged into main at the user's request, preserving history. **VidStream-node** remains for isolated future experiments, not as a prerequisite for connecting libraries. The former Dev/Design branches are retired. This remains downloadable, self-hosted software serving your own locally available media, without a central VidStream cloud, upload service or account provider.
+**Main 1.10.0 is the official release and includes Nodes.** The reviewed node checkpoint was merged into main at the user's request, preserving history. **VidStream-node** remains for isolated future experiments, not as a prerequisite for connecting libraries. The former Dev/Design branches are retired. This remains downloadable, self-hosted software serving your own locally available media, without a central VidStream cloud, upload service or account provider.
 
 ## How it works
 
@@ -75,7 +75,7 @@ cd VidStream
 cp .env.example .env
 ```
 
-`git clone --branch main` creates a new software checkout of official main; it downloads no personal media or another node's runtime state. `cd VidStream` enters that new folder. `cp .env.example .env` creates a local configuration file from defaults; use it only in this new checkout, because it would replace an existing `.env`. Set `STREAM_MEDIA_PATH` to that machine's existing media folder and enable the commented read-only media bind in Compose, as shown in the [Docker quick start](../README.md#quick-start-docker), before running the Docker start command above. No media directory layout is bundled in the repository. Without an enabled media mount, the app has an empty library. New installs use a separate `stream-originals` volume for publication archives. Generate/retain separate security state on each machine. PowerShell users can use `Copy-Item .env.example .env` instead; it likewise copies defaults and must not overwrite an existing configured file.
+`git clone --branch main` creates a new software checkout of official main; it downloads no personal media or another node's runtime state. `cd VidStream` enters that new folder. `cp .env.example .env` creates a local configuration file from defaults; use it only in this new checkout, because it would replace an existing `.env`. Set `STREAM_MEDIA_PATH` to that machine's existing media folder and enable the commented read-only media bind in Compose, as shown in the [Docker quick start](../README.md#quick-start-with-docker), before running the Docker start command above. No media directory layout is bundled in the repository. Without an enabled media mount, the app has an empty library. New installs use a separate `stream-originals` volume that preserves original archives from earlier releases. Generate/retain separate security state on each machine. PowerShell users can use `Copy-Item .env.example .env` instead; it likewise copies defaults and must not overwrite an existing configured file.
 
 To verify the source selected on a machine:
 
