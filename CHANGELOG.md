@@ -7,7 +7,8 @@
 - Removed video upscaling, smoothing/interpolation, enhancement runtimes/model downloads, job execution/control, sample comparison and clean-library exports from the product. Prepare media externally and mount the finished folder instead.
 - Preserved source files, existing outputs, archives and historical database records. Retired jobs do not resume; normal preview generation, native playback, compatible playback copies and optional search recognition remain.
 - Kept the 90% viewer, first-visit lifecycle, browser-local effects, zero-gutter gallery, persistent preferences and independent library switching.
-- Validation: 99 unit/integration tests, 33 common browser checks, 21 node browser checks and 14 Compose configuration checks passed. Browser suites reported zero page errors. An isolated Docker build/import/range-playback check passed using generated media; no live deployment or personal media was changed.
+- Ignored delayed native close events after Settings is reopened through browser history, keeping restored controls, requests and advanced panels intact.
+- Validation: 99 unit/integration tests, 34 common browser checks, 21 node browser checks and 14 Compose configuration checks passed. Browser suites reported zero page errors. An isolated Docker build/import/range-playback check passed using generated media; no live deployment or personal media was changed.
 
 ## 1.9.0 — Integrated main and explicit Docker storage
 

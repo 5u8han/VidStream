@@ -82,8 +82,8 @@
     fetches.add(controller);
     var timeout = setTimeout(function () { controller.abort(); }, 10000);
     var dialog = owner && owner.closest('dialog');
-    function closed() { controller.abort(); }
-    if (dialog) dialog.addEventListener('close', closed, { once: true });
+    function closed() { if (!dialog.open) controller.abort(); }
+    if (dialog) dialog.addEventListener('close', closed);
     try {
       var response = await fetch(path, {
         method: body === undefined ? 'GET' : 'POST',
@@ -394,7 +394,12 @@
       });
     }
     subscribers.add(render);
-    if (dialog) dialog.addEventListener('close', function () { clearTimeout(poll); }, { once: true });
+    function closed() {
+      if (dialog.open) return;
+      clearTimeout(poll);
+      dialog.removeEventListener('close', closed);
+    }
+    if (dialog) dialog.addEventListener('close', closed);
     try {
       var data = await api('/api/nodes', undefined, pane);
       if (!alive()) return;

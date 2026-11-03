@@ -229,8 +229,25 @@ async function run() {
   await page.goBack(); await navDepth(1); await page.goBack(); await navDepth(0);
   await page.goForward(); await navDepth(1); await page.goForward(); await navDepth(2);
   assert.equal(await page.locator('#settings-history').getAttribute('open'), '');
+  // A native dialog close event is queued. Model its late delivery after
+  // Forward has already reopened the same Settings dialog and detail.
+  const lateClose = await page.evaluate(() => {
+    const current = document.querySelector('dialog.stream-settings[open]');
+    const pane = current.querySelector('#settings-history > .settings-detail-content');
+    const navigation = window.StreamNavigation, leave = navigation.leave, leaves = [];
+    navigation.leave = function (id) { leaves.push(id); return leave.apply(this, arguments); };
+    try { current.dispatchEvent(new Event('close')); }
+    finally { navigation.leave = leave; }
+    return { leaves, depth: navigation.depth(), dialogOpen: current.open,
+      detailOpen: current.querySelector('#settings-history').open,
+      samePane: pane === current.querySelector('#settings-history > .settings-detail-content') && pane.isConnected };
+  });
+  assert.deepEqual(lateClose, { leaves: [], depth: 2, dialogOpen: true, detailOpen: true, samePane: true },
+    'A late close event cannot unwind reopened Settings or discard its active pane');
+  await page.goBack(); await navDepth(1); await page.goForward(); await navDepth(2);
+  assert.equal(await page.locator('#settings-history').getAttribute('open'), '', 'Legitimate Back/Forward still works after a stale close event');
   await page.keyboard.press('Escape'); await navDepth(1); await page.keyboard.press('Escape'); await navDepth(0);
-  report.checks.push('advanced accordion shares one Settings history level', 'Settings keyboard focus and Back/Forward restore the last detail');
+  report.checks.push('advanced accordion shares one Settings history level', 'Settings keyboard focus and Back/Forward restore the last detail', 'stale dialog close events preserve restored Settings and advanced panes');
 
   await page.getByRole('button', { name: 'View options', exact: true }).click(); await navDepth(1);
   await page.getByRole('button', { name: 'Settings', exact: true }).click(); await navDepth(1);
