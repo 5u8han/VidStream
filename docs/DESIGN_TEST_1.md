@@ -2,7 +2,7 @@
 
 Current release: **main 1.10.0**. This document records earlier checkpoints. Video enhancement/processing instructions below are historical and retired; use the current [README](../README.md) for operation. Settings and View options now expose everyday controls directly instead of category drilldowns.
 
-The former **VidStream-Design-Test-1** checkpoint (`4510872`, version `1.8.0-design.1`) is included in official **main 1.9.0**, together with the reviewed node work. The separate design branch has been retired. VidStream-node remains available for isolated future experiments.
+The former **VidStream-Design-Test-1** checkpoint (`4510872`, version `1.8.0-design.1`) is included in official **main 1.9.0**, together with the reviewed node work. The separate design branch has been retired. Main is now the only branch; all reviewed node work is included.
 
 ## Permanent direction
 

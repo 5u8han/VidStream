@@ -1,6 +1,6 @@
 # Independent VidStream libraries
 
-**Main 1.10.0 is the official release and includes Nodes.** The reviewed node checkpoint was merged into main at the user's request, preserving history. **VidStream-node** remains for isolated future experiments, not as a prerequisite for connecting libraries. The former Dev/Design branches are retired. This remains downloadable, self-hosted software serving your own locally available media, without a central VidStream cloud, upload service or account provider.
+**Main 1.10.0 is the official release and includes Nodes.** All reviewed node work is merged, and **main is the only branch**. The former node, Dev and Design branch names have been retired; their commits remain in main's history. This remains downloadable, self-hosted software serving your own locally available media, without a central VidStream cloud, upload service or account provider.
 
 ## How it works
 

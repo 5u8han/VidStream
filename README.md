@@ -2,7 +2,7 @@
 
 Downloadable, self-hosted software for browsing and sharing photos and videos that live on your own machines. It uses an embedded SQLite catalog, native browser playback and a small plain JavaScript frontend. There is no central VidStream cloud or upload service.
 
-**Main 1.10.0** includes independent library switching, a flatter Settings window and simpler View options. The reviewed node checkpoint is already in main; VidStream-node remains available for future experiments.
+**Main 1.10.0** includes independent library switching, a flatter Settings window and simpler View options. All reviewed development, design and node work is included. **main is the only branch**; the former branch names have been retired without deleting their merged history.
 
 ## Browse first
 

@@ -1,8 +1,8 @@
-# Active branches and tested differences
+# Main is the only branch
 
-Only **main** and **VidStream-node** are active. **Main 1.10.0 is the official release**, now including the reviewed node library switching as well as the completed catalog, player and design work. The node work was merged at the user's explicit request. VidStream-node remains for isolated future node experiments; it is not required to use Nodes. The histories of the former Dev/Design branches and the merged node work remain preserved.
+**main is the only branch, locally and on GitHub.** Main 1.10.0 includes the reviewed node library switching plus the completed catalog, player and design work. Every retired branch tip was verified as an ancestor of main before its name was removed. Deleting those branch names does not delete their merged commits, media, configuration or Docker data.
 
-Main 1.10.0 simplifies Settings and View options and removes video enhancement processing. Historical media, outputs, database rows and backups remain intact. Use main for the current product; older experimental checkpoints may retain retired controls.
+Main 1.10.0 simplifies Settings and View options and removes video enhancement processing. Historical media, outputs, database rows and backups remain intact. Use main for the current product. Historical commits may retain retired controls, but there are no separate active experiment branches.
 
 ## Why the branches looked the same
 
@@ -51,13 +51,7 @@ docker compose up -d --build
 
 Then reload the gallery home page. On Mac, **⌘⇧R** forces a fresh reload; on Windows/Linux use **Ctrl⇧R**.
 
-For node testing, replace the switch command above with:
-
-```sh
-git switch VidStream-node
-```
-
-`git switch VidStream-node` selects the separately retained node experiment branch; it may still identify itself as an older node checkpoint. Ordinary deployments should stay on main, which already includes Nodes. The fetch, fast-forward pull, Docker rebuild and browser reload steps have the effects described above. Use the [node setup guide](NODES.md) for current official behavior.
+Nodes is included in main; there is no separate node branch to switch to. Use the [node setup guide](NODES.md) for current behavior.
 
 Verify both the checkout and container:
 
@@ -68,14 +62,13 @@ docker compose exec stream node -p "require('./package.json').version"
 
 `git branch --show-current` reports the local checkout's branch. `docker compose exec stream node -p "require('./package.json').version"` reads the version from the running container without changing files. Settings shows the browser's currently loaded version; it should agree after a reload. Git branch, running container and browser page are three separate states.
 
-Other machines may retain local Dev/Design branch names after a fetch. After saving local edits and checking those branches contain no private/unpushed commits, use:
+Other machines can retain local branch names after a remote branch is deleted. On a machine that still lists `VidStream-node`, first fetch/prune, select main and pull the merged release using the commands above. Then remove that local name:
 
 ```sh
-git switch main
-git branch -d VidStream-Dev-Test-1 VidStream-Design-Test-1
+git branch -d VidStream-node
 ```
 
-`git switch main` moves off a branch before deleting its local name. `git branch -d` removes only the two specified local branch references and refuses unmerged work; it does not delete commits retained by main, working media, `.env`, or Docker volumes. Do not force-delete a branch containing unmerged personal changes.
+`git branch -d VidStream-node` deletes only that local branch reference and refuses unmerged work. It does not delete main's commits, working files, media, configuration or Docker volumes. Run it only if the branch still exists on that machine. Treat any other local-only branch the same way after verifying its commits are in main; do not force-delete unmerged personal work.
 
 ## Retain existing storage before rebuilding
 

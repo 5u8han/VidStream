@@ -2,6 +2,8 @@
 
 ## 1.10.0 — Direct controls and focused media hosting
 
+- Consolidated all reviewed work on main and retired the final separate node branch after ancestry verification. Main is the only branch; merged history remains intact.
+
 - Replaced the Settings category launcher with immediately visible appearance, player, library and account controls. Nodes, maintenance and history use direct disclosures and load only when requested.
 - Simplified View options into a single panel with one media-size slider. Removed overlapping global size/density controls; individual and randomized video enlargement remain available.
 - Removed video upscaling, smoothing/interpolation, enhancement runtimes/model downloads, job execution/control, sample comparison and clean-library exports from the product. Prepare media externally and mount the finished folder instead.
@@ -12,7 +14,7 @@
 
 ## 1.9.0 — Integrated main and explicit Docker storage
 
-- Merged the reviewed node branch into main, preserving both histories. Main is the official release with independent library switching; future node experiments can remain on VidStream-node.
+- Merged the reviewed node branch into main, preserving both histories. Main is the official release with independent library switching.
 - Removed the repository media-folder skeleton and automatic host media bind. Operators explicitly enable an existing folder at the stable container path `/media/original`; the commented example is read-only and rejects missing host paths.
 - Published standard HTTP port 80 by default, configurable with `STREAM_HTTP_PORT`, while keeping the container's HTTP port at 4000. HTTPS/443 still requires proper TLS termination; hostname resolution remains a LAN responsibility.
 - Kept catalog/cache volumes and moved new installations' default archive storage to the persistent `stream-originals` volume. Existing archive binds must be retained when upgrading until deliberately migrated.
