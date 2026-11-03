@@ -253,8 +253,24 @@ async function run() {
   await page.getByRole('button', { name: 'Settings', exact: true }).click(); await navDepth(1);
   await page.locator('dialog.stream-settings[open]').waitFor();
   assert.equal(await page.locator('.view-panel.open').count(), 0);
+  const previousSettings = await page.locator('dialog.stream-settings[open]').elementHandle();
   await page.keyboard.press('Escape'); await navDepth(0);
-  report.checks.push('one-click View options to Settings handoff');
+  await openSettings();
+  const removedDialogClose = await previousSettings.evaluate(previous => {
+    const current = document.querySelector('dialog.stream-settings[open]');
+    const navigation = window.StreamNavigation, leave = navigation.leave, leaves = [];
+    navigation.leave = function (id) { leaves.push(id); return leave.apply(this, arguments); };
+    try { previous.dispatchEvent(new Event('close')); }
+    finally { navigation.leave = leave; }
+    return { leaves, depth: navigation.depth(), dialogOpen: current.open,
+      sameDialog: current === document.querySelector('dialog.stream-settings[open]'),
+      previousRemoved: !previous.isConnected && previous !== current };
+  });
+  assert.deepEqual(removedDialogClose, { leaves: [], depth: 1, dialogOpen: true, sameDialog: true, previousRemoved: true },
+    'A removed Settings instance cannot close or unwind a newer dialog');
+  await previousSettings.dispose();
+  await page.keyboard.press('Escape'); await navDepth(0);
+  report.checks.push('one-click View options to Settings handoff', 'removed Settings instance close events preserve the current dialog');
   await page.getByRole('combobox', { name: 'Filter by type', exact: true }).selectOption('photo');
   await page.waitForFunction(() => document.querySelectorAll('.tile').length > 0 && !document.querySelector('.video-tile'));
   assert.equal(await page.locator('.tile video[src]').count(), 0, 'Filter reset must release preview sources');

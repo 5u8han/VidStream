@@ -107,7 +107,7 @@
     current.addEventListener('close', function () {
       // Native close events are queued. Forward may already have reopened
       // this dialog before an earlier close event is delivered.
-      if (current.open) return;
+      if (current.open || current !== dialog) return;
       if (window.StreamNavigation?.has('settings')) window.StreamNavigation.leave('settings');
       returnFocus?.focus({ preventScroll: true });
     });
@@ -183,7 +183,7 @@
     pane.setAttribute('aria-label', name); pane.hidden = true;
     var initialized = false;
     current.addEventListener('close', function () {
-      if (current.open) return;
+      if (current.open || current !== dialog) return;
       initialized = false;
       pane.remove();
       pane = node('section', undefined, details, 'settings-detail-content settings-pane');
