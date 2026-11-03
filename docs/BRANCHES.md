@@ -1,6 +1,8 @@
 # Active branches and tested differences
 
-Only **main** and **VidStream-node** are active. **Main 1.9.0 is the official release**, now including the reviewed node library switching as well as the completed catalog, player and design work. The node work was merged at the user's explicit request. VidStream-node remains for isolated future node experiments; it is not required to use Nodes. The histories of the former Dev/Design branches and the merged node work remain preserved.
+Only **main** and **VidStream-node** are active. **Main 1.10.0 is the official release**, now including the reviewed node library switching as well as the completed catalog, player and design work. The node work was merged at the user's explicit request. VidStream-node remains for isolated future node experiments; it is not required to use Nodes. The histories of the former Dev/Design branches and the merged node work remain preserved.
+
+Main 1.10.0 simplifies Settings and View options and removes video enhancement processing. Historical media, outputs, database rows and backups remain intact. Use main for the current product; older experimental checkpoints may retain retired controls.
 
 ## Why the branches looked the same
 

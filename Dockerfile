@@ -10,7 +10,7 @@ FROM node:22-bookworm-slim
 # OpenCV's own bundled Haar cascades -- no separate model download).
 # tesseract-ocr: text extraction for search.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg imagemagick libimage-exiftool-perl tzdata zip unzip ldap-utils ca-certificates libvulkan1 libgomp1 \
+    ffmpeg imagemagick libimage-exiftool-perl tzdata zip ldap-utils ca-certificates \
     python3 python3-opencv python3-numpy python3-pip \
     tesseract-ocr tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
@@ -43,10 +43,6 @@ RUN if [ "$INSTALL_AI_STACK" = "true" ]; then \
       fi && \
       pip install --no-cache-dir --break-system-packages ultralytics; \
     fi
-
-ARG INSTALL_ENHANCEMENT_TOOLS=false
-COPY scripts/install-enhancement-runtime.sh /tmp/install-enhancement-runtime.sh
-RUN if [ "$INSTALL_ENHANCEMENT_TOOLS" = "true" ]; then sh /tmp/install-enhancement-runtime.sh; fi
 
 COPY . .
 

@@ -4,7 +4,7 @@
 
 ## How it works
 
-Run the same VidStream app on each machine. Each instance owns its media folder, database, history, previews, enhancement jobs and sign-in. A small directory of connections lets you select another instance from **Switch library** in the top center. The browser opens that server directly, and its video streams directly to the browser. Your starting machine does not relay everyone else's video traffic.
+Run the same VidStream app on each machine. Each instance owns its media folder, database, history, previews and sign-in. Video enhancement processing has been removed in 1.10.0; prepare finished media outside VidStream. A small directory of connections lets you select another instance from **Switch library** in the top center. The browser opens that server directly, and its video streams directly to the browser. Your starting machine does not relay everyone else's video traffic.
 
 ```mermaid
 flowchart LR
@@ -21,14 +21,14 @@ flowchart LR
 
 There is no required master/child distinction. Your always-on NAS can be your usual starting library and hold your connection list. A browser-only return link follows you to another server, including its sign-in screen. It carries only an origin in a URL fragment; it does not copy a server directory, credentials, settings or authentication. Incoming return addresses are unverified, clearly show their host, and stay temporary in that browser tab/session. They become persistent browser bookmarks only when you explicitly choose **Remember this return address**. **Make this my starting library** explicitly selects the current instance. Each server has its own saved connection list. You can make additional connections there, or return to your starting library to choose another machine.
 
-This combines access to several libraries. It does **not** combine disks into a single filesystem, distribute files automatically, deduplicate across machines, create one global catalog, synchronize history, or offload enhancement jobs. A sleeping/offline machine takes only its own media offline. Saved connections are retained. Each machine still needs enough local space for its own previews and processing checkpoints.
+This combines access to several libraries. It does **not** combine disks into a single filesystem, distribute files automatically, deduplicate across machines, create one global catalog, synchronize history, or offload enhancement jobs. A sleeping/offline machine takes only its own media offline. Saved connections are retained. Each machine still needs enough local space for its own previews and catalog. Historical processing files are retained but are not executed.
 
 For your equipment, a practical first setup is:
 
 | Machine | Example role |
 | --- | --- |
 | Synology NAS / 40 TB | Always-on starting library, wedding/personal archive |
-| Legion / 4 TB NVMe | Reels or active collection; enhancement on its own GPU |
+| Legion / 4 TB NVMe | Reels or active collection; prepared media from external tools |
 | Small desktop / SSD + HDD | Separate archive library; data/cache on local storage |
 | MacBook / limited free space | Viewer/control device, or a smaller portable library |
 | Other portable devices | Optional independent libraries while awake and reachable |
@@ -84,7 +84,7 @@ git branch --show-current
 docker compose exec stream node -p "require('./package.json').version"
 ```
 
-`git branch --show-current` prints the active local branch. `docker compose exec stream node -p "require('./package.json').version"` reads the version inside the running container without changing files; expect `1.9.0` on official main. A Docker rebuild is required for its existing container to use changed source; reload the browser afterward. For a native installation, `node -p "require('./package.json').version"` reads the checkout's version without starting the app or changing files. The new node settings use existing SQLite settings, without a catalog schema migration. Changing server address/origin can require signing in again; do not remove data or reset security files to resolve that.
+`git branch --show-current` prints the active local branch. `docker compose exec stream node -p "require('./package.json').version"` reads the version inside the running container without changing files; expect `1.10.0` on official main. A Docker rebuild is required for its existing container to use changed source; reload the browser afterward. For a native installation, `node -p "require('./package.json').version"` reads the checkout's version without starting the app or changing files. The new node settings use existing SQLite settings, without a catalog schema migration. Changing server address/origin can require signing in again; do not remove data or reset security files to resolve that.
 
 ## Optional discovery
 

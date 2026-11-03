@@ -1,5 +1,7 @@
 # Design behavior included in main
 
+Current release: **main 1.10.0**. This document records earlier checkpoints. Video enhancement/processing instructions below are historical and retired; use the current [README](../README.md) for operation. Settings and View options now expose everyday controls directly instead of category drilldowns.
+
 The former **VidStream-Design-Test-1** checkpoint (`4510872`, version `1.8.0-design.1`) is included in official **main 1.9.0**, together with the reviewed node work. The separate design branch has been retired. VidStream-node remains available for isolated future experiments.
 
 ## Permanent direction
@@ -50,7 +52,7 @@ git branch --show-current
 docker compose exec stream node -p "require('./package.json').version"
 ```
 
-`git branch --show-current` prints the active local branch. `docker compose exec stream node -p "require('./package.json').version"` reads the package version inside the running container without changing files; expect `1.9.0` on main. For native deployments, `node -p "require('./package.json').version"` reads the checkout's package version without starting the app or changing files. Rebuilding is required for an existing Docker container to use changed source files; reload the browser afterward.
+`git branch --show-current` prints the active local branch. `docker compose exec stream node -p "require('./package.json').version"` reads the package version inside the running container without changing files; expect `1.10.0` on main. For native deployments, `node -p "require('./package.json').version"` reads the checkout's package version without starting the app or changing files. Rebuilding is required for an existing Docker container to use changed source files; reload the browser afterward.
 
 Check a new browser profile, sign out/in, then reopen a still-authenticated browser. Try keyboard navigation, a narrow phone-sized window, all viewing themes and reduced motion. Generated test clips cannot establish physical-device playback performance on a large personal library.
 

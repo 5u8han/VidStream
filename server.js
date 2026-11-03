@@ -44,16 +44,12 @@ const { MediaEditor } = require('./lib/media-editor');
 const { libraryHandlers } = require('./lib/handlers/library');
 const editor = new MediaEditor(cfg, db, scanner);
 const library = libraryHandlers(cfg, db, {edit:(item,body)=>coordinator.run('edit',item.filename,()=>editor.edit(item,body),{heavy:true,priority:20})});
-const { EnhancementQueue } = require('./lib/enhancement-queue');
 const { settingsHandlers } = require('./lib/handlers/settings');
-const enhancements = new EnhancementQueue(cfg, db, {coordinator});
-const cleanLibrary = new (require('./lib/clean-library').CleanLibrary)(cfg,db,enhancements,coordinator);
 const resources = new (require('./lib/resource-monitor').ResourceMonitor)(cfg,db.store);
-const settings = settingsHandlers(cfg, db, enhancements, ai, cleanLibrary);
-const variants = new (require('./lib/variant-service').VariantService)(cfg,db,enhancements,scanner);
-const maintenance = new (require('./lib/maintenance').Maintenance)(cfg,db,enhancements);
+const settings = settingsHandlers(cfg, db);
+const maintenance = new (require('./lib/maintenance').Maintenance)(cfg,db);
 const playback = new (require('./lib/playback-service').PlaybackService)(cfg,db,coordinator);
-const workbench = require('./lib/handlers/workbench').workbenchHandlers(cfg,db,{queue:enhancements,variants,maintenance,coordinator,playback,scanner});
+const workbench = require('./lib/handlers/workbench').workbenchHandlers(cfg,db,{maintenance,coordinator,playback,scanner});
 const router = new Router();
 router.get('/api/node-info', nodeHandlers.info);
 router.get('/api/nodes', nodeHandlers.list);
@@ -64,9 +60,6 @@ router.post('/api/nodes/remove', nodeHandlers.remove);
 router.post('/api/nodes/refresh', nodeHandlers.refresh);
 router.get('/api/work',workbench.status);
 router.post('/api/work/preset',workbench.preset);
-router.post('/api/items/:id/enhance-estimate',workbench.estimate);
-router.get('/api/items/:id/variants',workbench.variants);
-router.post('/api/items/:id/variants',workbench.variant);
 router.post('/api/items/:id/relink',workbench.relink);
 router.post('/api/items/:id/playback',workbench.playback);
 router.get('/api/items/:id/playback/video',workbench.playbackFile);
@@ -74,22 +67,12 @@ router.get('/api/maintenance/storage',workbench.storage);
 router.post('/api/maintenance/backup',workbench.backup);
 router.get('/api/maintenance/backup/:name',workbench.backupFile);
 router.post('/api/maintenance/retention',workbench.retention);
-router.post('/api/maintenance/recover',workbench.recover);
 router.get('/api/settings', settings.get);
 router.get('/api/library-map',require('./lib/handlers/library-map').libraryMapHandler(cfg,db));
 router.get('/api/resources', async(req,res)=>{if(!isAdmin(req,cfg)){res.writeHead(403);return res.end();}res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');res.end(JSON.stringify(await resources.sample()));});
-router.post('/api/enhancement-runtime/install', settings.runtime);
-router.post('/api/enhancements/batch', settings.batch);
-router.post('/api/clean-library/export', settings.export);
-router.get('/api/clean-library', settings.exportStatus);
 router.post('/api/settings', settings.update);
 router.post('/api/activity', settings.events);
 router.get('/api/activity', settings.activity);
-router.get('/api/enhancements', settings.jobs);
-router.post('/api/items/:id/enhance', settings.create);
-router.post('/api/enhancements/:id', settings.control);
-router.get('/api/enhancements/:id/video', settings.video);
-router.post('/api/enhancement-models/install', settings.install);
 router.post('/api/items/:id/preferences', library.preferences);
 router.post('/api/items/:id/edit', library.edit);
 router.get('/health', healthHandler(cfg, db));
@@ -114,7 +97,7 @@ router.get('/media/:id/:variant', mediaHandler(cfg, db));
 router.get('/', pageHandler(cfg, db));
 router.get('/:id', pageHandler(cfg, db));
 
-const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/design.css', '/entrance.js', '/nodes.js', '/nodes.css', '/social-preview.png', '/settings.js', '/activity.js', '/resources.js', '/library-layout.js', '/artist-outlines.js', '/library-map.js', '/player-stats.js', '/navigation.js', '/preview-controller.js', '/diagnostics.js', '/workbench.js']);
+const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/design.css', '/entrance.js', '/nodes.js', '/nodes.css', '/social-preview.png', '/settings.js', '/activity.js', '/resources.js', '/library-layout.js', '/artist-outlines.js', '/library-map.js', '/player-stats.js', '/navigation.js', '/preview-controller.js', '/diagnostics.js', '/library-tools.js', '/controls.css', '/options.css']);
 const PUBLIC_DIR = path.join(ROOT, 'public');
 
 const server = http.createServer(async (req, res) => {
@@ -177,7 +160,6 @@ const server = http.createServer(async (req, res) => {
 async function main() {
   if(cfg.setupRequired)console.log('[stream] Owner setup code: '+cfg.setupCode+' (enter this once in the web setup screen)');
   resources.start();
-  await enhancements.start();
   console.log(`[stream] Media folder: ${cfg.mediaDir}`);
   // Serve the cached index immediately. Scanning remote SMB storage may take a
   // long time; it must never make the entire website unavailable on startup.
@@ -207,9 +189,8 @@ async function shutdown() {
   resources.stop();scanner.stopWatching();
   await nodes.stop();
   const stopped=coordinator.stop();
-  const exportStopped=cleanLibrary.stop();
   const closed=new Promise(resolve=>server.close(resolve));
-  await enhancements.stop();await scanner.waitForIdle();await exportStopped;await stopped;await closed;
+  await scanner.waitForIdle();await stopped;await closed;
   db.close ? db.close() : db.store.close();process.exit(0);
 }
 for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>shutdown().catch(err=>{console.error('[stream] Shutdown error:',err.message);process.exit(1);}));

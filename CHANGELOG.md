@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.10.0 — Direct controls and focused media hosting
+
+- Replaced the Settings category launcher with immediately visible appearance, player, library and account controls. Nodes, maintenance and history use direct disclosures and load only when requested.
+- Simplified View options into a single panel with one media-size slider. Removed overlapping global size/density controls; individual and randomized video enlargement remain available.
+- Removed video upscaling, smoothing/interpolation, enhancement runtimes/model downloads, job execution/control, sample comparison and clean-library exports from the product. Prepare media externally and mount the finished folder instead.
+- Preserved source files, existing outputs, archives and historical database records. Retired jobs do not resume; normal preview generation, native playback, compatible playback copies and optional search recognition remain.
+- Kept the 90% viewer, first-visit lifecycle, browser-local effects, zero-gutter gallery, persistent preferences and independent library switching.
+
 ## 1.9.0 — Integrated main and explicit Docker storage
 
 - Merged the reviewed node branch into main, preserving both histories. Main is the official release with independent library switching; future node experiments can remain on VidStream-node.

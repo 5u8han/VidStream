@@ -3,7 +3,6 @@ services:
     build:
       context: .
       args:
-        INSTALL_ENHANCEMENT_TOOLS: ${STREAM_ENHANCEMENT_TOOLS:-false}
         INSTALL_AI_STACK: ${STREAM_AI_STACK:-false}
         AI_ACCELERATOR: ${STREAM_AI_ACCELERATOR:-cpu}
     # Or, once published: image: yourname/stream:latest
@@ -24,8 +23,8 @@ services:
       #   read_only: true
       #   bind:
       #     create_host_path: false
-      # Read-only permits viewing/enhancement copies, but not Quick edit or
-      # Publish & archive original. Set read_only: false only to allow writes.
+      # Read-only permits viewing/previews, but not Quick edit or
+      # source edits. Set read_only: false only to allow writes.
       # Existing installs: retain any previous /app/originals host bind in a
       # local override until its archives have been deliberately migrated.
       # Optional custom archive folder (outside your media tree):

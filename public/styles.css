@@ -1220,11 +1220,10 @@ body { padding-bottom:100px; }
 .stream-settings h2 { margin: 0; } .stream-settings h3 { margin-top:24px; }
 .stream-settings p { line-height:1.55; margin:12px 0; overflow-wrap:anywhere; }
 .stream-settings pre { font-size:12px; white-space:pre-wrap; }
-.stream-settings button, .stream-settings select, .enhance-video { font:inherit; color:inherit; background:transparent; border:1px solid #8887; border-radius:8px; padding:9px 12px; margin:5px; cursor:pointer; }
+.stream-settings button, .stream-settings select { font:inherit; color:inherit; background:transparent; border:1px solid #8887; border-radius:8px; padding:9px 12px; margin:5px; cursor:pointer; }
 .stream-settings label { display:block; margin:12px 0; } .stream-settings select { max-width:100%; }
 .stream-settings article { border:1px solid #8885; border-radius:10px; padding:14px; margin:12px 0; }
 .stream-settings a { display:inline-block; padding:10px; color:inherit; text-decoration:underline; }
-.enhance-video { color: white; background: #222b; font-size:13px; }
 
 /* Compact glass controls: selected state uses color plus a visible border. */
 .menu-panel { width:min(460px,calc(100vw - 24px)); max-height: min(75dvh,680px); overflow-y:auto; overscroll-behavior:contain; background:color-mix(in srgb,var(--surface) 80%,transparent); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); }
@@ -1312,7 +1311,6 @@ body { padding-bottom:100px; }
 .viewer-focus-guard { position: absolute; width: 1px; height: 1px; overflow: hidden; }
 .lightbox-card .frame-counter { margin-right: auto; flex-shrink: 0; }
 .lightbox-card .lightbox-bar > .icon-btn { flex-shrink: 0; }
-.lightbox-card .enhance-video { white-space: nowrap; }
 .lightbox-card .info-panel, .lightbox-card .edit-panel { position: absolute; top: 56px; bottom: 0; max-height: calc(100% - 56px); }
 .lightbox-card .info-panel { width: min(320px, 100%); }
 .lightbox-card .edit-panel { width: min(380px, 100%); }
@@ -1376,13 +1374,8 @@ body.has-ambient.lb-open .library-summary.video-stats {
 .menu-item:focus-visible,.navigation-row:focus-visible,.settings-category:focus-visible,.control-launcher:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 @media(max-width:600px) { .stream-settings > header { top:-16px; }.control-launcher span { display:none; }.icon-btn.control-launcher { padding:0 9px; }.menu-panel { top:var(--menu-top,76px); } }
 
-/* Comparisons stay inside Settings and release their decoders when dismissed. */
-.stream-settings .comparison-videos { display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:center; }
-.comparison-videos video { display:block; width:100%; min-width:0; max-height:42dvh; object-fit:contain; background:#09090b; border-radius:8px; }
-.enhancement-comparison { padding:10px 0; }
 .stream-settings pre { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.55; padding:12px; background:color-mix(in srgb,var(--accent) 7%,transparent); border:1px solid var(--border); border-radius:8px; }
 .stream-settings label { overflow-wrap:anywhere; }
 .workbench-error { color:#f7a39a; }
 .playback-preparation { position:absolute; left:10%; right:10%; bottom:64px; z-index:3; margin:0; padding:12px; border-radius:10px; background:#151219ed; color:#f2efec; text-align:center; }
 .diagnostic-sampling { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:200; max-width:90vw; padding:12px 16px; border-radius:12px; background:#17131aee; color:#fff; border:1px solid #ffffff40; pointer-events:none; }
-@media(max-width:500px) { .stream-settings .comparison-videos { gap:4px; }.comparison-videos video { max-height:32dvh; } }

@@ -97,7 +97,7 @@
   function refreshSizes() { document.querySelectorAll('[data-video-scale]').forEach(function(b){b.classList.toggle('selected',!randomEnabled&&b.dataset.videoScale===videoScale);});document.querySelectorAll('[data-random-size]').forEach(function(b){b.classList.toggle('selected',(b.dataset.randomSize==='on')===randomEnabled);});grid.querySelectorAll('.tile.video-tile').forEach(function(t){if(!t.dataset.manualScale)t.classList.toggle('tile-expanded',randomEnabled?randomLarge(t.dataset.itemId):videoScale==='2');});remeasureAndReflow(); }
   function randomize() { randomSeed=window.StreamActivity.uuid();randomEnabled=true;storageSet('stream-random-seed',randomSeed);storageSet('stream-random-enabled','1');refreshSizes(); }
   function uniform() {randomEnabled=false;storageSet('stream-random-enabled','0');refreshSizes();}
-  window.StreamSettings.init({randomize:randomize,uniform:uniform,theme:applyTheme,density:function(value){applyDensity(value);remeasureAndReflow();},fit:function(value){document.documentElement.dataset.mediaFit=value;storageSet('stream-media-fit',value);},viewerBlur:applyViewerBlur,videoStats:setVideoStatsEnabled});
+  window.StreamSettings.init({randomize:randomize,uniform:uniform,theme:applyTheme,effects:applyEffects,density:function(value){applyDensity(value);remeasureAndReflow();},fit:function(value){document.documentElement.dataset.mediaFit=value;storageSet('stream-media-fit',value);},viewerBlur:applyViewerBlur,videoStats:setVideoStatsEnabled});
 
   // ---------------------------------------------------------------
   // Theme + density (data-theme/data-density already applied by the
@@ -105,24 +105,14 @@
   // the menu UI and localStorage in sync with further changes).
   // ---------------------------------------------------------------
 
-  var THEMES = [
-    { id: 'system', label: 'System', swatch: null },
-    { id: 'light-table', label: 'Light Table', swatch: '#a83831' },
-    { id: 'darkroom', label: 'Darkroom', swatch: '#c1443c' },
-    { id: 'golden-hour', label: 'Golden Hour', swatch: '#d68c33' },
-    { id: 'contact-sheet', label: 'Contact Sheet', swatch: '#2f4c6b' },
-  ];
-  var DENSITIES = [
-    { id: 'small', label: 'Small' },
-    { id: 'medium', label: 'Medium' },
-    { id: 'large', label: 'Large' },
-  ];
-
   var currentTheme = storageGet('stream-theme', 'system');
   var currentDensity = storageGet('stream-density', 'medium');
   var previewSource = storageGet('stream-preview-source', 'preview');
   document.documentElement.dataset.mediaFit = storageGet('stream-media-fit', 'contain');
-  var videoScale = storageGet('stream-video-scale', '1');
+  // One grid-size control replaces the old global video multiplier. Keep
+  // intentional per-tile enlargement and the organic/random option instead.
+  var videoScale = '1';
+  if (storageGet('stream-video-scale', '1') !== '1') storageSet('stream-video-scale', '1');
   var viewerBlur = Math.max(0, Math.min(30, Number(storageGet('stream-viewer-blur', '10')) || 0));
   var videoStatsEnabled = storageGet('stream-video-stats', '0') === '1';
   document.documentElement.style.setProperty('--viewer-blur', viewerBlur + 'px');
@@ -224,310 +214,262 @@
 
   function buildMenu() {
     var wrap = el('div', { class: 'menu-wrap' });
-    var trigger = el('button', { class: 'icon-btn control-launcher', title: 'View options', 'aria-label': 'View options' }, icon('sliders') + '<span>View</span>');
-    var panel = el('div', { class: 'menu-panel' });
-
-    function section(label) {
-      var s = el('div', { class: 'menu-section' });
-      s.appendChild(el('div', { class: 'menu-label' }, label));
-      return s;
-    }
-
-    var sortSection = section('Sort');
-    var sortOptions = [
-      { id: 'desc', label: 'Newest first' },
-      { id: 'asc', label: 'Oldest first' },
-      { id: 'name-asc', label: 'Name A–Z' },
-      { id: 'name-desc', label: 'Name Z–A' },
-      { id: 'random', label: 'Shuffle' },
-      { id: 'creator', label: 'All media · artist A–Z' },
-    ];
-    if(isAdmin)sortOptions.push({id:'recent',label:'Recently opened'},{id:'continue',label:'Continue watching'},{id:'less-seen',label:'Less-seen shuffle'});
-    sortOptions.forEach(function (opt) {
-      var item = el('button', { class: 'menu-item', 'data-sort': opt.id }, '<span>' + opt.label + '</span>');
-      item.addEventListener('click', function () {
-        if (opt.id === 'random') state.seed = String(Date.now());
-        if (opt.id === 'less-seen') state.seed = String(Date.now());
-        if (opt.id === 'continue') { state.type = 'video'; header.querySelector('[aria-label="Filter by type"]').value='video'; }
-        if(opt.id==='creator')clearGalleryFilters();
-        state.sort = opt.id;
-        markSortSelected();
-        resetAndLoad();
-      });
-      sortSection.appendChild(item);
-    });
-    if (CONFIG.allowOrderSortChange) panel.appendChild(sortSection);
-
-    var containsSection = section('Contains');
-    var containsOptions = [
-      { id: '', label: 'Anything' },
-      { id: 'favorite', label: '★ Best / favorites' },
-      { id: 'pinned', label: 'Pinned' },
-      { id: 'bookmarked', label: 'Bookmarked' },
-      { id: 'face', label: 'Faces' },
-      { id: 'cat', label: 'Pets' },
-      { id: 'text', label: 'Text' },
-    ];
-    containsOptions.forEach(function (opt) {
-      var item = el('button', { class: 'menu-item', 'data-has': opt.id }, '<span>' + opt.label + '</span>');
-      item.addEventListener('click', function () {
-        state.has = opt.id || null;
-        refreshContainsHighlight();
-        resetAndLoad();
-      });
-      containsSection.appendChild(item);
-    });
-    panel.appendChild(containsSection);
-    header._containsSection = containsSection; // populated with detected object classes once known
+    var trigger = el('button', { class: 'icon-btn control-launcher', title: 'View options', 'aria-label': 'View options', 'aria-haspopup': 'dialog' }, icon('sliders') + '<span>View</span>');
+    var panel = el('div', { class: 'menu-panel view-panel', role: 'dialog', 'aria-label': 'View options' });
+    var afterClose = null;
     header._menuPanel = panel;
 
-    var saverSection = section('Performance');
-    var saverItem = el('button', {
-      class: 'menu-item', 'data-saver-toggle': '1',
-      title: 'Fewer autoplay previews and later image loading, for slower connections/hardware. Applies on reload.',
-    });
-    var saverLabel = el('span', {}, 'Data saver');
-    var saverState = el('span', { class: 'menu-item-state' });
-    saverItem.appendChild(saverLabel);
-    saverItem.appendChild(saverState);
-    function paintSaverItem() {
-      saverState.textContent = dataSaverMode ? 'On' : 'Off';
-      saverItem.classList.toggle('selected', dataSaverMode);
+    function section(label, extraClass) {
+      var group = el('section', { class: 'menu-section view-section ' + (extraClass || ''), 'aria-label': label });
+      group.appendChild(el('h3', { class: 'menu-label' }, label));
+      return group;
     }
-    paintSaverItem();
-    saverItem.addEventListener('click', function () {
-      dataSaverMode = !dataSaverMode;
-      storageSet('stream-data-saver', dataSaverMode ? '1' : '0');
-      location.reload();
-    });
-    saverSection.appendChild(saverItem);
-    var maxPreviewSelect = el('select', { class: 'filter-select', 'aria-label': 'Maximum simultaneous video previews' });
-    [4, 8, 12, 16, 24, 64].forEach(function (number) {
-      maxPreviewSelect.add(new Option(number === 64 ? 'Up to 64 video previews (high-end)' : number + ' video previews at once', String(number)));
-    });
-    maxPreviewSelect.value = String(MAX_PREVIEWS);
-    maxPreviewSelect.addEventListener('change', function () {
-      MAX_PREVIEWS = Number(maxPreviewSelect.value);
-      storageSet('stream-max-previews', String(MAX_PREVIEWS));
-      if (runningPreviews.size > MAX_PREVIEWS) {
-        Array.from(runningPreviews).slice(MAX_PREVIEWS).forEach(pausePreview);
-      }
-      refillPreviews();
-    });
-    saverSection.appendChild(el('div', { class: 'menu-help' }, 'Simultaneously playing previews'));
-    saverSection.appendChild(maxPreviewSelect);
-    var sourceSelect = el('select', { class: 'filter-select', 'aria-label': 'Preview source' });
-    sourceSelect.add(new Option('Optimized previews · native FPS up to 60', 'preview'));
-    sourceSelect.add(new Option('Original videos · full quality / more bandwidth', 'original'));
-    sourceSelect.value = previewSource;
-    sourceSelect.addEventListener('change', function () { previewSource = sourceSelect.value; storageSet('stream-preview-source', previewSource); resetAndLoad(); });
-    saverSection.appendChild(sourceSelect);
-    var pauseAll = el('button', { class: 'menu-item' }, 'Pause / resume all previews');
-    pauseAll.classList.toggle('selected',autoplayEnabled);pauseAll.setAttribute('aria-pressed',String(autoplayEnabled));
-    pauseAll.addEventListener('click', function () {
-      autoplayEnabled = !autoplayEnabled;pauseAll.classList.toggle('selected',autoplayEnabled);pauseAll.setAttribute('aria-pressed',String(autoplayEnabled));
-      if (!autoplayEnabled) Array.from(runningPreviews).forEach(pausePreview); else refillPreviews();
-      showToast(autoplayEnabled ? 'Previews playing' : 'Previews paused');
-    });
-    saverSection.appendChild(pauseAll);
-    var fitSelect = el('select', { class: 'filter-select', 'aria-label': 'Media framing' });
-    fitSelect.add(new Option('Fit entire frame · no cropping', 'contain'));
-    fitSelect.add(new Option('Fill tile · crop edges', 'cover'));
-    fitSelect.value = document.documentElement.dataset.mediaFit;
-    fitSelect.addEventListener('change', function () { document.documentElement.dataset.mediaFit = fitSelect.value; storageSet('stream-media-fit', fitSelect.value); });
-    saverSection.appendChild(fitSelect);
-    var effects = el('select', {class:'filter-select','aria-label':'Visual effects'});
-    [['off','Effects off'],['subtle','Subtle effects'],['full','Full effects']].forEach(function (entry) { effects.add(new Option(entry[1],entry[0])); });
-    effects.value=effectsMode;effects.onchange=function(){applyEffects(effects.value);};saverSection.appendChild(effects);
-    saverSection.appendChild(el('div',{class:'menu-help'},'Ambient motion pauses during scrolling or active video playback. Your chosen preview limit stays unchanged.'));
-    var diagnose = el('button',{class:'menu-item',type:'button'},'Check playback smoothness');
-    diagnose.onclick=function(){window.StreamNavigation.leave('options');window.StreamDiagnostics.open({videos:function(){return Array.from(document.querySelectorAll('video')).filter(function(v){return !v.paused;}).slice(0,4);},previewLimit:MAX_PREVIEWS,previewStats:function(){return previewController.stats();},effects:effectsMode});};saverSection.appendChild(diagnose);
-    if (isAdmin) {
-      var rebuild = el('button', {class:'menu-item'}, 'Refresh metadata & previews');
-      rebuild.addEventListener('click', function () {
-        rebuild.disabled=true; showToast('Refreshing metadata and previews…');
-        fetch('/api/rescan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true})})
-          .then(function(r){if(!r.ok)throw Error('Refresh failed');return r.json();})
-          .then(function(j){showToast(j.skipped?'A scan or edit is already running':'Metadata and previews refreshed');resetAndLoad();fetchLibraryStatus();})
-          .catch(function(e){showToast(e.message);}).finally(function(){rebuild.disabled=false;});
-      });
-      saverSection.appendChild(rebuild);
+    function choice(label, attributes, action) {
+      var button = el('button', Object.assign({ type: 'button', class: 'menu-item view-choice' }, attributes || {}));
+      button.textContent = label;
+      button.addEventListener('click', action);
+      return button;
     }
-    panel.appendChild(saverSection);
+    function selectControl(label, options, value, action) {
+      var field = el('label', { class: 'view-field' });
+      field.appendChild(el('span', {}, label));
+      var select = el('select', { class: 'filter-select', 'aria-label': label });
+      options.forEach(function (option) { select.add(new Option(option[1], option[0])); });
+      select.value = String(value);
+      select.addEventListener('change', function () { action(select.value); });
+      field.appendChild(select);
+      return { field: field, control: select };
+    }
+    function paintChoice(button, selected) {
+      button.classList.toggle('selected', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    }
 
-    var densitySection = section('Grid size');
-    DENSITIES.forEach(function (d) {
-      var item = el('button', { class: 'menu-item', 'data-density': d.id }, '<span>' + d.label + '</span>');
-      item.addEventListener('click', function () {
-        applyDensity(d.id);
-        markDensitySelected();
-        remeasureAndReflow();
-      });
-      densitySection.appendChild(item);
-    });
-    panel.appendChild(densitySection);
+    var heading = el('header', { class: 'view-heading' });
+    var title = el('div');
+    title.append(el('strong', {}, 'View options'), el('small', {}, 'Make the gallery your own'));
+    var close = choice('×', { class: 'view-close', 'aria-label': 'Close View options' }, function () { window.StreamNavigation.back(); });
+    heading.append(title, close);
+    panel.appendChild(heading);
 
-    var layoutSection = section('Tile sizing');
-    var sizeCaption = el('div', { class: 'menu-help' }, 'Media width: drag to resize the grid');
-    var sizeSlider = el('input', { type: 'range', min: '120', max: '460', step: '10', value: String(tileSize || 240), class: 'wide-slider', 'aria-label': 'Media tile width' });
+    var layout = section('Media size', 'view-size-section');
+    var sizeLabel = el('label', { class: 'view-size-label', for: 'view-media-size' });
+    sizeLabel.appendChild(el('span', {}, 'One size for the whole gallery'));
+    var preferredSize = tileSize || ({ small: 160, medium: 240, large: 380 }[currentDensity] || 240);
+    var sizeValue = el('output', { for: 'view-media-size', class: 'view-size-value' }, preferredSize + ' px');
+    sizeLabel.appendChild(sizeValue);
+    var sizeSlider = el('input', { id: 'view-media-size', type: 'range', min: '120', max: '460', step: '10', value: String(preferredSize), class: 'wide-slider', 'aria-label': 'Media size' });
     sizeSlider.addEventListener('input', function () {
       tileSize = Number(sizeSlider.value);
+      sizeValue.textContent = tileSize + ' px';
       document.documentElement.style.setProperty('--tile-min', tileSize + 'px');
       storageSet('stream-tile-size', String(tileSize));
-      // One reflow per animation frame, not every intermediate pointer event.
       if (!sizeSlider._raf) sizeSlider._raf = requestAnimationFrame(function () {
         sizeSlider._raf = 0; remeasureAndReflow();
       });
     });
-    layoutSection.appendChild(sizeCaption);
-    layoutSection.appendChild(sizeSlider);
-    ['1', '2'].forEach(function (factor) {
-      var b = el('button', { class: 'menu-item', 'data-video-scale': factor }, factor === '1' ? 'Normal video tiles' : '2× video tiles');
-      b.classList.toggle('selected', !randomEnabled && videoScale === factor);
-      b.addEventListener('click', function () {
-        videoScale = factor;randomEnabled=false;storageSet('stream-random-enabled','0');
-        storageSet('stream-video-scale', factor);
-        Array.prototype.forEach.call(grid.querySelectorAll('.tile.video-tile'), function (t) {
-          if (!t.dataset.manualScale) t.classList.toggle('tile-expanded', randomEnabled ? randomLarge(t.dataset.itemId) : videoScale === '2');
-        });
-        remeasureAndReflow();
-        refreshSizes();
-        Array.prototype.forEach.call(layoutSection.querySelectorAll('[data-video-scale]'), function (button) {
-          button.classList.toggle('selected', button.dataset.videoScale === factor);
-        });
-      });
-      layoutSection.appendChild(b);
-    });
-    var randomButton=el('button',{class:'menu-item','data-random-size':'on'},'Randomly enlarge video previews');randomButton.onclick=randomize;layoutSection.appendChild(randomButton);
-    var uniformButton=el('button',{class:'menu-item','data-random-size':'off'},'Turn off random enlargement');uniformButton.onclick=uniform;layoutSection.appendChild(uniformButton);
-    randomButton.classList.toggle('selected',randomEnabled);uniformButton.classList.toggle('selected',!randomEnabled);
-    panel.appendChild(layoutSection);
-    var outlinesSection=section('Artist outlines');
-    [['off','Off'],['subtle','Fine tile borders'],['hover','On hover / focus']].forEach(function(option){var b=el('button',{class:'menu-item','data-artist-outlines':option[0],'aria-pressed':String(storageGet('stream-artist-outlines','off')===option[0])},option[1]);b.classList.toggle('selected',storageGet('stream-artist-outlines','off')===option[0]);b.onclick=function(){storageSet('stream-artist-outlines',option[0]);artistOutlines.setMode(option[0]);updateArtistSpacing(option[0]);outlinesSection.querySelectorAll('[data-artist-outlines]').forEach(function(button){var chosen=button.dataset.artistOutlines===option[0];button.classList.toggle('selected',chosen);button.setAttribute('aria-pressed',String(chosen));});};outlinesSection.appendChild(b);});
-    var recolor=el('button',{class:'menu-item'},'Shuffle artist colors');recolor.onclick=function(){storageSet('stream-artist-palette',window.StreamActivity.uuid());grid.querySelectorAll('.tile').forEach(function(tile){tile.style.setProperty('--source-color',creatorColor(tile._item.creator));});artistOutlines.refresh();};outlinesSection.appendChild(recolor);
-    outlinesSection.appendChild(el('p',{class:'menu-help'},'Fine borders around each tile. Hover highlights all visible media from the same artist.'));
-    panel.appendChild(outlinesSection);
+    var scale = el('div', { class: 'view-range-ends', 'aria-hidden': 'true' }, '<span>Compact</span><span>Large</span>');
+    layout.append(sizeLabel, sizeSlider, scale);
+    panel.appendChild(layout);
 
-    var datesSection = section('Dates and resolution');
-    var dateFieldSelect = el('select', { class: 'filter-select', 'aria-label': 'Date filter field' },
-      '<option value="created">Media created/taken</option><option value="imported">Imported into Stream</option>');
-    dateFieldSelect.addEventListener('change', function () { state.dateField = dateFieldSelect.value; resetAndLoad(); });
-    datesSection.appendChild(dateFieldSelect);
-    var from = el('input', { type: 'date', class: 'menu-date', 'aria-label': 'From date' });
-    var to = el('input', { type: 'date', class: 'menu-date', 'aria-label': 'To date' });
+    var framing = section('Framing');
+    var fitChoices = el('div', { class: 'view-segmented', role: 'group', 'aria-label': 'Media framing' });
+    [['contain', 'Whole frame'], ['cover', 'Fill tiles']].forEach(function (option) {
+      var button = choice(option[1], { 'data-fit': option[0] }, function () {
+        document.documentElement.dataset.mediaFit = option[0]; storageSet('stream-media-fit', option[0]);
+        fitChoices.querySelectorAll('button').forEach(function (item) { paintChoice(item, item.dataset.fit === option[0]); });
+      });
+      paintChoice(button, document.documentElement.dataset.mediaFit === option[0]); fitChoices.appendChild(button);
+    });
+    framing.appendChild(fitChoices);
+    var organicRow = el('div', { class: 'view-organic-row' });
+    var randomButton = choice('Randomly enlarge videos', { 'data-random-size': 'on', 'aria-label': 'Randomly enlarge video previews' }, function () {
+      if (randomEnabled) uniform(); else randomize();
+      paintRandom();
+    });
+    var reshuffle = choice('Reshuffle', { class: 'view-text-action', 'aria-label': 'Reshuffle enlarged video previews' }, function () { randomize(); paintRandom(); });
+    function paintRandom() { paintChoice(randomButton, randomEnabled); reshuffle.disabled = !randomEnabled; }
+    paintRandom(); organicRow.append(randomButton, reshuffle); framing.appendChild(organicRow);
+    panel.appendChild(framing);
+
+    var outlines = section('Artist outlines');
+    var outlineChoices = el('div', { class: 'view-segmented', role: 'group', 'aria-label': 'Artist outlines' });
+    [['off', 'Off'], ['subtle', 'Fine borders'], ['hover', 'On hover']].forEach(function (option) {
+      var button = choice(option[1], { 'data-artist-outlines': option[0] }, function () {
+        storageSet('stream-artist-outlines', option[0]); artistOutlines.setMode(option[0]); updateArtistSpacing(option[0]);
+        outlineChoices.querySelectorAll('button').forEach(function (item) { paintChoice(item, item.dataset.artistOutlines === option[0]); });
+      });
+      paintChoice(button, storageGet('stream-artist-outlines', 'off') === option[0]); outlineChoices.appendChild(button);
+    });
+    var recolor = choice('Shuffle colors', { class: 'view-text-action', 'aria-label': 'Shuffle artist colors' }, function () {
+      storageSet('stream-artist-palette', window.StreamActivity.uuid());
+      grid.querySelectorAll('.tile').forEach(function (tile) { tile.style.setProperty('--source-color', creatorColor(tile._item.creator)); }); artistOutlines.refresh();
+    });
+    outlines.append(outlineChoices, recolor); panel.appendChild(outlines);
+
+    var sortSection = section('Sort');
+    var sortOptions = [['desc', 'Newest first'], ['asc', 'Oldest first'], ['name-asc', 'Name A–Z'], ['name-desc', 'Name Z–A'], ['random', 'Shuffle'], ['creator', 'All media · artist A–Z']];
+    if (isAdmin) sortOptions.push(['recent', 'Recently opened'], ['continue', 'Continue watching'], ['less-seen', 'Less-seen shuffle']);
+    var primarySort = el('div', { class: 'view-segmented', role: 'group', 'aria-label': 'Quick sort' });
+    function chooseSort(value) {
+      if (value === 'random' || value === 'less-seen') state.seed = String(Date.now());
+      if (value === 'continue') { state.type = 'video'; header.querySelector('[aria-label="Filter by type"]').value = 'video'; }
+      if (value === 'creator') clearGalleryFilters();
+      state.sort = value; markSortSelected(); resetAndLoad();
+    }
+    [['desc', 'Newest'], ['random', 'Shuffle'], ['creator', 'Artist']].forEach(function (option) {
+      primarySort.appendChild(choice(option[1], { 'data-sort': option[0] }, function () { chooseSort(option[0]); }));
+    });
+    sortSection.appendChild(primarySort);
+    if (CONFIG.allowOrderSortChange) panel.appendChild(sortSection);
+
+    var contains = section('Show');
+    var containsChoices = el('div', { class: 'view-filter-choices' });
+    [['', 'All media'], ['favorite', '★ Favorites'], ['pinned', 'Pinned'], ['bookmarked', 'Bookmarks'], ['face', 'Faces'], ['cat', 'Pets'], ['text', 'Text']].forEach(function (option) {
+      var button = choice(option[1], { 'data-has': option[0] }, function () {
+        state.has = option[0] || null; refreshContainsHighlight(); resetAndLoad();
+      });
+      paintChoice(button, (state.has || '') === option[0]); containsChoices.appendChild(button);
+    });
+    contains.appendChild(containsChoices); panel.appendChild(contains);
+    header._containsSection = containsChoices;
+
+    var previews = section('Video previews');
+    var pauseAll = choice('Autoplay previews', { 'data-preview-toggle': '1' }, function () {
+      autoplayEnabled = !autoplayEnabled;
+      if (!autoplayEnabled) Array.from(runningPreviews).forEach(pausePreview); else refillPreviews();
+      paintPreviews(); showToast(autoplayEnabled ? 'Previews playing' : 'Previews paused');
+    });
+    var previewState = el('span', { class: 'view-value' });
+    pauseAll.appendChild(previewState);
+    function paintPreviews() { paintChoice(pauseAll, autoplayEnabled); previewState.textContent = autoplayEnabled ? 'Playing' : 'Paused'; }
+    paintPreviews(); previews.appendChild(pauseAll); panel.appendChild(previews);
+
+    var advanced = el('details', { class: 'view-advanced' });
+    advanced.appendChild(el('summary', {}, 'More controls'));
+    advanced.appendChild(el('p', { class: 'menu-help' }, 'Dates, playback limits and saved views.'));
+    var advancedBody = el('div', { class: 'view-advanced-body' }); advanced.appendChild(advancedBody);
+    var order = selectControl('Sort order', sortOptions, state.sort, chooseSort);
+    if (CONFIG.allowOrderSortChange) advancedBody.appendChild(order.field);
+
+    var dates = section('Dates and resolution');
+    var dateField = selectControl('Date filter field', [['created', 'Media created/taken'], ['imported', 'Imported into Stream']], state.dateField, function (value) { state.dateField = value; resetAndLoad(); });
+    var from = el('input', { type: 'date', class: 'menu-date', 'aria-label': 'From date', value: state.dateFrom || '' });
+    var to = el('input', { type: 'date', class: 'menu-date', 'aria-label': 'To date', value: state.dateTo || '' });
     from.addEventListener('change', function () { state.dateFrom = from.value || null; resetAndLoad(); });
     to.addEventListener('change', function () { state.dateTo = to.value || null; resetAndLoad(); });
-    datesSection.appendChild(from); datesSection.appendChild(to);
-    var resolutionSelect = el('select', { class: 'filter-select', 'aria-label': 'Minimum resolution' },
-      '<option value="0">Any resolution</option><option value="720">720p+</option><option value="1080">1080p+</option><option value="2160">4K+</option>');
-    resolutionSelect.addEventListener('change', function () { state.resolution = Number(resolutionSelect.value); resetAndLoad(); });
-    datesSection.appendChild(resolutionSelect);
-    panel.appendChild(datesSection);
+    var dateRange = el('div', { class: 'view-date-range' });
+    var fromLabel = el('label', { class: 'view-field' }); fromLabel.append(el('span', {}, 'From'), from);
+    var toLabel = el('label', { class: 'view-field' }); toLabel.append(el('span', {}, 'To'), to);
+    dateRange.append(fromLabel, toLabel);
+    var resolution = selectControl('Minimum resolution', [['0', 'Any resolution'], ['720', '720p+'], ['1080', '1080p+'], ['2160', '4K+']], state.resolution, function (value) { state.resolution = Number(value); resetAndLoad(); });
+    dates.append(dateField.field, dateRange, resolution.field); advancedBody.appendChild(dates);
 
-    var themeSection = section('Theme');
-    THEMES.forEach(function (t) {
-      var swatchHtml = t.swatch ? '<span class="swatch" style="background:' + t.swatch + '"></span>' : '<span class="swatch" style="background:linear-gradient(135deg,#a83831,#c1443c)"></span>';
-      var item = el('button', { class: 'menu-item', 'data-theme-opt': t.id }, '<span>' + t.label + '</span>' + swatchHtml);
-      item.addEventListener('click', function () {
-        applyTheme(t.id);
-        markThemeSelected();
-      });
-      themeSection.appendChild(item);
+    var playback = section('Playback');
+    var maxPreview = selectControl('Maximum simultaneous video previews', [[4, '4 previews'], [8, '8 previews'], [12, '12 previews'], [16, '16 previews'], [24, '24 previews'], [64, 'Up to 64 previews']], MAX_PREVIEWS || 8, function (value) {
+      MAX_PREVIEWS = Number(value); storageSet('stream-max-previews', String(MAX_PREVIEWS));
+      if (runningPreviews.size > MAX_PREVIEWS) Array.from(runningPreviews).slice(MAX_PREVIEWS).forEach(pausePreview);
+      refillPreviews();
     });
-    panel.appendChild(themeSection);
-    var savedSection=section('Saved views');
-    var viewName=el('input',{type:'text',class:'menu-date',maxlength:'50',placeholder:'Name this view','aria-label':'Saved view name'});
-    var savedSelect=el('select',{class:'filter-select','aria-label':'Saved views'});
-    var savedViews=[];try{savedViews=JSON.parse(storageGet('stream-saved-filters','[]'));if(!Array.isArray(savedViews))savedViews=[];}catch(_){}
-    savedViews=savedViews.slice(0,20).filter(function(v){return v&&typeof v.name==='string'&&v.filters&&typeof v.filters==='object';});
-    var savedKeys=['type','album','creator','dateField','dateFrom','dateTo','resolution','has','q','sort','seed'];
-    function paintSaved(){savedSelect.replaceChildren(new Option('Choose a saved view',''));savedViews.forEach(function(v,i){savedSelect.add(new Option(v.name,String(i)));});}
-    savedSelect.onchange=function(){
-      if(savedSelect.value==='')return;var saved=savedViews[Number(savedSelect.value)];if(!saved)return;
-      savedKeys.forEach(function(k){if(Object.hasOwn(saved.filters,k))state[k]=saved.filters[k];});
-      header._albumSelect.value=state.album||'';header._creatorSelect.value=state.creator||'';
-      header.querySelector('[aria-label="Filter by type"]').value=state.type||'';
-      var search=header.querySelector('input[type=search]');if(search)search.value=state.q||'';
-      from.value=state.dateFrom||'';to.value=state.dateTo||'';dateFieldSelect.value=state.dateField||'created';resolutionSelect.value=String(state.resolution||0);
-      markSortSelected();refreshContainsHighlight();resetAndLoad();showToast('Saved view applied');
-    };
-    var saveView=el('button',{type:'button',class:'menu-item'},'Save current view');
-    saveView.onclick=function(){var name=viewName.value.trim();if(!name){viewName.focus();return;}var filters={};savedKeys.forEach(function(k){filters[k]=state[k];});savedViews=savedViews.filter(function(v){return v.name!==name;});savedViews.unshift({name:name,filters:filters});savedViews=savedViews.slice(0,20);storageSet('stream-saved-filters',JSON.stringify(savedViews));paintSaved();showToast('View saved on this browser');};
-    var removeView=el('button',{type:'button',class:'menu-item'},'Remove selected saved view');removeView.onclick=function(){if(savedSelect.value==='')return;savedViews.splice(Number(savedSelect.value),1);storageSet('stream-saved-filters',JSON.stringify(savedViews));paintSaved();};
-    savedSection.append(viewName,saveView,savedSelect,removeView);panel.appendChild(savedSection);paintSaved();
-    var quickSection=section('Quick actions');
-    [['shuffle','Shuffle'],['best','Best'],['previews','Pause previews']].forEach(function(entry){var button=el('button',{type:'button',class:'menu-item'},'Pin '+entry[1]);button.classList.toggle('selected',pinnedActions.includes(entry[0]));button.onclick=function(){var index=pinnedActions.indexOf(entry[0]);if(index<0)pinnedActions.push(entry[0]);else pinnedActions.splice(index,1);storageSet('stream-pinned-actions',JSON.stringify(pinnedActions));button.classList.toggle('selected',pinnedActions.includes(entry[0]));renderQuickActions();};quickSection.appendChild(button);});panel.appendChild(quickSection);
+    var source = selectControl('Preview source', [['preview', 'Optimized · native FPS up to 60'], ['original', 'Original · full quality']], previewSource, function (value) { previewSource = value; storageSet('stream-preview-source', value); resetAndLoad(); });
+    var saver = choice('Data saver', { 'data-saver-toggle': '1', title: 'Reduces autoplay and loads images later. Reloads this page.' }, function () {
+      dataSaverMode = !dataSaverMode; storageSet('stream-data-saver', dataSaverMode ? '1' : '0'); location.reload();
+    });
+    paintChoice(saver, dataSaverMode);
+    var diagnose = choice('Check playback smoothness', {}, function () {
+      window.StreamNavigation.leave('options');
+      window.StreamDiagnostics.open({ videos: function () { return Array.from(document.querySelectorAll('video')).filter(function (video) { return !video.paused; }).slice(0, 4); }, previewLimit: MAX_PREVIEWS, previewStats: function () { return previewController.stats(); }, effects: effectsMode });
+    });
+    playback.append(maxPreview.field, source.field, saver, el('p', { class: 'menu-help' }, 'Data saver reloads the page. These playback choices stay on this browser.'), diagnose);
+    if (isAdmin) {
+      var rebuild = choice('Refresh metadata & previews', {}, function () {
+        rebuild.disabled = true; showToast('Refreshing metadata and previews…');
+        fetch('/api/rescan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ force: true }) })
+          .then(function (response) { if (!response.ok) throw Error('Refresh failed'); return response.json(); })
+          .then(function (result) { showToast(result.skipped ? 'A scan or edit is already running' : 'Metadata and previews refreshed'); resetAndLoad(); fetchLibraryStatus(); })
+          .catch(function (error) { showToast(error.message); }).finally(function () { rebuild.disabled = false; });
+      });
+      playback.appendChild(rebuild);
+    }
+    advancedBody.appendChild(playback);
+
+    var saved = section('Saved views');
+    var viewName = el('input', { type: 'text', class: 'menu-date', maxlength: '50', placeholder: 'Name this view', 'aria-label': 'Saved view name' });
+    var savedSelect = el('select', { class: 'filter-select', 'aria-label': 'Saved views' });
+    var savedViews = []; try { savedViews = JSON.parse(storageGet('stream-saved-filters', '[]')); if (!Array.isArray(savedViews)) savedViews = []; } catch (_) {}
+    savedViews = savedViews.slice(0, 20).filter(function (view) { return view && typeof view.name === 'string' && view.filters && typeof view.filters === 'object'; });
+    var savedKeys = ['type', 'album', 'creator', 'dateField', 'dateFrom', 'dateTo', 'resolution', 'has', 'q', 'sort', 'seed'];
+    function paintSaved() { savedSelect.replaceChildren(new Option('Choose a saved view', '')); savedViews.forEach(function (view, index) { savedSelect.add(new Option(view.name, String(index))); }); }
+    savedSelect.addEventListener('change', function () {
+      if (savedSelect.value === '') return; var view = savedViews[Number(savedSelect.value)]; if (!view) return;
+      savedKeys.forEach(function (key) { if (Object.hasOwn(view.filters, key)) state[key] = view.filters[key]; });
+      header._albumSelect.value = state.album || ''; header._creatorSelect.value = state.creator || '';
+      header.querySelector('[aria-label="Filter by type"]').value = state.type || '';
+      var search = header.querySelector('input[type=search]'); if (search) search.value = state.q || '';
+      from.value = state.dateFrom || ''; to.value = state.dateTo || ''; dateField.control.value = state.dateField || 'created'; resolution.control.value = String(state.resolution || 0);
+      markSortSelected(); refreshContainsHighlight(); resetAndLoad(); showToast('Saved view applied');
+    });
+    var saveView = choice('Save current view', {}, function () {
+      var name = viewName.value.trim(); if (!name) { viewName.focus(); return; }
+      var filters = {}; savedKeys.forEach(function (key) { filters[key] = state[key]; });
+      savedViews = savedViews.filter(function (view) { return view.name !== name; }); savedViews.unshift({ name: name, filters: filters }); savedViews = savedViews.slice(0, 20);
+      storageSet('stream-saved-filters', JSON.stringify(savedViews)); paintSaved(); showToast('View saved on this browser');
+    });
+    var removeView = choice('Remove selected view', { 'aria-label': 'Remove selected saved view' }, function () {
+      if (savedSelect.value === '') return; savedViews.splice(Number(savedSelect.value), 1); storageSet('stream-saved-filters', JSON.stringify(savedViews)); paintSaved();
+    });
+    saved.append(viewName, saveView, savedSelect, removeView); advancedBody.appendChild(saved); paintSaved();
+
+    var quick = section('Pin to toolbar');
+    [['shuffle', 'Shuffle'], ['best', 'Favorites'], ['previews', 'Pause previews']].forEach(function (entry) {
+      var button = choice(entry[1], { 'aria-label': 'Pin ' + entry[1] + ' to toolbar' }, function () {
+        var index = pinnedActions.indexOf(entry[0]); if (index < 0) pinnedActions.push(entry[0]); else pinnedActions.splice(index, 1);
+        storageSet('stream-pinned-actions', JSON.stringify(pinnedActions)); paintChoice(button, pinnedActions.includes(entry[0])); renderQuickActions();
+      });
+      paintChoice(button, pinnedActions.includes(entry[0])); quick.appendChild(button);
+    });
+    advancedBody.appendChild(quick); panel.appendChild(advanced);
 
     function markSortSelected() {
-      Array.prototype.forEach.call(sortSection.querySelectorAll('.menu-item'), function (b) {
-        b.classList.toggle('selected', b.dataset.sort === state.sort);
-      });
+      primarySort.querySelectorAll('[data-sort]').forEach(function (button) { paintChoice(button, button.dataset.sort === state.sort); });
+      order.control.value = state.sort;
     }
-    function markDensitySelected() {
-      Array.prototype.forEach.call(densitySection.querySelectorAll('.menu-item'), function (b) {
-        b.classList.toggle('selected', b.dataset.density === currentDensity);
-      });
-    }
-    function markThemeSelected() {
-      Array.prototype.forEach.call(themeSection.querySelectorAll('.menu-item'), function (b) {
-        b.classList.toggle('selected', b.dataset.themeOpt === currentTheme);
-      });
-    }
-    markSortSelected();
-    refreshContainsHighlight();
-    markDensitySelected();
-    markThemeSelected();
+    markSortSelected(); refreshContainsHighlight();
 
     function showMenu() {
-      panel.classList.add('open');
-      panel.style.setProperty('--menu-top', Math.max(8, header.getBoundingClientRect().bottom + 8) + 'px');
-      panel.inert = false;
-      trigger.setAttribute('aria-expanded', 'true');
+      panel.classList.add('open'); panel.style.setProperty('--menu-top', Math.max(8, header.getBoundingClientRect().bottom + 8) + 'px'); panel.inert = false;
+      trigger.setAttribute('aria-expanded', 'true'); markSortSelected(); paintPreviews(); paintRandom();
       document.addEventListener('click', outsideClick, true);
     }
     function hideMenu() {
-      panel.classList.remove('open');
-      panel.inert = true;
-      trigger.setAttribute('aria-expanded', 'false');
-      document.removeEventListener('click', outsideClick, true);
+      panel.classList.remove('open'); panel.inert = true; trigger.setAttribute('aria-expanded', 'false'); document.removeEventListener('click', outsideClick, true);
       trigger.focus({ preventScroll: true });
+      if (afterClose) {
+        var next = afterClose; afterClose = null;
+        // The history pop finishes removing the old panel before the new
+        // Settings entry is pushed. Gallery clicks still dismiss only.
+        queueMicrotask(function () { if (next.isConnected) { next.focus({ preventScroll: true }); next.click(); } });
+      }
     }
     function openMenu() {
-      if (!window.StreamNavigation.enter('options', {back: hideMenu, forward: showMenu})) return;
-      showCategory(null); showMenu(); categories.querySelector('button').focus();
+      if (!window.StreamNavigation.enter('options', { back: hideMenu, forward: showMenu })) return;
+      showMenu(); sizeSlider.focus({ preventScroll: true });
     }
-    function outsideClick(e) {
-      if (!wrap.contains(e.target)) { e.preventDefault(); e.stopImmediatePropagation(); window.StreamNavigation.back(); }
+    function outsideClick(event) {
+      if (!wrap.contains(event.target)) {
+        afterClose = event.target.closest('button[aria-label="Settings"]');
+        event.preventDefault(); event.stopImmediatePropagation(); window.StreamNavigation.back();
+      }
     }
-    trigger.addEventListener('click', function (e) {
-      e.stopPropagation();
-      if (panel.classList.contains('open')) window.StreamNavigation.back();
-      else openMenu();
+    trigger.addEventListener('click', function (event) {
+      event.stopPropagation(); if (panel.classList.contains('open')) window.StreamNavigation.back(); else openMenu();
     });
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && panel.classList.contains('open') && !document.querySelector('dialog[open]')) { e.preventDefault(); e.stopImmediatePropagation(); window.StreamNavigation.back(); }
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && panel.classList.contains('open') && !document.querySelector('dialog[open]')) {
+        event.preventDefault(); event.stopImmediatePropagation(); window.StreamNavigation.back();
+      }
     }, true);
-
-    wrap.appendChild(trigger);
-    var categories=el('nav',{class:'view-categories','aria-label':'View option categories'});
-    var sections=Array.from(panel.children);var currentCategory=null;
-    var menuHead=el('div',{class:'menu-heading'}), backButton=el('button',{type:'button',class:'navigation-back','aria-label':'Back in View options'},'← Back'), menuTitle=el('strong',{},'View options');
-    menuHead.append(backButton,menuTitle);backButton.onclick=function(){window.StreamNavigation.back();};
-    function categoryOf(section){var label=section.querySelector('.menu-label')?.textContent||'';return /Sort|Contains|Dates|Saved/.test(label)?'Filters':/Theme/.test(label)?'Theme':/Performance/.test(label)?'Playback':'Layout';}
-    function showCategory(name) {
-      currentCategory=name; categories.hidden=Boolean(name); menuTitle.textContent=name||'View options';backButton.textContent=name?'← View options':'← Gallery';
-      sections.forEach(function(section){section.hidden=!name||categoryOf(section)!==name;});panel.scrollTop=0;
-      if(!name)categories.querySelector('button')?.focus();
-    }
-    ['Layout','Playback','Filters','Theme'].forEach(function(name){
-      var button=el('button',{type:'button',class:'navigation-row'});button.textContent=name+' ›';
-      button.addEventListener('click',function(){
-        if(!window.StreamNavigation.enter('options-section',{back:function(){showCategory(null);button.focus();},forward:function(){showCategory(name);}}))return;
-        showCategory(name);backButton.focus();
-      });categories.appendChild(button);
-    });
-    showCategory(null);panel.prepend(menuHead,categories);panel.inert=true;trigger.setAttribute('aria-expanded','false');
-    wrap.appendChild(panel);
+    panel.inert = true; trigger.setAttribute('aria-expanded', 'false'); wrap.append(trigger, panel);
     return wrap;
   }
 
@@ -734,15 +676,15 @@
     var video = lightbox.mediaWrap.querySelector('video');
     if (!lb.open || !videoStatsEnabled || !video || !lb.item) return;
     var tech = lb.item.info?.tech || {};
-    var enhanced = video.dataset.sourceKind === 'enhanced';
-    var sourceFps = enhanced ? Number(video.dataset.sourceFps) : tech.frameRate;
+    var compatible = video.dataset.sourceKind === 'compatible';
+    var sourceFps = tech.frameRate;
     var dimensions = sample.width && sample.height ? sample.width + '×' + sample.height : 'loading';
     var viewport = Math.round(video.clientWidth) + '×' + Math.round(video.clientHeight);
     var values = ['Stats for nerds', dimensions + ' source · ' + viewport + ' viewport',
       (sourceFps ? Number(sourceFps).toFixed(2) + ' source fps · ' : '') + (sample.fps === null ? 'fps pending / inactive' : sample.fps.toFixed(1) + ' ' + sample.fpsKind + ' fps'),
       sample.total === null || sample.dropped === null ? 'Frame counters unavailable' : sample.dropped.toLocaleString() + ' dropped / ' + sample.total.toLocaleString() + ' frames',
       sample.bufferedSeconds.toFixed(1) + 's buffered · ' + sample.rate.toFixed(2) + '× · ' + sample.state,
-      enhanced ? 'Enhanced · H.264' : [tech.videoCodec, tech.audioCodec, 'Original'].filter(Boolean).join(' · ')];
+      compatible ? 'Compatible copy · H.264' : [tech.videoCodec, tech.audioCodec, 'Original'].filter(Boolean).join(' · ')];
     if (!root._statsFields) {
       root._statsFields = values.map(function (_, i) { return el(i ? 'span' : 'strong'); });
       var hide = el('button', { type: 'button' }, 'Hide stats'); hide.onclick = function () { lightbox.statsBtn.focus(); setVideoStatsEnabled(false); };
@@ -909,7 +851,7 @@
       if (!rows.length) wrap.appendChild(el('p', {}, 'No entries yet'));
     }
     function showAiControls() {
-      var sectionEl = section('Optional AI models & hardware');
+      var sectionEl = section('Optional object recognition');
       sectionEl.appendChild(el('p', { class: 'modal-sub' },
         'Only installed models run. Downloads are explicit and optional. Hardware details reflect the container, not necessarily the physical host.'));
       var aiBox = el('div', { class: 'dashboard-ai-controls' });
@@ -1379,7 +1321,9 @@
   function refreshContainsHighlight() {
     if (!header._containsSection) return;
     Array.prototype.forEach.call(header._containsSection.querySelectorAll('.menu-item'), function (b) {
-      b.classList.toggle('selected', b.dataset.has === (state.has || ''));
+      var selected = b.dataset.has === (state.has || '');
+      b.classList.toggle('selected', selected);
+      b.setAttribute('aria-pressed', String(selected));
     });
   }
 
@@ -1394,7 +1338,7 @@
     var section = header._containsSection;
     section.appendChild(el('div', { class: 'menu-divider' }));
     classes.forEach(function (cls) {
-      var item = el('button', { class: 'menu-item', 'data-has': cls }, '<span>' + cls + '</span>');
+      var item = el('button', { type: 'button', class: 'menu-item', 'data-has': cls, 'aria-pressed': 'false' }, '<span>' + cls + '</span>');
       item.addEventListener('click', function () {
         state.has = cls;
         refreshContainsHighlight();
@@ -2021,11 +1965,10 @@
       media.controls = true;
       media.playsInline = true;
       media.autoplay = true;
-      media.dataset.sourceKind = item.activeVariant ? 'enhanced' : 'original';
-      if(item.activeVariantTech?.frameRate)media.dataset.sourceFps=String(item.activeVariantTech.frameRate);
+      media.dataset.sourceKind = 'original';
       media._streamItem = item;
       media.addEventListener('play', updateBackgroundBusy);media.addEventListener('pause',updateBackgroundBusy);
-      media.addEventListener('error', function () { if (media.isConnected) window.StreamWorkbench?.preparePlayback(media,item); });
+      media.addEventListener('error', function () { if (media.isConnected) window.StreamLibraryTools?.preparePlayback(media,item); });
       media.defaultPlaybackRate = Number(lightbox.speed.value);
       media.playbackRate = Number(lightbox.speed.value);
       media.poster = item.urls.thumb;
@@ -2038,8 +1981,6 @@
     lightbox.speed.style.display = item.type === 'video' ? '' : 'none';
     if (videoStatsEnabled && item.type === 'video') startVideoStats(); else stopVideoStats();
     if(item.type==='video')stopActivity=window.StreamActivity.bind(media,item);
-    var previousEnhance=lightbox.root.querySelector('.enhance-video');if(previousEnhance)previousEnhance.remove();
-    if(isAdmin&&item.type==='video'){var enhance=el('button',{class:'enhance-video',type:'button'},'Enhance video');enhance.onclick=function(){window.StreamSettings.enhance(item,media);};lightbox.root.querySelector('.lightbox-actions').prepend(enhance);}
     installMediaZoom(media);
     renderSavedEditor(item);
     if (bg && item.type === 'video') { bg.setHoverColor(item.color); bg.attachAudio(media); }
