@@ -23,8 +23,11 @@ const { feedHandler } = require('./lib/feed');
 const { loginHandler, logoutHandler, setupHandler } = require('./lib/handlers/auth');
 const { downloadZipHandler } = require('./lib/handlers/download');
 
+async function boot() {
 const ROOT = __dirname;
 const cfg = loadConfig(ROOT);
+const cacheRuntime = new (require('./lib/cache-runtime').CacheRuntime)(cfg, { log: message => console.log('[stream] ' + message) });
+await cacheRuntime.restore();
 require('./lib/security').initializeSecurity(cfg);
 const ai = new AiManager(cfg);
 
@@ -47,10 +50,13 @@ const library = libraryHandlers(cfg, db, {edit:(item,body)=>coordinator.run('edi
 const { settingsHandlers } = require('./lib/handlers/settings');
 const resources = new (require('./lib/resource-monitor').ResourceMonitor)(cfg,db.store);
 const settings = settingsHandlers(cfg, db);
+const folders = require('./lib/handlers/folders').folderCollectionsHandlers(cfg, db);
 const maintenance = new (require('./lib/maintenance').Maintenance)(cfg,db);
 const playback = new (require('./lib/playback-service').PlaybackService)(cfg,db,coordinator);
 const workbench = require('./lib/handlers/workbench').workbenchHandlers(cfg,db,{maintenance,coordinator,playback,scanner});
 const router = new Router();
+router.get('/api/folders', folders.get);
+router.post('/api/folders', folders.update);
 router.get('/api/node-info', nodeHandlers.info);
 router.get('/api/nodes', nodeHandlers.list);
 router.post('/api/nodes/settings', nodeHandlers.settings);
@@ -97,10 +103,18 @@ router.get('/media/:id/:variant', mediaHandler(cfg, db));
 router.get('/', pageHandler(cfg, db));
 router.get('/:id', pageHandler(cfg, db));
 
-const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/design.css', '/entrance.js', '/nodes.js', '/nodes.css', '/social-preview.png', '/settings.js', '/activity.js', '/resources.js', '/library-layout.js', '/artist-outlines.js', '/library-map.js', '/player-stats.js', '/navigation.js', '/preview-controller.js', '/diagnostics.js', '/library-tools.js', '/controls.css', '/options.css']);
+const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/design.css', '/entrance.js', '/nodes.js', '/nodes.css', '/folders.js', '/folders.css', '/social-preview.png', '/settings.js', '/activity.js', '/resources.js', '/library-layout.js', '/artist-outlines.js', '/library-map.js', '/player-stats.js', '/navigation.js', '/preview-controller.js', '/diagnostics.js', '/library-tools.js', '/controls.css', '/options.css']);
 const PUBLIC_DIR = path.join(ROOT, 'public');
 
-const server = http.createServer(async (req, res) => {
+const requests = new Set();
+const server = http.createServer((req, res) => {
+  if (shuttingDown) { res.writeHead(503, { Connection: 'close' }); res.end('Server is stopping'); return; }
+  const request = handleRequest(req, res);
+  requests.add(request);
+  request.finally(() => requests.delete(request)).catch(() => {});
+});
+
+async function handleRequest(req, res) {
   let pathname;
   try {
     pathname = new URL(req.url, 'http://x').pathname;
@@ -155,8 +169,9 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ error: 'Internal server error' }));
     }
   }
-});
+}
 
+let rescanTimer = null;
 async function main() {
   if(cfg.setupRequired)console.log('[stream] Owner setup code: '+cfg.setupCode+' (enter this once in the web setup screen)');
   resources.start();
@@ -172,7 +187,7 @@ async function main() {
       .finally(() => scanner.startWatching());
   });
   if (cfg.rescanIntervalMinutes > 0) {
-    setInterval(() => {
+    rescanTimer = setInterval(() => {
       scanner.scan().catch((err) => console.error('[stream] Interval scan failed:', err));
     }, cfg.rescanIntervalMinutes * 60 * 1000);
   }
@@ -186,11 +201,21 @@ main().catch((err) => {
 let shuttingDown=false;
 async function shutdown() {
   if(shuttingDown)return;shuttingDown=true;
-  resources.stop();scanner.stopWatching();
+  resources.stop();scanner.stopWatching();clearInterval(rescanTimer);
+  ai.stop();
   await nodes.stop();
   const stopped=coordinator.stop();
   const closed=new Promise(resolve=>server.close(resolve));
+  server.closeAllConnections();
+  await Promise.allSettled([...requests]);
   await scanner.waitForIdle();await stopped;await closed;
-  db.close ? db.close() : db.store.close();process.exit(0);
+  require('./lib/vision-objects').shutdown();
+  db.close ? db.close() : db.store.close();
+  await cacheRuntime.save();
+  process.exit(0);
 }
 for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>shutdown().catch(err=>{console.error('[stream] Shutdown error:',err.message);process.exit(1);}));
+
+}
+
+boot().catch(error => { console.error('[stream] Fatal startup error:', error.message); process.exit(1); });

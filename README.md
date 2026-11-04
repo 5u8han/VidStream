@@ -2,11 +2,13 @@
 
 Downloadable, self-hosted software for browsing and sharing photos and videos that live on your own machines. It uses an embedded SQLite catalog, native browser playback and a small plain JavaScript frontend. There is no central VidStream cloud or upload service.
 
-**Main 1.10.0** includes independent library switching, a flatter Settings window and simpler View options. All reviewed development, design and node work is included. **main is the only branch**; the former branch names have been retired without deleting their merged history.
+**Main 1.11.0** adds manually chosen folder shortcuts within one server, bounded nearby gallery contents and an optional RAM preview cache with shutdown snapshots. Independent library switching remains available. **main is the only branch**; the former branch names have been retired without deleting their merged history.
 
 ## Browse first
 
 - Dense, zero-gutter media layouts, with one media-size control, whole-frame/cropped viewing and optional fine artist borders.
+- Choose named, nested folder collections from the top-left title menu without rescanning or separate sign-ins. See [Folders](docs/FOLDERS.md).
+- Distant tile contents are released as you scroll, keeping nearby images, controls and video decoders bounded while preserving scroll geometry.
 - Muted previews capped at the original frame rate, up to 60 fps; offscreen video sources are released and preview concurrency stays bounded.
 - Individual video enlargement and randomized larger previews remain available.
 - Settings opens directly onto everyday appearance and player controls. View options shows layout, size and sorting directly; secondary tools stay under clearly labeled disclosures.
@@ -86,7 +88,7 @@ Reload the browser after the rebuild. An already-open page keeps its older JavaS
 docker compose exec stream node -p "require('./package.json').version"
 ```
 
-This prints the container's package version; expect **1.10.0**. The source checkout, running container and loaded browser page are separate states.
+This prints the container's package version; expect **1.11.0**. The source checkout, running container and loaded browser page are separate states.
 
 Updating preserves historical enhancement records and files but removes their processing/control API and UI. Previously published files remain ordinary source media; an old active-variant choice no longer substitutes a separate enhancement job for the source. No model or job installation is necessary to browse.
 
@@ -96,10 +98,12 @@ Updating preserves historical enhancement records and files but removes their pr
 | --- | --- |
 | Your explicit `/media/original` mount | Photos/videos you choose to serve |
 | `stream-data` at `/app/data` | Catalog, permanent identities, history, accounts, settings and backups |
-| `stream-cache` at `/app/.cache` | Thumbnails, previews and session state; existing optional recognition weights |
+| `stream-cache` at `/app/.cache` | Rebuildable thumbnails, previews and optional recognition weights; optional RAM-mode snapshots |
 | `stream-originals` at `/app/originals` | Preserved original archives from earlier releases; retain an existing host bind when upgrading |
 
-Stop the app before copying its complete persistent state, then restart it after the copy. Back up media separately as well; a catalog snapshot does not contain the media itself. A preview cache can be rebuilt, but its session secret and any downloaded recognition weights are worth preserving. Keep the live SQLite database on the server's local storage, not a shared writable SMB/NFS database. Never remove volumes to fix a sign-in or missing-mount issue. [SQLite WAL limitations](https://sqlite.org/wal.html)
+Stop the app before copying its complete persistent state, then restart it after the copy. Back up media separately as well; a catalog snapshot does not contain the media itself. Session keys now live in persistent data; existing cache keys migrate without invalidating sessions. A preview cache can be rebuilt, but downloaded recognition weights are worth preserving. Keep the live SQLite database on the server's local storage, not a shared writable SMB/NFS database. Never remove volumes to fix a sign-in or missing-mount issue. [SQLite WAL limitations](https://sqlite.org/wal.html)
+
+Optional [RAM cache mode](docs/RAM_CACHE.md) restores a saved cache into a bounded temporary memory filesystem before startup and saves it to the cache volume after a graceful stop. Default disk-cache behavior is unchanged. Cache-only cold starts are available without deleting the database or media. Forced termination and power loss cannot save new RAM-only work.
 
 Quick edit saves originals and revision metadata in a hidden `.vidstream-originals` directory beside the source; preserve it when backing up a writable collection. Hidden archives are excluded from the gallery scanner.
 

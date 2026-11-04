@@ -16,6 +16,7 @@ const configFiles = [
   'docker-compose.smb.yml',
   'docker-compose.gpu.yml',
   'docker-compose.nodes-host.yml',
+  'docker-compose.ram-cache.yml',
 ];
 // Do not inherit host Compose variables, PORT, secrets or a real .env path.
 // HOME/DOCKER_CONFIG allow the CLI to locate its installed Compose plugin.
@@ -263,6 +264,40 @@ volumes:
     fixedContainerSettings(existing);
   });
 
+  writeEnvironment();
+  const ram = resolve(['docker-compose.ram-cache.yml']);
+  check('RAM cache replaces only its runtime mount and reuses the named cache volume for snapshots', () => {
+    const runtime = mount(ram, '/app/.cache'), snapshot = mount(ram, '/app/cache-snapshot');
+    assert.equal(runtime.type, 'tmpfs');
+    assert.equal(Number(runtime.tmpfs.size), 1073741824);
+    assert.equal(runtime.tmpfs.mode, 448);
+    assert.equal(snapshot.type, 'volume'); assert.equal(snapshot.source, 'stream-cache');
+    assert.equal(mount(ram, '/app/data').source, 'stream-data');
+    assert.equal(mount(ram, '/app/originals').source, 'stream-originals');
+    assert.equal(ram.services.stream.environment.CACHE_SNAPSHOT_DIR, '/app/cache-snapshot/.ram-cache');
+    assert.equal(ram.services.stream.environment.CACHE_COLD_START, '0');
+    assert.equal(Number(ram.services.stream.mem_limit), 4294967296);
+    assert.equal(ram.services.stream.memswap_limit, ram.services.stream.mem_limit);
+    assert.ok(ram.services.stream.stop_grace_period);
+  });
+  const ramExisting = resolve(['existing.yml', 'docker-compose.ram-cache.yml']);
+  check('RAM cache retains existing external volumes and custom media/archive mounts', () => {
+    assert.equal(mount(ramExisting, '/media/original').source, legacyMedia);
+    assert.equal(mount(ramExisting, '/app/originals').source, legacyOriginals);
+    assert.equal(mount(ramExisting, '/app/cache-snapshot').source, 'stream-cache');
+    assert.equal(ramExisting.volumes['stream-cache'].name, 'existing_stream-cache');
+    assert.equal(ramExisting.volumes['stream-cache'].external, true);
+    assert.equal(ramExisting.volumes['stream-data'].external, true);
+  });
+  writeEnvironment({ STREAM_RAM_CACHE_SIZE: 268435456, STREAM_MEM_LIMIT: '3g', STREAM_CACHE_COLD_START: '1', STREAM_CACHE_STOP_GRACE: '8m' });
+  const customRam = resolve(['docker-compose.ram-cache.yml']);
+  check('RAM cache size, container memory, cold start and shutdown grace are explicit independent choices', () => {
+    assert.equal(Number(mount(customRam, '/app/.cache').tmpfs.size), 268435456);
+    assert.equal(Number(customRam.services.stream.mem_limit), 3221225472);
+    assert.equal(customRam.services.stream.memswap_limit, customRam.services.stream.mem_limit);
+    assert.equal(customRam.services.stream.environment.CACHE_COLD_START, '1');
+    assert.notEqual(customRam.services.stream.stop_grace_period, ram.services.stream.stop_grace_period);
+  });
   console.log(`${passed} Compose configuration checks passed; no containers started or data changed.`);
 } finally {
   fs.rmSync(temporary, { recursive: true, force: true });

@@ -153,6 +153,7 @@
   // marking the current selection -- it can't wait for the "Grid
   // state" section further down the file.
   var state = {
+    folder: null,
     type: null,
     album: null,
     creator: null,
@@ -169,6 +170,7 @@
   };
 
   var selection = { active: false, ids: new Set() };
+  var foldersReady = Promise.resolve();
 
   // ---------------------------------------------------------------
   // App shell
@@ -457,7 +459,7 @@
     }
     function outsideClick(event) {
       if (!wrap.contains(event.target)) {
-        afterClose = event.target.closest('button[aria-label="Settings"]');
+        afterClose = event.target.closest('button[aria-label="Settings"], button.folder-trigger');
         event.preventDefault(); event.stopImmediatePropagation(); window.StreamNavigation.back();
       }
     }
@@ -609,6 +611,7 @@
 
     header.appendChild(title);
     header.appendChild(controls);
+    if (window.StreamFolders) foldersReady = window.StreamFolders.mount(title);
     window.StreamNodes?.mount(header);
   }
 
@@ -1208,6 +1211,8 @@
 
   function apiUrl(cursor) {
     var params = new URLSearchParams();
+    if (state.folder) params.set('folder', state.folder);
+    if (window.StreamFolders?.configured()) params.set('metadata', '0');
     if (state.type) params.set('type', state.type);
     if (state.album) params.set('album', state.album);
     if (state.creator) params.set('creator', state.creator);
@@ -1282,7 +1287,7 @@
     state.loadToken = (state.loadToken || 0) + 1;
     state.loading = false;
     grid.classList.add('refreshing');
-    lazyObserver.disconnect(); autoplayObserver.disconnect(); previewController.clear();
+    tileViewportObserver.disconnect(); lazyObserver.disconnect(); autoplayObserver.disconnect(); previewController.clear();
     if (bg) bg.clearTiles();
     grid.replaceChildren();
     state.cursor = null;
@@ -1301,7 +1306,7 @@
     sel.add(new Option('All creators', ''));
     creators.forEach(function (c) { sel.add(new Option(c, c)); });
     sel.value = state.creator || '';
-    sel.style.display = creators.length ? '' : 'none';
+    sel.style.display = creators.length && !window.StreamFolders?.configured() ? '' : 'none';
   }
 
   var lastAlbums = null;
@@ -1315,8 +1320,23 @@
     sel.add(new Option('All albums', ''));
     albums.forEach(function (a) { sel.add(new Option(a, a)); });
     sel.value = state.album || '';
-    sel.style.display = albums.length ? '' : 'none';
+    sel.style.display = albums.length && !window.StreamFolders?.configured() ? '' : 'none';
   }
+
+  window.addEventListener('stream:folder-change', function (event) {
+    state.folder = event.detail.id || null;
+    clearGalleryFilters();
+    lastCreators = lastAlbums = null;
+    if (event.detail.configured) {
+      header._albumSelect.style.display = 'none';
+      header._creatorSelect.style.display = 'none';
+    }
+    if (!event.detail.initial) {
+      if (selection.active) exitSelectionMode();
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      resetAndLoad();
+    }
+  });
 
   function refreshContainsHighlight() {
     if (!header._containsSection) return;
@@ -1362,6 +1382,36 @@
   // Tiles
   // ---------------------------------------------------------------
 
+  // Keep only the nearby tiles' images, controls and decoder resources in
+  // the DOM. The lightweight grid shells retain their measured spans and
+  // media records, so scrolling back, masonry placement and player links
+  // keep working without retaining every thumbnail ever visited.
+  var tileViewportObserver = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      var tile = entry.target;
+      tile._nearViewport = entry.isIntersecting;
+      if (entry.isIntersecting) hydrateTile(tile);
+      else dehydrateTile(tile);
+    });
+  }, { rootMargin: '1000px' });
+
+  function dehydrateTile(tile) {
+    if (!tile._hydrated || tile._nearViewport || tile.contains(document.activeElement) || tile.matches(':hover')) return;
+    if (tile._item.type === 'video') {
+      autoplayObserver.unobserve(tile);
+      previewController.release(tile);
+    }
+    var image = tile.querySelector('img.tile-media');
+    if (image) {
+      lazyObserver.unobserve(image);
+      image.removeAttribute('srcset');
+      image.removeAttribute('src');
+    }
+    tile.replaceChildren();
+    tile._hydrated = false;
+    delete tile.dataset.hydrated;
+  }
+
   var lazyObserver = new IntersectionObserver(function (entries) {
     entries.forEach(function (entry) {
       if (!entry.isIntersecting) return;
@@ -1388,6 +1438,7 @@
   var autoplayObserver = new IntersectionObserver(function (entries) {
     entries.forEach(function (entry) {
       var tile = entry.target;
+      if (!tile._hydrated) return;
       previewController.setVisible(tile, entry.isIntersecting);
     });
   }, { rootMargin: '80px', threshold: 0.4 });
@@ -1475,8 +1526,51 @@
     var tile = el('li', { class: 'tile', tabindex: '0', role: 'button', 'aria-label': 'Open ' + item.filename, 'data-item-id': item.id });
     tile.style.background = item.color;
     tile._item = item;
-    var hoverTimer;tile.addEventListener('pointerenter',function(){hoverTimer=setTimeout(function(){if(tile.isConnected)window.StreamActivity.record(item,'hover');},500);});tile.addEventListener('pointerleave',function(){clearTimeout(hoverTimer);});
+    var hoverTimer;
+    tile.addEventListener('pointerenter', function () {
+      hydrateTile(tile);
+      hoverTimer = setTimeout(function () { if (tile.isConnected) window.StreamActivity.record(item, 'hover'); }, 500);
+      if (item.type === 'video' && canHover) playPreview(tile);
+      if (bg) bg.setHoverColor(item.color);
+    });
+    tile.addEventListener('pointerleave', function () {
+      clearTimeout(hoverTimer);
+      if (item.type === 'video' && !inViewVideoTiles.has(tile)) pausePreview(tile);
+      dehydrateTile(tile);
+    });
+    tile.addEventListener('focusin', function () { hydrateTile(tile); });
+    tile.addEventListener('focusout', function () { queueMicrotask(function () { dehydrateTile(tile); }); });
     tile.style.setProperty('--source-color', creatorColor(creator));
+    if (item.type === 'video') {
+      tile.classList.add('video-tile');
+      if (randomEnabled ? randomLarge(item.id) : videoScale === '2') tile.classList.add('tile-expanded');
+    }
+    if (selection.active && selection.ids.has(item.id)) tile.classList.add('selected');
+
+    tile.addEventListener('click', function () {
+      if (selection.active) toggleTileSelection(item, tile);
+      else openLightbox(item, true);
+    });
+    tile.addEventListener('keydown', function (e) {
+      if (e.target !== tile) return;
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      if (selection.active) toggleTileSelection(item, tile);
+      else openLightbox(item, true);
+    });
+
+    if (bg) bg.watchTile(tile, item.color);
+    (parent || grid).appendChild(tile);
+    applySpan(tile, item);
+    tileViewportObserver.observe(tile);
+  }
+
+  function hydrateTile(tile) {
+    if (tile._hydrated || !tile.isConnected) return;
+    tile._hydrated = true;
+    tile.dataset.hydrated = 'true';
+    var item = tile._item;
+    var creator = item.creator || '(Unsorted)';
     var sourceLabel = el('span', { class: 'tile-source', title: item.album || creator });
     var originName = el('strong'); originName.textContent = item.displayCreator || creator;
     sourceLabel.appendChild(originName);
@@ -1492,8 +1586,6 @@
     lazyObserver.observe(img);
 
     if (item.type === 'video') {
-      tile.classList.add('video-tile');
-      if (randomEnabled ? randomLarge(item.id) : videoScale === '2') tile.classList.add('tile-expanded');
       var expand = el('button', { type: 'button', class: 'tile-expand', title: 'Toggle large video tile', 'aria-label': 'Resize this video tile' }, icon('expand'));
       expand.addEventListener('click', function (e) {
         e.stopPropagation();
@@ -1506,12 +1598,6 @@
       tile.appendChild(live);
       if (item.duration) {
         tile.appendChild(el('span', { class: 'tile-duration mono' }, formatDuration(item.duration)));
-      }
-      if (canHover) {
-        tile.addEventListener('pointerenter', function () { playPreview(tile); });
-        tile.addEventListener('pointerleave', function () {
-          if (!inViewVideoTiles.has(tile)) pausePreview(tile);
-        });
       }
       if (autoplayEnabled) autoplayObserver.observe(tile);
     }
@@ -1532,25 +1618,6 @@
 
     var selectMark = el('span', { class: 'tile-select-mark' }, icon('checkCircle'));
     tile.appendChild(selectMark);
-    if (selection.active && selection.ids.has(item.id)) tile.classList.add('selected');
-
-    tile.addEventListener('click', function () {
-      if (selection.active) toggleTileSelection(item, tile);
-      else openLightbox(item, true);
-    });
-    tile.addEventListener('keydown', function (e) {
-      if (e.target !== tile) return;
-      if (e.key !== 'Enter' && e.key !== ' ') return;
-      e.preventDefault();
-      if (selection.active) toggleTileSelection(item, tile);
-      else openLightbox(item, true);
-    });
-
-    if (bg) {
-      bg.watchTile(tile, item.color);
-      tile.addEventListener('pointerenter', function () { bg.setHoverColor(item.color); });
-    }
-    (parent || grid).appendChild(tile);
     applySpan(tile, item);
   }
 
@@ -2017,6 +2084,7 @@
 
   function fetchNeighbors(id) {
     var params = new URLSearchParams();
+    if (state.folder) params.set('folder', state.folder);
     params.set('sort', state.sort);
     if (state.sort === 'random' || state.sort === 'less-seen') params.set('seed', state.seed);
     if (state.type) params.set('type', state.type);
@@ -2258,7 +2326,7 @@
     openLightbox(INITIAL_ITEM, false);
     history.replaceState({ streamItem: INITIAL_ITEM.id }, '', '/' + INITIAL_ITEM.id);
   }
-  loadMore();
+  foldersReady.finally(function () { loadMore(); });
   fetchLibraryStatus();
   setInterval(fetchLibraryStatus, 20000);
 })();

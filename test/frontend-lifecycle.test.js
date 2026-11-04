@@ -25,6 +25,13 @@ test('filter reset releases all sources and clears pending refill/release work',
  const f=fixture(),a=f.tile('a'),b=f.tile('b');f.controller.setVisible(a,true);f.controller.setVisible(b,true);f.controller.setVisible(a,false);
  f.controller.clear();f.tick();f.raf();assert.deepEqual(f.released.sort(),['a','b']);assert.deepEqual(f.controller.stats(),{running:0,visible:0,retained:0,pendingRelease:0});assert.equal(a._video,null);assert.equal(b._video,null);
 });
+test('unmounting a tile immediately releases its preview and removes visible/refill references',()=>{
+ const f=fixture(),tile=f.tile('unmount');f.controller.setVisible(tile,true);tile._video.currentTime=6;
+ f.controller.release(tile);f.tick();f.raf();
+ assert.equal(tile._video,null);assert.equal(tile._resumeAt,6);
+ assert.deepEqual(f.controller.stats(),{running:0,visible:0,retained:0,pendingRelease:0});
+ assert.deepEqual(f.released,['unmount']);
+});
 test('playback diagnostics report scheduling intervals without pretending to measure display refresh',()=>{
  const data=summarize([16,17,16,40,50],139);assert.equal(data.pageCallbackFps,5000/139);assert.equal(data.framesOver25Ms,2);assert.equal(data.p95FrameIntervalMs,50);
  assert.deepEqual(summarize([],0),{pageCallbackFps:null,p95FrameIntervalMs:null,framesOver25Ms:0});

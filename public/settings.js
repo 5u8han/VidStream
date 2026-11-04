@@ -234,7 +234,7 @@
     });
     return details;
   }
-  async function open() {
+  async function open(section) {
     if (dialog?.open) return;
     var body = shell();
     if (!body) return;
@@ -284,6 +284,12 @@
       button('Sign out', access, async function () { await api('/api/logout', {}, current); location.href = '/'; }, 'settings-signout');
     }
     var tools = node('div', undefined, body, 'settings-details');
+    if (config.isAdmin) {
+      advanced(tools, 'Folders', 'Choose the named folders in the top-left menu.', function (pane) {
+        if (window.StreamFolders) return window.StreamFolders.settings(pane);
+        node('p', 'Folder controls could not load. Reload the page to try again.', pane);
+      });
+    }
     if (config.features?.nodes || window.StreamNodes) {
       advanced(tools, 'Nodes', 'Connect another machine or manage saved libraries.', function (pane) {
         if (window.StreamNodes) return window.StreamNodes.settings(pane);
@@ -336,6 +342,10 @@
       } finally { loading = false; }
     }
     current._resume = function () { if (config.isAdmin) void hydrate(); };
+    if (section === 'folders') {
+      var folderDetail = tools.querySelector('#settings-folders');
+      if (folderDetail) { folderDetail.open = true; folderDetail.scrollIntoView({ block: 'nearest' }); }
+    }
     if (config.isAdmin) await hydrate();
   }
   function savePending() { try { localStorage.setItem('stream-ui-pending', JSON.stringify(pendingUI)); } catch (_) {} }
@@ -363,5 +373,5 @@
       event.preventDefault(); event.stopImmediatePropagation(); void open();
     }
   }, true);
-  window.StreamSettings = { open: function () { void open().catch(function (error) { message(error.message, true); }); }, preference: preference, init: function (value) { adapter = value; } };
+  window.StreamSettings = { open: function (section) { void open(section).catch(function (error) { message(error.message, true); }); }, preference: preference, init: function (value) { adapter = value; } };
 })();

@@ -15,6 +15,8 @@ const { once } = require('node:events');
 const { setTimeout: delay } = require('node:timers/promises');
 const { chromium } = require(process.env.STREAM_PLAYWRIGHT || 'playwright');
 const { checkDesignEntrance } = require('./design-browser-checks.cjs');
+const { checkLongScroll } = require('./scroll-browser-checks.cjs');
+const { checkFolderCollections } = require('./folders-browser-checks.cjs');
 
 const root = path.resolve(__dirname, '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'vidstream-browser-'));
@@ -280,6 +282,7 @@ async function run() {
   await until(async () => await page.locator('.tile video[src]').count() <= 8, 'offscreen source release');
   report.retainedPreviewSources = await page.locator('.tile video[src]').count();
   report.checks.push('filter cleanup', 'offscreen preview source budget');
+  await checkLongScroll({ page, context, report });
 
   await page.getByRole('button', { name: 'View options', exact: true }).click(); await navDepth(1);
   if (await page.locator('details.view-advanced').getAttribute('open') === null) await page.locator('details.view-advanced > summary').click();
@@ -358,6 +361,7 @@ async function run() {
     await responsive.close();
   }
   report.checks.push('320/390/640px Settings and View options fit without clipped controls', 'mobile theme labels and expanded More controls remain reachable');
+  await checkFolderCollections({ browser, baseURL, report, media });
   assert.deepEqual(report.retiredRequests, [], 'Settings, View options and player never request retired enhancement APIs');
   assert.deepEqual(report.pageErrors, []);
   console.log(JSON.stringify(report, null, 2));

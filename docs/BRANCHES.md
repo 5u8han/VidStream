@@ -1,6 +1,6 @@
 # Main is the only branch
 
-**main is the only branch, locally and on GitHub.** Main 1.10.0 includes the reviewed node library switching plus the completed catalog, player and design work. Every retired branch tip was verified as an ancestor of main before its name was removed. Deleting those branch names does not delete their merged commits, media, configuration or Docker data.
+**main is the only branch, locally and on GitHub.** Main 1.11.0 includes manually chosen folder shortcuts, optional RAM cache snapshots, the reviewed node library switching plus the completed catalog, player and design work. Every retired branch tip was verified as an ancestor of main before its name was removed. Deleting those branch names does not delete their merged commits, media, configuration or Docker data.
 
 Main 1.10.0 simplifies Settings and View options and removes video enhancement processing. Historical media, outputs, database rows and backups remain intact. Use main for the current product. Historical commits may retain retired controls, but there are no separate active experiment branches.
 

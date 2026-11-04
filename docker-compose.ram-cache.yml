@@ -1,0 +1,22 @@
+# Optional bounded RAM runtime cache; combine with the base Compose file.
+# Existing media/data/archive overrides remain inherited. See docs/RAM_CACHE.md.
+services:
+  stream:
+    volumes:
+      # The matching target replaces only the base cache mount, not other mounts.
+      - type: tmpfs
+        target: /app/.cache
+        tmpfs:
+          size: ${STREAM_RAM_CACHE_SIZE:-1073741824}
+          mode: 448 # 0700
+      # Reuse the existing cache volume for snapshots and first-run migration.
+      - type: volume
+        source: stream-cache
+        target: /app/cache-snapshot
+    environment:
+      CACHE_SNAPSHOT_DIR: /app/cache-snapshot/.ram-cache
+      CACHE_COLD_START: ${STREAM_CACHE_COLD_START:-0}
+    # tmpfs usage shares this ceiling with Node, ffmpeg and recognition workers.
+    mem_limit: ${STREAM_MEM_LIMIT:-4g}
+    memswap_limit: ${STREAM_MEM_LIMIT:-4g}
+    stop_grace_period: ${STREAM_CACHE_STOP_GRACE:-5m}

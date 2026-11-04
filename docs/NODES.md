@@ -1,6 +1,6 @@
 # Independent VidStream libraries
 
-**Main 1.10.0 is the official release and includes Nodes.** All reviewed node work is merged, and **main is the only branch**. The former node, Dev and Design branch names have been retired; their commits remain in main's history. This remains downloadable, self-hosted software serving your own locally available media, without a central VidStream cloud, upload service or account provider.
+**Main 1.11.0 is the official release and includes Nodes.** All reviewed node work is merged, and **main is the only branch**. The former node, Dev and Design branch names have been retired; their commits remain in main's history. This remains downloadable, self-hosted software serving your own locally available media, without a central VidStream cloud, upload service or account provider.
 
 ## How it works
 
@@ -84,7 +84,7 @@ git branch --show-current
 docker compose exec stream node -p "require('./package.json').version"
 ```
 
-`git branch --show-current` prints the active local branch. `docker compose exec stream node -p "require('./package.json').version"` reads the version inside the running container without changing files; expect `1.10.0` on official main. A Docker rebuild is required for its existing container to use changed source; reload the browser afterward. For a native installation, `node -p "require('./package.json').version"` reads the checkout's version without starting the app or changing files. The new node settings use existing SQLite settings, without a catalog schema migration. Changing server address/origin can require signing in again; do not remove data or reset security files to resolve that.
+`git branch --show-current` prints the active local branch. `docker compose exec stream node -p "require('./package.json').version"` reads the version inside the running container without changing files; expect `1.11.0` on official main. A Docker rebuild is required for its existing container to use changed source; reload the browser afterward. For a native installation, `node -p "require('./package.json').version"` reads the checkout's version without starting the app or changing files. The new node settings use existing SQLite settings, without a catalog schema migration. Changing server address/origin can require signing in again; do not remove data or reset security files to resolve that.
 
 ## Optional discovery
 

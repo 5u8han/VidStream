@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.11.0 — One-server folder collections and optional RAM cache
+
+- Added an owner-configured top-left folder menu with named shortcuts to any nested relative media path. Selection includes descendants, persists per browser and scopes gallery search, pagination and player neighbors without rescanning or extra sign-ins. Configuration stays in the durable database; removing a shortcut leaves media and history intact.
+- Hide the automatically enumerated album/artist selectors once manual shortcuts are configured. Indexed literal path ranges avoid sibling and SQL-wildcard matches; scoped metadata is cached and legacy lists can be skipped. Guest menus omit paths and collections containing no guest-visible media. Folder shortcuts remain navigation rather than new access rules.
+- Hydrate media and controls near the viewport and release distant contents while retaining lightweight masonry shells. Artist highlights track mounted tiles instead of rescanning the loaded catalog. Keyboard focus, dense layout, scroll geometry and manual video sizing remain intact.
+- Added opt-in bounded Docker tmpfs cache with verified startup restore, graceful-shutdown snapshots and cache-only cold starts. Atomic publication preserves the previous committed snapshot after interrupted writes; stale incomplete generations are cleaned conservatively. Data, accounts and history remain persistent. Existing disk cache imports without deletion and disk mode remains the default.
+- Moved generated session keys into persistent data with migration from legacy cache storage. Shutdown stops new requests, pending work, scanning and recognition downloads before snapshotting. Documented memory limits, forced-stop limits and the broader data loss caused by deleting all Docker volumes.
+- Validation: syntax checks, 120 unit/integration tests, 45 common browser checks, 21 independent-library browser checks and 17 Compose configuration checks passed with zero browser page errors. At 960 loaded test items, peak mounted contents were 80 tiles, 65 image sources and 8 video sources; lightweight shells still accumulate. Five isolated real Docker checks verified tmpfs, clean stop, byte-identical restore, cold start and test-volume reset. Docker cache checks used a minimal Node image rather than rebuilding the production codec image. Generated fixtures only; no personal deployment or media changed.
+
 ## 1.10.0 — Direct controls and focused media hosting
 
 - Consolidated all reviewed work on main and retired the final separate node branch after ancestry verification. Main is the only branch; merged history remains intact.

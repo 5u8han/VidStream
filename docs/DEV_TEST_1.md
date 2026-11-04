@@ -1,6 +1,6 @@
 # Catalog and processing changes included in main
 
-Current release: **main 1.10.0**. This document records earlier checkpoints. Video enhancement/processing instructions below are historical and retired; use the current [README](../README.md) for operation. Settings and View options now expose everyday controls directly instead of category drilldowns.
+Current release: **main 1.11.0**. This document records earlier checkpoints. Video enhancement/processing instructions below are historical and retired; use the current [README](../README.md) for operation. Settings and View options now expose everyday controls directly instead of category drilldowns.
 
 The former `VidStream-Dev-Test-1` checkpoint (`f18cfd8`, version `1.8.0-dev.1`) was merged into main. Official main is now version `1.9.0` and also includes the design and reviewed node-library work. Main is now the only branch; all reviewed node work is included. The old development branch has been retired. The original pre-migration checkpoint was main v1.7.0, commit `479b1da`.
 
