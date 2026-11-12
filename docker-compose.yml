@@ -15,6 +15,8 @@ services:
       - stream-cache:/app/.cache
       - stream-data:/app/data
       - stream-originals:/app/originals
+      # To select several directories in one container, use the child mounts
+      # in docker-compose.media.example.yml. See docs/MOUNTED_FOLDERS.md.
       # Choose your own existing host folder: set STREAM_MEDIA_PATH in .env,
       # then uncomment this entire block. No repository media folder is used.
       # - type: bind

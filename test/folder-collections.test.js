@@ -14,8 +14,8 @@ function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vidstream-folders-'));
   const data = path.join(root, 'data');
   const opened = [];
-  function open() {
-    const db = new Db(path.join(root, 'cache', 'index.json'), data);
+  function open(options) {
+    const db = new Db(path.join(root, 'cache', 'index.json'), data, options);
     opened.push(db);
     return db;
   }
@@ -96,6 +96,47 @@ test('manual folder API persists choices, denies guest edits and omits private c
   const invalid = response();
   await handlers.update(req('/', { folders: [{ name: 'Escape', path: '../Private' }] }), invalid);
   assert.equal(invalid.status, 400); assert.equal(db.store.setting(SETTING).length, 2);
+});
+
+test('mounted directories supply stable folder choices and protect saved manual shortcuts', async (t) => {
+  const f = fixture(t), legacy = f.open(), cfg = ownerConfig();
+  const shortcuts = [{ id: 'shortcut', name: 'Manual label', path: 'Private' }];
+  legacy.store.setSetting(SETTING, shortcuts);
+  insert(legacy, 'shared', 'Animations/Season/a.mp4', { guest: true });
+  insert(legacy, 'private', 'Private/clip.mp4');
+  const mediaFolders = ['Private', 'Animations'];
+  const mounted = f.open({ mediaFolders });
+  const handlers = folderCollectionsHandlers(cfg, mounted);
+  const owner = response();
+  handlers.get(req(), owner);
+  assert.equal(owner.body.managedByMounts, true);
+  assert.deepEqual(owner.body.folders.map(({ name, path }) => [name, path]), [
+    ['Private', 'Private'], ['Animations', 'Animations'],
+  ]);
+  assert.equal(owner.body.primaryFolderId, owner.body.folders[0].id);
+  const publicFolder = owner.body.folders[1];
+  const guest = response();
+  folderCollectionsHandlers({ adminPassword: 'secret' }, mounted).get(req(), guest);
+  assert.deepEqual(guest.body.folders, [{ id: publicFolder.id, name: 'Animations' }]);
+  assert.equal(guest.body.primaryFolderId, publicFolder.id);
+  const itemPage = response();
+  itemsHandler(cfg, mounted)(req('/api/items?folder=' + publicFolder.id), itemPage);
+  assert.deepEqual(itemPage.body.items.map(({ id }) => id), ['shared']);
+
+  const denied = response();
+  await handlers.update(req('/', { folders: [] }), denied);
+  assert.equal(denied.status, 409);
+  assert.deepEqual(mounted.store.setting(SETTING), shortcuts);
+  const reordered = response();
+  folderCollectionsHandlers(cfg, f.open({ mediaFolders: ['Animations', 'Private'] })).get(req(), reordered);
+  assert.equal(reordered.body.folders.find(({ name }) => name === 'Animations').id, publicFolder.id);
+  assert.equal(reordered.body.primaryFolderId, publicFolder.id);
+  const empty = response();
+  folderCollectionsHandlers(cfg, f.open({ mediaFolders: [] })).get(req(), empty);
+  assert.deepEqual(empty.body, { folders: [], isAdmin: true, managedByMounts: true, primaryFolderId: null });
+  const restored = response();
+  folderCollectionsHandlers(cfg, f.open()).get(req(), restored);
+  assert.deepEqual(restored.body, { folders: shortcuts, isAdmin: true, managedByMounts: false });
 });
 
 test('scoped item APIs preserve pagination and neighbors; unknown or guest-hidden folder IDs never fall back to all media', (t) => {

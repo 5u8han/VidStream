@@ -9,7 +9,7 @@
     return !deviceKeys.includes(entry[0]);
   }).forEach(function (entry) { try { localStorage.setItem(entry[0], entry[1]); } catch (_) {} });
   try {
-    var theme = localStorage.getItem('stream-theme');
+    var theme = localStorage.getItem('stream-theme') || config.defaultTheme;
     if (theme && theme !== 'system') document.documentElement.dataset.theme = theme;
     else document.documentElement.removeAttribute('data-theme');
     var density = localStorage.getItem('stream-density');
@@ -245,7 +245,7 @@
     choices(appearance, 'Theme', [
       ['system', 'System'], ['light-table', 'Light', '#a83831'], ['darkroom', 'Dark', '#c1443c'],
       ['golden-hour', 'Warm', '#d68c33'], ['contact-sheet', 'Cool', '#2f4c6b']
-    ], read('stream-theme', 'system'), function (value) { adapter.theme?.(value); }, 'settings-theme-choices');
+    ], read('stream-theme', config.defaultTheme || 'system'), function (value) { adapter.theme?.(value); }, 'settings-theme-choices');
     choices(appearance, 'Visual effects', [['off', 'Off'], ['subtle', 'Subtle'], ['full', 'Full']], read('stream-effects', document.documentElement.dataset.effects || 'full'), function (value) { adapter.effects?.(value); });
     node('p', 'Effects stay on this browser. Reduced motion is always respected.', appearance, 'settings-footnote');
     var player = card(grid, 'Video player', 'Keep the gallery visible around your video.');
@@ -285,7 +285,7 @@
     }
     var tools = node('div', undefined, body, 'settings-details');
     if (config.isAdmin) {
-      advanced(tools, 'Folders', 'Choose the named folders in the top-left menu.', function (pane) {
+      advanced(tools, 'Folders', 'View or manage the folders in the top-left menu.', function (pane) {
         if (window.StreamFolders) return window.StreamFolders.settings(pane);
         node('p', 'Folder controls could not load. Reload the page to try again.', pane);
       });

@@ -7,6 +7,13 @@ node_modules/
 *.log
 *.pid
 rclone.conf
+/compose.yaml
+/compose.override.yaml
+/.compose-*
+/.compose.yaml.*
+/.vidstream-edit.lock
+/docker-compose.libraries.local.yml
+/docker-compose.media.local.yml
 *.pem
 *.key
 

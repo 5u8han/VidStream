@@ -21,7 +21,10 @@ async function checkLongScroll({ page, context, report }) {
   async function intercept(route) {
     const url = new URL(route.request().url());
     const start = Number(url.searchParams.get('cursor')) || 0;
-    const end = Math.min(total, start + 60);
+    // A short page leaves the sentinel within the observer's prefetch margin.
+    // The next request still needs to run even without a visibility transition.
+    const pageSize = start === 60 ? 5 : start === 65 ? 55 : 60;
+    const end = Math.min(total, start + pageSize);
     await route.fulfill({ json: {
       ...catalog, items: items.slice(start, end), total,
       nextCursor: end < total ? String(end) : null,

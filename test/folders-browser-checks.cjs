@@ -196,6 +196,14 @@ async function checkFolderCollections({ browser, baseURL, report, media }) {
     assert.equal(denied.status(), 404);
     report.checks.push('guest dropdown omits private collection names and paths and enforces existing media visibility');
 
+    await guest.page.route('**/api/folders', route => route.fulfill({ json: { ...guestFolders, managedByMounts: true, primaryFolderId: null } }));
+    const guestLanding = guest.page.waitForRequest(request => new URL(request.url()).pathname === '/api/items');
+    await guest.page.reload({ waitUntil: 'domcontentloaded' });
+    assert.equal(new URL((await guestLanding).url()).searchParams.get('folder'), configured[2].id);
+    await idle(guest.page, 1);
+    assert.equal(await guest.page.locator('.folder-trigger-label').textContent(), 'Shared collection');
+    report.checks.push('mount-managed guest landing uses the first shared folder when the primary is private');
+
     const mobile = await profile({ viewport: { width: 320, height: 844 }, hasTouch: true, isMobile: true }, await owner.cookies());
     await mobile.page.goto('/', { waitUntil: 'domcontentloaded' });
     await mobile.page.locator('#grid .tile').first().waitFor(); await dismissWelcome(mobile.page);
@@ -211,6 +219,46 @@ async function checkFolderCollections({ browser, baseURL, report, media }) {
     await mobile.page.locator('.folder-edit-row').first().scrollIntoViewIfNeeded();
     await capture(mobile.page, 'mobile-320-folder-settings');
     report.checks.push('320px folder dropdown and editor fit, remain reachable and respect reduced motion');
+
+    const mounted = await profile({}, await owner.cookies());
+    const storageKey = await page.evaluate(() => 'stream-folder-' + (JSON.parse(document.getElementById('app').dataset.config).node?.id || 'local'));
+    await mounted.page.goto('/health');
+    await mounted.page.evaluate(({ key, id }) => localStorage.setItem(key, id), { key: storageKey, id: configured[2].id });
+    let mountedResponse = { folders: [configured[0], configured[2]], isAdmin: true, managedByMounts: true, primaryFolderId: configured[0].id };
+    await mounted.page.route('**/api/folders', route => route.fulfill({ json: mountedResponse }));
+    const primaryPage = mounted.page.waitForRequest(request => new URL(request.url()).pathname === '/api/items');
+    await mounted.page.goto('/', { waitUntil: 'domcontentloaded' });
+    assert.equal(new URL((await primaryPage).url()).searchParams.get('folder'), configured[0].id);
+    await idle(mounted.page, 2); await dismissWelcome(mounted.page);
+    assert.equal(await mounted.page.locator('.folder-trigger-label').textContent(), 'Deep collection');
+    const alternatePage = mounted.page.waitForRequest(request => new URL(request.url()).pathname === '/api/items');
+    await openFolders(mounted.page);
+    assert.equal(await mounted.page.locator('#folder-menu .folder-option').first().textContent(), 'Deep collection');
+    await mounted.page.locator('#folder-menu').getByRole('button', { name: 'Shared collection', exact: true }).click();
+    await depth(mounted.page, 0);
+    assert.equal(new URL((await alternatePage).url()).searchParams.get('folder'), configured[2].id);
+    await choose(mounted.page, 'All media');
+    assert.equal(await mounted.page.evaluate(key => localStorage.getItem(key), storageKey), configured[2].id);
+    const reloadedPage = mounted.page.waitForRequest(request => new URL(request.url()).pathname === '/api/items');
+    await mounted.page.reload({ waitUntil: 'domcontentloaded' });
+    assert.equal(new URL((await reloadedPage).url()).searchParams.get('folder'), configured[0].id);
+    await idle(mounted.page, 2);
+    report.checks.push('mount-managed landing opens the primary before loading media, while dropdown navigation preserves manual-mode preferences');
+
+    mountedResponse = { folders: [], isAdmin: true, managedByMounts: true, primaryFolderId: null };
+    const firstPage = mounted.page.waitForRequest(request => new URL(request.url()).pathname === '/api/items');
+    await mounted.page.reload({ waitUntil: 'domcontentloaded' });
+    assert.equal(new URL((await firstPage).url()).searchParams.get('metadata'), '0');
+    await mounted.page.locator('#grid .tile').first().waitFor(); await dismissWelcome(mounted.page);
+    await openFolders(mounted.page);
+    await mounted.page.getByText('No media folders are mounted.', { exact: true }).waitFor();
+    assert.equal(await mounted.page.getByRole('button', { name: 'Choose folders…', exact: true }).count(), 0);
+    await mounted.page.keyboard.press('Escape'); await depth(mounted.page, 0);
+    await mounted.page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await mounted.page.locator('#settings-folders > summary').click();
+    await mounted.page.locator('#settings-folders [role=status]').filter({ hasText: 'The folder list comes from Docker mounts.' }).waitFor();
+    assert.equal(await mounted.page.locator('#settings-folders input, #settings-folders button').count(), 0);
+    report.checks.push('mount-managed empty folder lists suppress legacy filters and manual editing');
   } finally {
     if (owner) {
       if (sharedItem) await json(owner, '/api/items/' + sharedItem.id + '/visibility', { guest: sharedItem.guest });

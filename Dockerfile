@@ -44,7 +44,10 @@ RUN if [ "$INSTALL_AI_STACK" = "true" ]; then \
       pip install --no-cache-dir --break-system-packages ultralytics; \
     fi
 
-COPY . .
+COPY package.json package-lock.json server.js LICENSE ./
+COPY lib ./lib
+COPY public ./public
+COPY scripts ./scripts
 
 RUN mkdir -p /media/original /app/.cache
 
@@ -52,6 +55,7 @@ ENV MEDIA_DIR=/media/original
 ENV CACHE_DIR=/app/.cache
 ENV PORT=4000
 ENV HOST=0.0.0.0
+ENV VIDSTREAM_DOCKER=1
 # Bounds Node's own heap; child-process (ffmpeg/opencv/torch) memory is
 # separate and is instead capped at the container level -- see the
 # mem_limit in docker-compose.yml.

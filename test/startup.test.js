@@ -22,6 +22,8 @@ test('server starts, serves health, and shuts down cleanly', { timeout: 15000 },
     cwd: path.resolve(__dirname, '..'),
     env: { ...process.env, HOST: '127.0.0.1', PORT: String(port),
       MEDIA_DIR: media, CACHE_DIR: path.join(dir, 'cache'), DATA_DIR:path.join(dir,'data'), ORIGINALS_DIR:path.join(dir,'originals'),
+      ADMIN_PASSWORD: '', SITE_PASSWORD: '', LDAP_URL: '', VIDSTREAM_DOCKER: '1', VIDSTREAM_SETUP_HELPER: '0',
+      DEFAULT_THEME: 'light-table',
       RESCAN_INTERVAL_MINUTES: '0' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -44,6 +46,9 @@ test('server starts, serves health, and shuts down cleanly', { timeout: 15000 },
     assert.ok(response, `Server did not become healthy: ${output}`);
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { ok: true });
+    const login = await fetch(`http://127.0.0.1:${port}/`);
+    assert.match(await login.text(), /<html lang="en" data-theme="light-table">/);
+    assert.match(output, /Try Start-Here\.sh or Start-Here\.bat/);
     child.kill('SIGTERM');
     const [code, signal] = await exited;
     assert.equal(code, 0, output);

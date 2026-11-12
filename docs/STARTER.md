@@ -1,0 +1,129 @@
+# VidStream Start-Here
+
+Get a VidStream checkout and open that folder. The starter configures a single
+self-hosted instance. Docker reads your selected folders on your machine.
+
+On macOS or Linux, open the launcher from the checkout.
+
+```sh
+bash ./Start-Here.sh
+```
+
+This opens the action menu. **First-time setup** checks Docker and starts the
+local engine if needed. If Docker is missing on a supported system, it asks
+before launching an administrator-approved install. It creates a local Compose
+file and Docker volumes for the starter project, then starts VidStream with
+read-only media mounts.
+
+Automatic Linux installation uses Docker's signed packages on Debian or Ubuntu
+with systemd on x86-64 or ARM64. Other Linux distributions can run the helper
+with an existing local Docker Engine and the Compose plugin. Use `--terminal`
+with the Bash helper to enter folder paths. [Docker Engine installation](https://docs.docker.com/engine/install/)
+
+On Windows, double-click `Start-Here.bat` in the checkout. It opens the same
+menu in PowerShell and keeps the terminal open for the result. Docker Desktop
+may ask you to accept its terms or finish installing WSL before first-time
+setup can continue. [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/)
+
+1. Choose **First-time setup** and pick the folder you want to see first.
+   Answer Yes each time you want to add another library folder. Answer No
+   or press Enter when the list is complete. Where a system folder picker is
+   available, use it to select folders. The terminal accepts paths when a
+   picker is unavailable.
+2. Choose **White**, **Dark** or **System**. Press Enter for White. A theme you
+   select later in VidStream takes precedence over this starting preference.
+3. Open the address the helper displays, normally `http://127.0.0.1:8080`.
+   Enter the owner setup code shown by the helper and choose your account in
+   the browser.
+
+The helper saves a private `compose.yaml` beside Start-Here in the checkout.
+Each machine generates its own file. Git and the Docker build context ignore
+it because it contains local folder paths. From that checkout, Docker Compose
+prefers `compose.yaml` and uses its `vidstream-starter` project name by default.
+If you set `COMPOSE_FILE` or `COMPOSE_PROJECT_NAME` in the shell or `.env`, use
+the explicit project and file in the command printed by Start-Here.
+
+Start-Here still finds an earlier `VidStream-setup/compose.yaml` in your home
+directory when the checkout has no `compose.yaml`. To manage that installation
+from the checkout, copy the old file beside Start-Here as `compose.yaml` and
+keep its `name: vidstream-starter`. Use the checkout copy for future edits.
+The project name keeps it connected to the same Docker volumes. Keep custom
+relative paths valid when moving the file. `VIDSTREAM_INSTALL_DIR` explicitly
+selects a different directory.
+
+The starter binds the published port to localhost. To serve viewers
+on your LAN later, update the published address and `URL` deliberately in
+that file. The account and catalog live in the project's persistent data
+volume. [Docker bind mount reference](https://docs.docker.com/engine/storage/bind-mounts/)
+
+If port 8080 is in use, set `VIDSTREAM_PORT` before setup. If the helper has
+already created `compose.yaml`, adjust its published port and `URL` instead.
+From the checkout with the generated `compose.yaml`, you can check the
+configuration, read the setup code or start again after fixing a path or port.
+
+```sh
+docker compose config --quiet
+docker compose logs stream
+docker compose up -d --pull never --wait stream
+```
+
+- `config --quiet` validates the selected Compose file without starting Docker
+  services or changing files.
+- `logs stream` reads the service logs, including the private owner setup code
+  on a new installation. It does not change files or Docker data.
+- `up -d --pull never --wait stream` starts or recreates the service with the
+  local image and waits for it to be healthy. It reuses the data, cache and
+  archive volumes and mounts media read-only.
+
+For a normal teardown, `docker compose down` stops and removes the container
+and its network while retaining the image and volumes. For a disposable test
+installation, `docker compose down --rmi all -v` also removes the service
+image and deletes the account, catalog, history, cache and any archived
+originals in the project's volumes. The saved configuration and bind-mounted
+source media stay on disk. Rebuild or pull the image before starting again.
+
+## Test an update on your existing installation
+
+Use your normal generated `compose.yaml`. If it uses `vidstream-starter:local`,
+run these commands from the updated checkout.
+
+```sh
+docker build -t vidstream-starter:local .
+docker compose up -d --pull never --wait stream
+```
+
+The first command builds the current checkout as the local image referenced by
+the starter. It writes Docker image layers. The second applies the image and
+waits for VidStream to be healthy. It can briefly interrupt playback and
+reuses the existing configuration and volumes. Check the first library, the
+folder dropdown, and playback in the browser. Automated checks use generated
+media and temporary configurations.
+
+## Add a folder to an existing setup
+
+With your local Docker engine running, open Start-Here and choose **Add a
+media folder**. This option edits the `compose.yaml` created by Start-Here and
+uses the VidStream image already on your machine. Select one folder. The
+launcher validates the edit and saves a new read-only mount. The original
+primary folder still opens after sign-in. When you are ready to apply the
+new mount, run the command printed by the launcher. It recreates only the
+VidStream service with the added mount. Playback briefly stops during
+recreation. Compose reuses the local image and named volumes, and the media
+mounts stay read-only. The folder appears in the dropdown when the service
+starts.
+
+## Where the image comes from
+
+The starter first pulls `docker.io/5u8han/vidstream:latest`. If that image is
+unavailable, it builds from the checkout. `VIDSTREAM_IMAGE` selects another
+compatible published image. The image must include the starter's Compose
+generator. A failed pull of an explicitly selected image stops setup so the
+user can check the image name or registry access.
+
+The Docker Hub publishing workflow runs after successful validation of a push
+to `main`. To enable it, set the `DOCKERHUB_USERNAME` repository variable and
+the `DOCKERHUB_TOKEN` Actions secret in GitHub. Use a token with write access
+to the account's `vidstream` image repository. The workflow tests the amd64
+and arm64 images before publishing `latest` and a commit-specific tag. Set
+`VIDSTREAM_IMAGE` if you publish under a different namespace.
+[Docker publishing workflow setup](https://docs.docker.com/build/ci/github-actions/)

@@ -31,7 +31,7 @@ await cacheRuntime.restore();
 require('./lib/security').initializeSecurity(cfg);
 const ai = new AiManager(cfg);
 
-const db = new Db(path.join(cfg.cacheDir, 'index.json'), cfg.dataDir);
+const db = new Db(path.join(cfg.cacheDir, 'index.json'), cfg.dataDir, { mediaFolders: cfg.mediaFolders });
 const nodes = new (require('./lib/node-manager').NodeManager)(cfg, db.store);
 cfg.sessionCookieName = 'stream_session_' + nodes.id.replace(/-/g, '');
 Object.defineProperty(cfg, 'node', { get: () => ({ id: nodes.id, name: nodes.descriptor().name }) });
@@ -173,7 +173,12 @@ async function handleRequest(req, res) {
 
 let rescanTimer = null;
 async function main() {
-  if(cfg.setupRequired)console.log('[stream] Owner setup code: '+cfg.setupCode+' (enter this once in the web setup screen)');
+  if (cfg.setupRequired) {
+    if (cfg.dockerRuntime && !cfg.setupHelperUsed) {
+      console.log('[stream] Setting up VidStream for the first time? Try Start-Here.sh or Start-Here.bat for guided folder and theme setup.');
+    }
+    console.log('[stream] Owner setup code: ' + cfg.setupCode + ' (enter this once in the web setup screen)');
+  }
   resources.start();
   console.log(`[stream] Media folder: ${cfg.mediaDir}`);
   // Serve the cached index immediately. Scanning remote SMB storage may take a

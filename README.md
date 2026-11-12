@@ -24,7 +24,14 @@ Video upscaling, frame interpolation/smoothing, enhancement model downloads, pro
 
 The app still makes lightweight gallery previews and thumbnails and can prepare a browser-compatible playback copy when required. Those support viewing; they do not upscale or interpolate your collection. Optional recognition tags help search and are separate from media enhancement. Quick edit remains an explicit source-writing action, requiring a writable media mount.
 
-## Quick start with Docker
+## Start-Here launcher
+
+Open Start-Here from a VidStream checkout. Its menu can guide a first install
+or add a directory to a saved setup. The generated `compose.yaml` stays in
+the checkout and is ignored by Git. The first selected folder opens after
+sign-in and White is the default theme. See the [starter guide](docs/STARTER.md).
+
+## Manual setup with Docker
 
 Install Git and Docker on the machine that will serve the library. For a **new checkout**, these commands download official main, enter its folder and create a private configuration file:
 
@@ -43,7 +50,7 @@ The example is read-only and refuses nonexistent source paths. It permits viewin
 Build and start only the application in the background:
 
 ```sh
-docker compose up -d --build stream
+docker compose -f docker-compose.yml up -d --build stream
 ```
 
 This builds the selected source and starts/recreates the app using your configured mounts. It retains named data/cache/originals volumes and does not move or delete media. On a first installation, it creates the application's own persistent volumes.
@@ -51,10 +58,20 @@ This builds the selected source and starts/recreates the app using your configur
 Open `http://localhost/` on that server or its reachable LAN address from another device. New installations require owner setup. Read its private one-time setup code from the startup log:
 
 ```sh
-docker compose logs stream
+docker compose -f docker-compose.yml logs stream
 ```
 
 This reads logs without changing data. Keep the setup code private, then choose an owner username and passphrase in the browser. Existing installations keep their configured account or LDAP sign-in. Sign out returns to the sign-in screen.
+
+To choose several directories in one VidStream instance, list their mounts in a [local Compose override](docs/MOUNTED_FOLDERS.md). The folder menu follows those mounts automatically.
+
+Run this from the checkout with Python 3 to summarize your media tree.
+
+```sh
+python3 scripts/media-inventory.py "/path/to/your/media" > "$HOME/vidstream-inventory.txt"
+```
+
+Replace the example path with your media root. The script reads directory entries and file sizes, then summarizes nesting, file types and the largest subtrees. The redirection creates or replaces `vidstream-inventory.txt` in your home folder. That report is the only file the command writes. Folder labels are anonymized by default, and the report omits filenames and the root path.
 
 ## Ports and hostnames
 
@@ -70,22 +87,25 @@ A stable container path keeps host paths out of normal app settings. Docker/host
 
 Keep the existing `.env`, Compose project name, storage overrides and persistent volumes. In particular, retain an older host-bound `/app/originals` archive until deliberately migrated. The 1.9 base-file transition removed implicit host media/originals bindings; read [storage upgrade guidance](docs/BRANCHES.md#retain-existing-storage-before-rebuilding) if applicable.
 
+The Docker commands below use the manual `docker-compose.yml` file. For a
+Start-Here installation, use its [update steps](docs/STARTER.md#test-an-update-on-your-existing-installation).
+
 ```sh
 git fetch origin
 git switch main
 git pull --ff-only origin main
-docker compose up -d --build stream
+docker compose -f docker-compose.yml up -d --build stream
 ```
 
 - `git fetch origin` downloads remote history without changing working files, media, configuration or Docker data.
 - `git switch main` selects official main and updates tracked source; it refuses conflicting local edits and preserves ignored personal data.
 - `git pull --ff-only origin main` updates source only when no merge is needed. It does not discard local work or delete mounted media.
-- `docker compose up -d --build stream` rebuilds/recreates the application with the selected mounts and existing persistent volumes. It briefly interrupts access, then starts in the background. It does not delete data.
+- `docker compose -f docker-compose.yml up -d --build stream` rebuilds and recreates the manually configured application with its existing mounts and persistent volumes. It briefly interrupts access, then starts in the background.
 
 Reload the browser after the rebuild. An already-open page keeps its older JavaScript until reloaded. Verify the running service without changing files:
 
 ```sh
-docker compose exec stream node -p "require('./package.json').version"
+docker compose -f docker-compose.yml exec stream node -p "require('./package.json').version"
 ```
 
 This prints the container's package version; expect **1.11.0**. The source checkout, running container and loaded browser page are separate states.

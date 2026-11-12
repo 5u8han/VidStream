@@ -105,7 +105,7 @@
   // the menu UI and localStorage in sync with further changes).
   // ---------------------------------------------------------------
 
-  var currentTheme = storageGet('stream-theme', 'system');
+  var currentTheme = storageGet('stream-theme', CONFIG.defaultTheme || 'system');
   var currentDensity = storageGet('stream-density', 'medium');
   var previewSource = storageGet('stream-preview-source', 'preview');
   document.documentElement.dataset.mediaFit = storageGet('stream-media-fit', 'contain');
@@ -1263,7 +1263,11 @@
         entrance?.loaded(statusEl);
         grid.setAttribute('aria-busy', 'false');
         state.loading = false;
+        // A short page can leave the sentinel inside the prefetch margin.
+        // Observe it again so pagination does not depend on it leaving view first.
+        scrollObserver.unobserve(sentinel);
         grid.appendChild(sentinel);
+        if (!state.done) scrollObserver.observe(sentinel);
         if (!INITIAL_ITEM) entrance?.welcome(appEl);
       })
       .catch(function () {
@@ -1444,9 +1448,8 @@
   }, { rootMargin: '80px', threshold: 0.4 });
 
   var scrollObserver = new IntersectionObserver(function (entries) {
-    if (entries[0].isIntersecting) loadMore();
+    if (entries.at(-1).isIntersecting) loadMore();
   }, { rootMargin: '900px' });
-  scrollObserver.observe(sentinel);
 
   function attachVideoPreview(tile, item) {
     if (tile._video) return tile._video;

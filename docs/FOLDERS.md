@@ -2,7 +2,8 @@
 
 The folder menu keeps one VidStream server, address, sign-in and catalog. It
 changes which part of that catalog the gallery shows. Your existing nested
-directories stay where they are. No extra containers or Kubernetes are needed.
+directories stay where they are. To configure both the scanned directories and
+the menu in Docker Compose, use [mounted folders](MOUNTED_FOLDERS.md).
 
 ## Configure the menu
 

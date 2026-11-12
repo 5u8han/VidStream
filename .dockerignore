@@ -1,10 +1,15 @@
-# Keep secrets, caches, and your library out of the image build context.
-# (Without this, `COPY . .` bakes your .env -- passwords included -- into
-# the image layers.) Configuration reaches the container at runtime via
-# env_file / environment in docker-compose.yml instead.
+# Keep secrets, caches, and your library out of the build context.
+# Runtime settings reach the container through Compose.
 .env
 .env.*
 !.env.example
+/compose.yaml
+/compose.override.yaml
+/.compose-*
+/.compose.yaml.*
+/.vidstream-edit.lock
+/docker-compose.libraries.local.yml
+/docker-compose.media.local.yml
 .cache
 media
 node_modules

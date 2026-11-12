@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { createCompose, addFolderToCompose } = require('../scripts/setup-compose');
 
 const source = path.resolve(__dirname, '..');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'vidstream-compose-'));
@@ -17,6 +18,7 @@ const configFiles = [
   'docker-compose.gpu.yml',
   'docker-compose.nodes-host.yml',
   'docker-compose.ram-cache.yml',
+  'docker-compose.media.example.yml',
 ];
 // Do not inherit host Compose variables, PORT, secrets or a real .env path.
 // HOME/DOCKER_CONFIG allow the CLI to locate its installed Compose plugin.
@@ -45,10 +47,11 @@ function writeEnvironment(values = {}) {
   }).map(([key, value]) => `${key}=${JSON.stringify(String(value))}`).join('\n') + '\n');
 }
 
-function resolve(extraFiles = [], expectFailure = false) {
+function resolve(extraFiles = [], expectFailure = false, { baseFile = 'docker-compose.yml' } = {}) {
   const args = ['compose', '--project-directory', temporary, '--env-file',
-    path.join(temporary, '.env'), '-p', project];
-  for (const file of ['docker-compose.yml', ...extraFiles]) {
+    path.join(temporary, '.env')];
+  if (baseFile) args.push('-p', project, '-f', path.join(temporary, baseFile));
+  for (const file of extraFiles) {
     args.push('-f', path.join(temporary, file));
   }
   args.push('config', '--format', 'json');
@@ -297,6 +300,95 @@ volumes:
     assert.equal(customRam.services.stream.memswap_limit, customRam.services.stream.mem_limit);
     assert.equal(customRam.services.stream.environment.CACHE_COLD_START, '1');
     assert.notEqual(customRam.services.stream.stop_grace_period, ram.services.stream.stop_grace_period);
+  });
+
+  check('selected folder mounts share one service and preserve configured state storage', () => {
+    const file = 'docker-compose.media.example.yml';
+    const template = fs.readFileSync(path.join(temporary, file), 'utf8');
+    const sources = new Map(['Collection A', 'Collection B', 'Collection C'].map(name => [name, path.join(temporary, name)]));
+    const primaryTarget = '/media/collections/Z First';
+    let config = template.replace('"/media/collections/Collection A"', JSON.stringify(primaryTarget));
+    for (const [name, sourcePath] of sources) {
+      fs.mkdirSync(sourcePath);
+      config = config.replace(JSON.stringify('/replace-with-your-path/' + name), JSON.stringify(sourcePath));
+    }
+    fs.writeFileSync(path.join(temporary, file), config);
+    const selected = resolve(['existing.yml', 'docker-compose.ram-cache.yml', file]);
+    assert.deepEqual(Object.keys(selected.services), ['stream']);
+    const stream = selected.services.stream;
+    assert.equal(stream.environment.MEDIA_DIR, '/media/collections');
+    assert.equal(stream.environment.MEDIA_FOLDER_MODE, 'mounted');
+    assert.equal(stream.environment.MEDIA_PRIMARY_MOUNT, primaryTarget);
+    for (const [name, sourcePath] of sources) {
+      const target = name === 'Collection A' ? primaryTarget : `/media/collections/${name}`;
+      const bind = mount(selected, target);
+      assert.equal(bind.type, 'bind');
+      assert.equal(bind.source, sourcePath);
+      assert.equal(bind.read_only, true);
+      assert.notEqual(bind.bind.create_host_path, true);
+    }
+    assert.equal(selected.volumes['stream-data'].name, 'existing_stream-data');
+    assert.equal(selected.volumes['stream-cache'].name, 'existing_stream-cache');
+    assert.equal(mount(selected, '/app/.cache').type, 'tmpfs');
+    assert.equal(mount(selected, '/app/originals').source, legacyOriginals);
+  });
+
+  check('starter Compose scopes every bind and preserves the selected opening folder and theme', () => {
+    const baseFile = 'compose.yaml';
+    const primary = path.join(temporary, 'Z Photos');
+    const second = path.join(temporary, 'A Movies');
+    const duplicateName = path.join(temporary, 'other library', 'Z Photos');
+    for (const folder of [primary, second, duplicateName]) fs.mkdirSync(folder, { recursive: true });
+    const image = 'docker.io/5u8han/vidstream:latest';
+    fs.writeFileSync(path.join(temporary, baseFile), createCompose({
+      image, port: 8080, folders: [primary, second, duplicateName],
+    }));
+    writeEnvironment();
+    const config = resolve([], false, { baseFile: null });
+    assert.equal(config.name, 'vidstream-starter');
+    assert.deepEqual(Object.keys(config.services), ['stream']);
+    const stream = config.services.stream;
+    assert.equal(stream.image, image);
+    assert.equal(stream.environment.DEFAULT_THEME, 'light-table');
+    assert.equal(stream.environment.REQUIRE_LOGIN, '1');
+    assert.equal(stream.environment.VIDSTREAM_SETUP_HELPER, '1');
+    assert.equal(stream.environment.MEDIA_PRIMARY_MOUNT, '/media/collections/Z Photos');
+    assert.equal(stream.ports[0].host_ip, '127.0.0.1');
+    assert.equal(stream.ports[0].published, '8080');
+    for (const [folder, target] of [[primary, 'Z Photos'], [second, 'A Movies'], [duplicateName, 'Z Photos (2)']]) {
+      const entry = mount(config, '/media/collections/' + target);
+      assert.equal(entry.type, 'bind');
+      assert.equal(entry.source, folder);
+      assert.equal(entry.read_only, true);
+      assert.notEqual(entry.bind.create_host_path, true);
+    }
+  });
+
+  check('adding a folder to a saved starter file keeps the primary, theme and existing mounts', () => {
+    const baseFile = 'starter-added.yml';
+    const first = path.join(temporary, 'Family');
+    const extra = path.join(temporary, 'archive', 'Family');
+    for (const folder of [first, extra]) fs.mkdirSync(folder, { recursive: true });
+    const saved = createCompose({
+      image: 'vidstream-starter:local', port: 8022, theme: 'darkroom', folders: [first],
+    }).replace('    mem_limit: 2g', '    # Keep my custom setting\n    mem_limit: 1g').replace(/\n/g, '\r\n');
+    const edited = addFolderToCompose(saved, extra);
+    const lines = edited.split('\r\n');
+    const insertion = lines.findIndex(line => line.includes('/media/collections/Family (2)')) - 2;
+    assert.ok(insertion > 0);
+    assert.equal(lines.splice(insertion, 6)[0], '      - type: bind');
+    assert.equal(lines.join('\r\n'), saved);
+    assert.throws(() => addFolderToCompose(edited, first), /already in the list/);
+    assert.throws(() => addFolderToCompose('services: {}', extra), /created by the VidStream starter/);
+    fs.writeFileSync(path.join(temporary, baseFile), edited);
+    const config = resolve([], false, { baseFile });
+    assert.equal(config.services.stream.environment.MEDIA_PRIMARY_MOUNT, '/media/collections/Family');
+    assert.equal(config.services.stream.environment.DEFAULT_THEME, 'darkroom');
+    assert.equal(config.services.stream.ports[0].published, '8022');
+    const added = mount(config, '/media/collections/Family (2)');
+    assert.equal(added.source, extra);
+    assert.equal(added.read_only, true);
+    assert.notEqual(added.bind.create_host_path, true);
   });
   console.log(`${passed} Compose configuration checks passed; no containers started or data changed.`);
 } finally {

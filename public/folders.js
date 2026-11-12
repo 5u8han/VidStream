@@ -2,6 +2,8 @@
   'use strict';
   var config = JSON.parse(document.getElementById('app').dataset.config || '{}');
   var folders = [], selected = '', trigger, panel, label, host, pendingAction, tabbing = false;
+  var managedByMounts = false;
+  var mountHelp = 'The folder list comes from Docker mounts. Edit Compose and recreate the container to change it.';
   var storageKey = 'stream-folder-' + (config.node?.id || 'local');
   try { selected = localStorage.getItem(storageKey) || ''; } catch (_) {}
 
@@ -22,9 +24,10 @@
   }
   function notify(initial) {
     window.dispatchEvent(new CustomEvent('stream:folder-change', { detail: {
-      id: selected, configured: folders.length > 0, initial: Boolean(initial)
+      id: selected, configured: configured(), initial: Boolean(initial)
     } }));
   }
+  function configured() { return managedByMounts || folders.length > 0; }
   function paint() {
     if (!trigger) return;
     var current = folders.find(function (folder) { return folder.id === selected; });
@@ -39,26 +42,42 @@
       button.setAttribute('aria-pressed', String(selected === id));
       button.onclick = function () { close(function () { select(id); }); };
     }
-    option('', 'All media');
+    if (!managedByMounts) option('', 'All media');
     folders.forEach(function (folder) { option(folder.id, folder.name); });
-    if (!folders.length) element('p', config.isAdmin ? 'Choose the folders you want here. Nested folders are included.' : 'No folder shortcuts have been configured.', panel, 'folder-menu-note');
-    if (config.isAdmin) {
+    if (managedByMounts) {
+      option('', 'All media');
+      if (!folders.length) {
+        element('p', config.isAdmin ? 'No media folders are mounted.' : 'No folders are available to you.', panel, 'folder-menu-note');
+      }
+      if (config.isAdmin) element('p', mountHelp, panel, 'folder-menu-note');
+    } else if (config.isAdmin) {
+      if (!folders.length) element('p', 'Choose the folders you want here. Nested folders are included.', panel, 'folder-menu-note');
       var manage = element('button', 'Choose folders…', panel, 'folder-manage'); manage.type = 'button';
       manage.onclick = function () { close(function () { window.StreamSettings?.open('folders'); }); };
+    } else if (!folders.length) {
+      element('p', 'No folder shortcuts have been configured.', panel, 'folder-menu-note');
     }
   }
   function update(data, initial, changed) {
+    managedByMounts = data.managedByMounts === true;
     folders = Array.isArray(data.folders) ? data.folders : [];
     var old = selected;
-    if (selected && !folders.some(function (folder) { return folder.id === selected; })) selected = '';
-    try { localStorage.setItem(storageKey, selected); } catch (_) {}
+    if (managedByMounts) {
+      var primary = folders.find(function (folder) { return folder.id === data.primaryFolderId; });
+      selected = (primary || folders[0])?.id || '';
+    } else {
+      if (selected && !folders.some(function (folder) { return folder.id === selected; })) selected = '';
+      try { localStorage.setItem(storageKey, selected); } catch (_) {}
+    }
     paint();
     if (initial || old !== selected || changed) notify(initial);
   }
   function select(id) {
     if (id && !folders.some(function (folder) { return folder.id === id; })) return;
     selected = id;
-    try { localStorage.setItem(storageKey, id); } catch (_) {}
+    if (!managedByMounts) {
+      try { localStorage.setItem(storageKey, id); } catch (_) {}
+    }
     paint(); notify(false);
   }
   function hide() {
@@ -132,6 +151,16 @@
     var data;
     try { data = await request(); } catch (error) { status.textContent = error.message; return; }
     if (!pane.isConnected) return;
+    if (data.managedByMounts) {
+      status.textContent = mountHelp;
+      if (!data.folders.length) {
+        element('p', 'No media folders are mounted.', pane, 'settings-footnote');
+        return;
+      }
+      var mounted = element('ul', undefined, pane);
+      data.folders.forEach(function (folder) { element('li', folder.name, mounted); });
+      return;
+    }
     status.textContent = 'Name a folder and enter its path inside your mounted media folder. All nested folders are included.';
     element('p', 'Example: name “Anime”, path “Entertainment/Anime”. These are shortcuts, not separate passwords or sharing rules.', pane, 'settings-footnote');
     var list = element('div', undefined, pane, 'folder-edit-list');
@@ -174,5 +203,5 @@
     };
     element('p', 'Removing a shortcut does not delete any files. Use the row order to set the menu order; new folders are added at the end.', pane, 'settings-footnote');
   }
-  window.StreamFolders = { mount: mount, settings: settings, selected: function () { return selected; }, configured: function () { return folders.length > 0; } };
+  window.StreamFolders = { mount: mount, settings: settings, selected: function () { return selected; }, configured: configured };
 })();
