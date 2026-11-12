@@ -3,38 +3,38 @@
 # needs a glibc base to install reliably. ffmpeg/imagemagick/tesseract/
 # opencv are all readily apt-installable on Debian too, so this doesn't
 # cost anything for the rest of the stack.
-FROM node:22-bookworm-slim
+FROM node:24.22.3-bookworm-slim
+
+# The server runs directly with Node and has no runtime npm packages.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+      "/opt/yarn-v${YARN_VERSION}" \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+      /usr/local/bin/yarn /usr/local/bin/yarnpkg
 
 # ffmpeg/imagemagick: photo & video derivatives.
 # python3-opencv + python3-numpy: face/cat presence detection (uses
 # OpenCV's own bundled Haar cascades -- no separate model download).
 # tesseract-ocr: text extraction for search.
+# libheif and the ImageMagick extra delegate support iPhone HEIC/HEIF photos.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg imagemagick libimage-exiftool-perl tzdata zip ldap-utils ca-certificates \
-    python3 python3-opencv python3-numpy python3-pip \
+    python3 python3-opencv python3-numpy \
     tesseract-ocr tesseract-ocr-eng \
-    && rm -rf /var/lib/apt/lists/*
-
-# HEIC/HEIF (iPhone photos) needs ImageMagick's "extra" delegate library
-# and libheif. Debian only pulls those in as *recommended* packages, which
-# --no-install-recommends above skips -- so request them explicitly. The
-# `|| true` is deliberate: if a package name differs on your Debian
-# release, the build continues and HEIC files simply show up in the
-# app's "failed" list with a clear error rather than breaking the build.
-RUN apt-get update && apt-get install -y --no-install-recommends \
     libheif1 libmagickcore-6.q16-6-extra \
-    && rm -rf /var/lib/apt/lists/* || true
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # Optional AI stack. The default build is intentionally light and fast.
 # To enable model downloads from the admin dashboard:
-#   STREAM_AI_STACK=true docker compose build
+#   STREAM_AI_STACK=true docker compose -f docker-compose.yml build stream
 # Default CPU; for Linux x86_64 hosts with NVIDIA GPU passthrough:
 #   STREAM_AI_STACK=true STREAM_AI_ACCELERATOR=cuda docker compose -f docker-compose.yml -f docker-compose.gpu.yml build
 ARG INSTALL_AI_STACK=false
 ARG AI_ACCELERATOR=cpu
 RUN if [ "$INSTALL_AI_STACK" = "true" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends python3-pip && \
+      rm -rf /var/lib/apt/lists/* && \
       pip install --no-cache-dir --break-system-packages "typing_extensions>=4.10.0" filelock && \
       if [ "$AI_ACCELERATOR" = "cuda" ]; then \
         pip install --no-cache-dir --break-system-packages torch --index-url https://download.pytorch.org/whl/cu128; \

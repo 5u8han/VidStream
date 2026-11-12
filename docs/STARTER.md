@@ -88,12 +88,13 @@ Use your normal generated `compose.yaml`. If it uses `vidstream-starter:local`,
 run these commands from the updated checkout.
 
 ```sh
-docker build -t vidstream-starter:local .
+docker build --pull -t vidstream-starter:local .
 docker compose up -d --pull never --wait stream
 ```
 
-The first command builds the current checkout as the local image referenced by
-the starter. It writes Docker image layers. The second applies the image and
+The first command refreshes the configured base image and builds the current
+checkout as the local image referenced by the starter. It writes Docker image
+layers. The second applies the image and
 waits for VidStream to be healthy. It can briefly interrupt playback and
 reuses the existing configuration and volumes. Check the first library, the
 folder dropdown, and playback in the browser. Automated checks use generated
@@ -120,10 +121,7 @@ compatible published image. The image must include the starter's Compose
 generator. A failed pull of an explicitly selected image stops setup so the
 user can check the image name or registry access.
 
-The Docker Hub publishing workflow runs after successful validation of a push
-to `main`. To enable it, set the `DOCKERHUB_USERNAME` repository variable and
-the `DOCKERHUB_TOKEN` Actions secret in GitHub. Use a token with write access
-to the account's `vidstream` image repository. The workflow tests the amd64
-and arm64 images before publishing `latest` and a commit-specific tag. Set
-`VIDSTREAM_IMAGE` if you publish under a different namespace.
-[Docker publishing workflow setup](https://docs.docker.com/build/ci/github-actions/)
+See [Docker Hub publishing](DOCKER_HUB.md) for GitHub credentials, platform
+checks, and verifying the registry image. For a setup that already uses a
+published image, follow the registry-image update steps in the
+[command reference](COMMANDS.md).

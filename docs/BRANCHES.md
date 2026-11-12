@@ -35,19 +35,19 @@ One inspected deployment was built from a downloaded ZIP folder rather than this
 
 ## Update an existing Git-based deployment
 
-Run inside the Git checkout used to build that deployment. Save local source edits before switching. Do not replace `.env` or remove persistent volumes. **Before the first 1.9 Docker recreation, retain your existing mounts as described below**: the media bind is now opt-in, and a new named originals volume is the default only for new installations.
+Run inside the Git checkout used to build that deployment. Save local source edits before switching. Keep your `.env` and persistent volumes. **Before recreating a deployment from before 1.9, retain its existing mounts as described below.** For a Start-Here installation, follow its [image update commands](COMMANDS.md#update-and-verify-the-existing-installation).
 
 ```sh
 git fetch origin --prune
 git switch main
 git pull --ff-only
-docker compose up -d --build
+docker compose -f docker-compose.yml up -d --build stream
 ```
 
 - `git fetch origin --prune` updates Git history/remote references and removes stale remote-tracking references for deleted branches. It does not delete local branches, source edits, media, configuration or Docker data.
 - `git switch main` selects the consolidated main source and updates tracked files; conflicting local edits are not discarded. It does not change ignored media/configuration or Docker volumes.
 - `git pull --ff-only` updates that branch only if no merge is necessary; it does not reset local changes or delete media/data.
-- `docker compose up -d --build` rebuilds and recreates this Compose project's application in the background. It uses the mounts in the selected Compose files and retains named volumes; retain old media/originals binds explicitly before this command. It does not update another folder's project or an already-open browser tab.
+- `docker compose -f docker-compose.yml up -d --build stream` rebuilds and recreates the manually configured service in the background. Include any existing local overrides in the same file list to retain the selected mounts and persistent volumes.
 
 Then reload the gallery home page. On Mac, **⌘⇧R** forces a fresh reload; on Windows/Linux use **Ctrl⇧R**.
 
@@ -57,7 +57,7 @@ Verify both the checkout and container:
 
 ```sh
 git branch --show-current
-docker compose exec stream node -p "require('./package.json').version"
+docker compose -f docker-compose.yml exec stream node -p "require('./package.json').version"
 ```
 
 `git branch --show-current` reports the local checkout's branch. `docker compose exec stream node -p "require('./package.json').version"` reads the version from the running container without changing files. Settings shows the browser's currently loaded version; it should agree after a reload. Git branch, running container and browser page are three separate states.

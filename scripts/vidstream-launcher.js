@@ -6,6 +6,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { spawn, spawnSync } = require('node:child_process');
 const { once } = require('node:events');
+const { findImageMagick } = require('../lib/exec');
 
 const ROOT = path.resolve(__dirname, '..');
 function defaultDataDir() {
@@ -28,9 +29,8 @@ function nodeSupported(version = process.versions.node) {
   return major > 22 || (major === 22 && minor >= 13);
 }
 function dependencies() {
-  return [
+  const tools = [
     ['ffmpeg', '-version'],
-    ['convert', '-version'],
     ['exiftool', '-ver'],
     ['python3', '--version']
   ].map(([name, argument]) => {
@@ -46,6 +46,13 @@ function dependencies() {
           : 'Not available on PATH'
     };
   });
+  const imageMagick = findImageMagick();
+  tools.splice(1, 0, {
+    name: 'ImageMagick',
+    available: Boolean(imageMagick),
+    detail: imageMagick?.version || 'Not available on PATH'
+  });
+  return tools;
 }
 function cleanLog(value) {
   return String(value)

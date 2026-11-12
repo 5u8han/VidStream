@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added an end-user guide, command reference, and Docker Hub publishing setup guide. The README now leads with features and guided setup.
+- Moved Docker to the Node.js 24.22.3 security release on Debian Bookworm and moved GitHub Actions to supported Node.js 24 actions and Ubuntu 24.04 runners. Updated Playwright and its bundled test browser.
+- Removed unused Node package managers from the server image and limited pip installation to builds that enable optional object recognition.
+- Corrected the manual multi-platform build helper to refresh the base image and use the current Dockerfile's default recognition settings.
+
 ## 1.11.0 — One-server folder collections and optional RAM cache
 
 - Added an owner-configured top-left folder menu with named shortcuts to any nested relative media path. Selection includes descendants, persists per browser and scopes gallery search, pagination and player neighbors without rescanning or extra sign-ins. Configuration stays in the durable database; removing a shortcut leaves media and history intact.

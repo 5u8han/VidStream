@@ -8,9 +8,11 @@ const crypto = require('node:crypto');
 const {execFileSync,spawnSync} = require('node:child_process');
 const {Db} = require('../lib/db');
 const {MediaEditor} = require('../lib/media-editor');
-const hasTools = ['ffmpeg','convert'].every(cmd => spawnSync(cmd,['-version']).status === 0);
+const {findImageMagick} = require('../lib/exec');
+const hasFfmpeg = spawnSync('ffmpeg',['-version']).status === 0;
+const imageMagick = findImageMagick()?.command;
 const hash = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-test('real video edits preserve an exact original and preferences; invalid edits leave source intact', {skip:!hasTools}, async t => {
+test('real video edits preserve an exact original and preferences; invalid edits leave source intact', {skip:!hasFfmpeg}, async t => {
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'stream-editor-'));
  const cfg={mediaDir:path.join(dir,'media'),cacheDir:path.join(dir,'cache')}; fs.mkdirSync(cfg.mediaDir);
  const source=path.join(cfg.mediaDir,'clip.mp4');
@@ -32,11 +34,11 @@ test('real video edits preserve an exact original and preferences; invalid edits
  assert.ok(Math.abs(Number(probe.format.duration)-1)<.05);
 });
 
-test('photo metadata and derivatives work with ImageMagick 6 and 7', {skip:!hasTools}, async t => {
+test('photo metadata and derivatives work with ImageMagick 6 and 7', {skip:!imageMagick}, async t => {
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'stream-photo-'));
  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
  const source=path.join(dir,'photo.jpg');
- execFileSync('convert',['-size','120x200','gradient:navy-coral',source],{stdio:'pipe'});
+ execFileSync(imageMagick,['-size','120x200','gradient:navy-coral',source]);
  const {processPhoto}=require('../lib/media-photo');
  const result=await processPhoto(source,'.jpg',{
    thumb:(w,ext)=>path.join(dir,'thumb-'+w+ext),large:(w,ext)=>path.join(dir,'large-'+w+ext),

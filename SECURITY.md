@@ -1,6 +1,6 @@
 # Security and privacy
 
-Stream is self-hosted software; it can serve very personal media. **Do not upload your `.env`, cache, model settings, NAS credentials, or media files to GitHub.** A public repository should contain only source code and `.env.example`.
+VidStream serves media from your own storage. Keep your `.env`, generated `compose.yaml`, cache, NAS credentials, database, and media out of public repositories. Use the example configuration files when sharing setup details.
 
 ## Before allowing anyone outside your LAN
 
@@ -16,6 +16,14 @@ Starting in 1.4, a server without credentials is locked behind owner setup. The 
 New dashboard, AI download, and rescan endpoints require admin authorization. The AI installer uses a fixed whitelist of model presets, not user-provided download URLs. GPU detection only shows devices visible to the server. Video enhancement runtimes, downloads and job APIs have been removed. Historical files are preserved, and no saved enhancement job is executed. Native Mac telemetry uses read-only IOKit/netstat without administrator access. Avoid mounting the Docker socket, root filesystem, or system logs into Stream.
 
 Model weights and Ultralytics installations are third-party software. Assess their licenses for your use. The Stream code is MIT licensed; the AI packages and weights have separate terms. Read model software documentation before distributing combined images.
+
+Use a patched Node.js LTS release for native hosting and update your Docker
+image as application or base-image patches become available. The application
+has zero runtime npm dependencies. An npm audit covers the JavaScript
+dependency lockfile. The Docker image and optional recognition stack have
+their own operating-system and Python packages. For registry publishing, use
+a write-enabled token in GitHub Actions secrets and rotate it before it
+expires. [Update commands](docs/COMMANDS.md) · [Docker Hub publishing](docs/DOCKER_HUB.md)
 
 Older versions do not understand web-created owner credentials. Before rolling back below 1.4, configure `ADMIN_PASSWORD` and `REQUIRE_LOGIN=1`; do not assume the web-created lock survives a downgrade.
 

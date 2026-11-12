@@ -7,11 +7,12 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const { Readable } = require('node:stream');
-const { execFileSync, spawnSync } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 const { Db } = require('../lib/db');
 const { Scanner } = require('../lib/scanner');
 const { shortHash } = require('../lib/slug');
 const { workbenchHandlers } = require('../lib/handlers/workbench');
+const { findImageMagick } = require('../lib/exec');
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vidstream-mounted-catalog-'));
@@ -160,13 +161,13 @@ test('mounted scan and watchers exclude loose files, other directories and symli
   assert.equal(open().get('other').availability, 'available');
 });
 
-const hasConvert = spawnSync('convert', ['-version']).status === 0;
-test('a new copy cannot take an unmounted item’s identity or an occupied hash slug', { skip: !hasConvert }, async (t) => {
+const imageMagick = findImageMagick()?.command;
+test('a new copy cannot take an unmounted item’s identity or an occupied hash slug', { skip: !imageMagick }, async (t) => {
   const { cfg, open, close } = fixture(t);
   fs.mkdirSync(path.join(cfg.mediaDir, 'Mounted'));
   const relative = 'Mounted/clip.jpg';
   const source = path.join(cfg.mediaDir, relative);
-  execFileSync('convert', ['-size', '64x48', 'xc:blue', source]);
+  execFileSync(imageMagick, ['-size', '64x48', 'xc:blue', source]);
   const sourceHash = crypto.createHash('sha256').update(fs.readFileSync(source)).digest('hex');
   const hashed = 'clip-' + shortHash(relative);
   const legacy = open();

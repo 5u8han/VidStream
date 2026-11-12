@@ -19,6 +19,6 @@
     "node": ">=22.13.0"
   },
   "devDependencies": {
-    "playwright": "1.62.1"
+    "playwright": "1.65.0"
   }
 }

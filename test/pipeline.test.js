@@ -10,6 +10,7 @@ const { setTimeout: delay } = require('node:timers/promises');
 const { Db } = require('../lib/db');
 const { Scanner } = require('../lib/scanner');
 const { WorkCoordinator } = require('../lib/work-coordinator');
+const { findImageMagick } = require('../lib/exec');
 
 function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vidstream-pipeline-'));
@@ -22,7 +23,7 @@ function fixture(t) {
   t.after(() => { clearTimeout(db._saveTimer); db.store.close(); fs.rmSync(dir, { recursive: true, force: true }); });
   return { dir, cfg, db };
 }
-const hasConvert = spawnSync('convert', ['-version']).status === 0;
+const imageMagick = findImageMagick()?.command;
 const hasFfmpeg = spawnSync('ffmpeg', ['-version']).status === 0;
 const hash = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
@@ -81,9 +82,9 @@ test('browse mode permits one identity/poster task alongside a long preview, but
   await work.stop();
 });
 
-test('staged imports publish posters first, keep source versions across recipes, preserve previews on refresh failure', { skip: !hasConvert }, async t => {
+test('staged imports publish posters first, keep source versions across recipes, preserve previews on refresh failure', { skip: !imageMagick }, async t => {
   const { cfg, db } = fixture(t), source = path.join(cfg.mediaDir, 'sample.jpg');
-  execFileSync('convert', ['-size', '64x48', 'xc:red', source]);
+  execFileSync(imageMagick, ['-size', '64x48', 'xc:red', source]);
   const states = [];
   const scanner = new Scanner(cfg, db, { coordinator: new WorkCoordinator(db.store), onChange() {
     const item = [...db.items.values()][0];
@@ -105,9 +106,9 @@ test('staged imports publish posters first, keep source versions across recipes,
   assert.equal(scanner.failed.length, 1);
 });
 
-test('unambiguous source moves retain catalog identity while present copies remain separate', { skip: !hasConvert }, async t => {
+test('unambiguous source moves retain catalog identity while present copies remain separate', { skip: !imageMagick }, async t => {
   const { cfg, db } = fixture(t), original = path.join(cfg.mediaDir, 'one.jpg');
-  execFileSync('convert', ['-size', '64x48', 'xc:blue', original]);
+  execFileSync(imageMagick, ['-size', '64x48', 'xc:blue', original]);
   const scanner = new Scanner(cfg, db); await scanner.scan();
   const old = [...db.items.values()][0]; db.store.update(old, { favorite: true });
   fs.renameSync(original, path.join(cfg.mediaDir, 'moved.jpg')); await scanner.scan();
@@ -120,9 +121,9 @@ test('unambiguous source moves retain catalog identity while present copies rema
   assert.equal(db.get(old.id).availability, 'missing'); assert.equal(db.get(old.id).favorite, true);
 });
 
-test('durable catalog rebuilds a lost preview cache without changing identity or source version', { skip: !hasConvert }, async t => {
+test('durable catalog rebuilds a lost preview cache without changing identity or source version', { skip: !imageMagick }, async t => {
   const { cfg, db } = fixture(t), source = path.join(cfg.mediaDir, 'durable.jpg');
-  execFileSync('convert', ['-size', '64x48', 'xc:green', source]);
+  execFileSync(imageMagick, ['-size', '64x48', 'xc:green', source]);
   const scanner = new Scanner(cfg, db); await scanner.scan();
   const item = [...db.items.values()][0], identity = item.mediaId, version = item.sourceVersion;
   db.store.update(item, { favorite: true });
@@ -135,14 +136,14 @@ test('durable catalog rebuilds a lost preview cache without changing identity or
   scanner.stopWatching(); assert.deepEqual(await scanner.scan(), { skipped: true });
 });
 
-test('forced reconciliation detects replacement bytes even when size and modification time are preserved', { skip: !hasConvert }, async t => {
+test('forced reconciliation detects replacement bytes even when size and modification time are preserved', { skip: !imageMagick }, async t => {
   const { cfg, db } = fixture(t), source = path.join(cfg.mediaDir, 'replaced.bmp');
   const modified = new Date('2020-01-01T00:00:00.000Z');
-  execFileSync('convert', ['-size', '64x48', 'xc:red', 'BMP3:' + source]);
+  execFileSync(imageMagick, ['-size', '64x48', 'xc:red', 'BMP3:' + source]);
   fs.utimesSync(source, modified, modified);
   const scanner = new Scanner(cfg, db); await scanner.scan();
   const before = { ...[...db.items.values()][0] };
-  execFileSync('convert', ['-size', '64x48', 'xc:blue', 'BMP3:' + source]);
+  execFileSync(imageMagick, ['-size', '64x48', 'xc:blue', 'BMP3:' + source]);
   fs.utimesSync(source, modified, modified);
   const stat = fs.statSync(source);
   assert.equal(stat.size, before.size); assert.equal(stat.mtime.toISOString(), before.mtime);

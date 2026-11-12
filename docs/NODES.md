@@ -51,40 +51,19 @@ Keep every instance's data volume independent. Git source can be the same everyw
 
 Removing a connection removes only a directory entry. It does not delete media, previews, jobs, credentials or databases on either machine.
 
-## Download and run official main
+## Install and update each machine
 
-For an existing checkout, save local source edits first. Keep `.env`, media mounts and persistent volumes in place. Before the first 1.9 recreation, follow [storage upgrade steps](BRANCHES.md#retain-existing-storage-before-rebuilding), especially retaining an old `./originals` archive bind.
+Use [Start-Here](STARTER.md) or the [manual Docker and native commands](COMMANDS.md)
+on each server. Set up its own media mounts and account. On an existing
+server, keep its private Compose configuration and reuse its named volumes.
+If it was installed before the explicit media and archive mounts, follow the
+[storage migration steps](BRANCHES.md#retain-existing-storage-before-rebuilding)
+before recreating the container.
 
-```sh
-git fetch origin
-git switch main
-git pull --ff-only
-docker compose up -d --build
-```
-
-- `git fetch origin` downloads Git history and branch references. It does not change working files, media, configuration or Docker data.
-- `git switch main` selects official main and updates tracked source files. It preserves ignored media/configuration and Docker volumes and refuses conflicting local edits.
-- `git pull --ff-only` updates this selected branch only if no merge is needed. It does not discard local changes or remove media/configuration/volumes.
-- `docker compose up -d --build` rebuilds and starts/recreates this machine's application in the background. It retains named volumes and uses the explicitly configured media/archive mounts. Include an existing local override in the file list; the new base file alone no longer selects the former host media/originals paths. It does not install or update another machine.
-
-For a new machine with Git/Docker already installed, choose a parent folder for the software:
-
-```sh
-git clone --branch main https://github.com/5u8han/VidStream.git
-cd VidStream
-cp .env.example .env
-```
-
-`git clone --branch main` creates a new software checkout of official main; it downloads no personal media or another node's runtime state. `cd VidStream` enters that new folder. `cp .env.example .env` creates a local configuration file from defaults; use it only in this new checkout, because it would replace an existing `.env`. Set `STREAM_MEDIA_PATH` to that machine's existing media folder and enable the commented read-only media bind in Compose, as shown in the [Docker quick start](../README.md#quick-start-with-docker), before running the Docker start command above. No media directory layout is bundled in the repository. Without an enabled media mount, the app has an empty library. New installs use a separate `stream-originals` volume that preserves original archives from earlier releases. Generate/retain separate security state on each machine. PowerShell users can use `Copy-Item .env.example .env` instead; it likewise copies defaults and must not overwrite an existing configured file.
-
-To verify the source selected on a machine:
-
-```sh
-git branch --show-current
-docker compose exec stream node -p "require('./package.json').version"
-```
-
-`git branch --show-current` prints the active local branch. `docker compose exec stream node -p "require('./package.json').version"` reads the version inside the running container without changing files; expect `1.11.0` on official main. A Docker rebuild is required for its existing container to use changed source; reload the browser afterward. For a native installation, `node -p "require('./package.json').version"` reads the checkout's version without starting the app or changing files. The new node settings use existing SQLite settings, without a catalog schema migration. Changing server address/origin can require signing in again; do not remove data or reset security files to resolve that.
+After an update, reload the gallery and use **Settings** to check the running
+version, browser address, owner or guest state, and Nodes support. The source
+checkout and running container update separately. Changing the server address
+can require a fresh sign-in on that server.
 
 ## Optional discovery
 

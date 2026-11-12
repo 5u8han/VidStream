@@ -15,13 +15,13 @@ The Compose service sets its memory ceiling from `STREAM_MEM_LIMIT`, defaulting 
 
 Check the resource dashboard while importing or browsing. Increase resource allocation only when measurements justify it. On Docker Desktop, adjust its resource settings first and keep the container ceiling below the VM's allocation, leaving memory for the host and other apps. Set the chosen `STREAM_MEM_LIMIT` in the existing `.env`; this is a configuration setting, not a command.
 
-Apply an allocation change with:
+Apply an allocation change to a manual Compose setup with this command.
 
 ```sh
-docker compose up -d --build --force-recreate stream
+docker compose -f docker-compose.yml up -d --force-recreate stream
 ```
 
-This builds the current source, recreates the app with its selected limits, and starts it in the background. It briefly interrupts access but preserves configured media mounts and named data/cache/originals volumes. It does not delete files or allocate additional physical hardware.
+This recreates the app with its selected limits and starts it in the background. It briefly interrupts access and reuses its mounts and data/cache/archive volumes. Include your existing local overrides in the file list. With Start-Here, edit `mem_limit` and `memswap_limit` in the generated `compose.yaml` and use the [guided start command](STARTER.md).
 
 ## Optional NVIDIA recognition
 
@@ -37,7 +37,7 @@ Docker Desktop's NVIDIA passthrough support applies to Windows with WSL2; it doe
 
 ## Moving or adding machines
 
-For an additional library, install the same app with fresh per-server state and connect it through Nodes. For a replacement server, stop the existing instance before moving its complete persistent state and source-media mapping. Do not share a live writable SQLite database between servers. See [Nodes](NODES.md) for direct library switching and [the README](../README.md) for mounts and backups.
+For an additional library, install the same app with fresh per-server state and connect it through Nodes. For a replacement server, stop the existing instance before moving its complete persistent state and source-media mapping. Keep each live SQLite database on its own host. See [Nodes](NODES.md) for direct library switching and the [command reference](COMMANDS.md) for mounts and backups.
 
 ## References
 
