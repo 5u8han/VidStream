@@ -7,8 +7,9 @@ you trust. Your files stay on storage you control.
 
 [Quick start](#quick-start) · [User guide](docs/USAGE.md) · [Requirements and commands](docs/COMMANDS.md) · [Docker Hub publishing](docs/DOCKER_HUB.md)
 
-**Version 2.0** adds folder completion and guided access over SSH. Manual
-Compose now publishes to localhost by default.
+**Version 2.1** improves large-library imports, scroll-back, and tab resume.
+See the [large-library performance guide](docs/PERFORMANCE.md) for cache and
+startup settings.
 
 ## What you can do
 
@@ -97,6 +98,8 @@ workflow, then mount the finished files.
 | Install, start, stop, update, back up, or test the app | [Requirements and commands](docs/COMMANDS.md) |
 | Choose folder shortcuts or mount specific source directories | [Folder shortcuts](docs/FOLDERS.md) · [Mounted folders](docs/MOUNTED_FOLDERS.md) |
 | Configure GPU access, a RAM cache, or connected servers | [Hardware](docs/HARDWARE.md) · [RAM cache](docs/RAM_CACHE.md) · [Nodes](docs/NODES.md) |
+| Tune a large library or troubleshoot preview stalls | [Large-library performance](docs/PERFORMANCE.md) |
+| Check source videos for decode errors | [Standalone media audit](docs/MEDIA_AUDIT.md) |
 | Publish and verify the Docker Hub image | [Docker Hub publishing](docs/DOCKER_HUB.md) |
 | Upgrade an older installation or review changes | [Storage migration](docs/BRANCHES.md#retain-existing-storage-before-rebuilding) · [Changelog](CHANGELOG.md) |
 

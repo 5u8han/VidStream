@@ -346,6 +346,7 @@
     var maxPreview = selectControl('Maximum simultaneous video previews', [[4, '4 previews'], [8, '8 previews'], [12, '12 previews'], [16, '16 previews'], [24, '24 previews'], [64, 'Up to 64 previews']], MAX_PREVIEWS || 8, function (value) {
       MAX_PREVIEWS = Number(value); storageSet('stream-max-previews', String(MAX_PREVIEWS));
       if (runningPreviews.size > MAX_PREVIEWS) Array.from(runningPreviews).slice(MAX_PREVIEWS).forEach(pausePreview);
+      previewController.trim();
       refillPreviews();
     });
     var source = selectControl('Preview source', [['preview', 'Optimized · native FPS up to 60'], ['original', 'Original · full quality']], previewSource, function (value) { previewSource = value; storageSet('stream-preview-source', value); resetAndLoad(); });
@@ -357,7 +358,7 @@
       window.StreamNavigation.leave('options');
       window.StreamDiagnostics.open({ videos: function () { return Array.from(document.querySelectorAll('video')).filter(function (video) { return !video.paused; }).slice(0, 4); }, previewLimit: MAX_PREVIEWS, previewStats: function () { return previewController.stats(); }, effects: effectsMode });
     });
-    playback.append(maxPreview.field, source.field, saver, el('p', { class: 'menu-help' }, 'Data saver reloads the page. These playback choices stay on this browser.'), diagnose);
+    playback.append(maxPreview.field, source.field, saver, el('p', { class: 'menu-help' }, 'The limit applies to nearby videos. Optimized mode shows a poster while its preview is being made. Data saver reloads the page.'), diagnose);
     if (isAdmin) {
       var rebuild = choice('Refresh metadata & previews', {}, function () {
         rebuild.disabled = true; showToast('Refreshing metadata and previews…');
@@ -604,7 +605,14 @@
     if (root.classList.contains('video-stats')) return;
     root.innerHTML = '';
     if (!s) return;
-    if (libraryStatus.scanning) root.appendChild(el('span', { class: 'scan-timing' }, 'Scanning…'));
+    if (libraryStatus.scanning) {
+      var progress = libraryStatus.progress;
+      var scanText = 'Scanning…';
+      if (progress?.phase === 'discovering') scanText = 'Discovering media · ' + progress.discovered.toLocaleString() + ' found';
+      if (progress?.phase === 'checking') scanText = 'Checking files · ' + progress.examined.toLocaleString() + ' / ' + progress.discovered.toLocaleString();
+      if (progress?.phase === 'processing') scanText = 'Importing · ' + progress.processed.toLocaleString() + ' / ' + progress.discovered.toLocaleString() + ' checked';
+      root.appendChild(el('span', { class: 'scan-timing' }, scanText));
+    }
     root.appendChild(el('span', {}, plural(s.photoCount, 'photo')));
     root.appendChild(el('span', {}, plural(s.videoCount, 'video')));
     if (s.unsupportedCount > 0) {
@@ -693,9 +701,37 @@
         renderLibrarySummary();
         var before = previous && previous.lastScan && previous.lastScan.at;
         var after = data.lastScan && data.lastScan.at;
-        if (previous && before !== after && after && !lb.open && window.scrollY < 200) resetAndLoad();
+        var firstItemsReady = data.scanning && data.progress?.processed > 0 && state.loadedOnce &&
+          !state.loading && !grid.querySelector('.tile');
+        if (!lb.open && !document.hidden && (firstItemsReady ||
+          (previous && before !== after && after && window.scrollY < 200))) resetAndLoad();
       })
       .catch(function () { });
+  }
+
+  function refreshPendingPreviews() {
+    if (previewSource !== 'preview' || !autoplayEnabled || dataSaverMode || document.hidden || lb.open) return;
+    var pending = new Map(), params = new URLSearchParams();
+    for (var tile of inViewVideoTiles) {
+      var item = tile._item;
+      if (!item.urls.preview && item.processing?.stage !== 'failed') {
+        pending.set(item.id, item);
+        params.append('id', item.id);
+        if (pending.size === 64) break;
+      }
+    }
+    if (!pending.size) return;
+    return fetch('/api/ready-previews?' + params)
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        data.previews.forEach(function (preview) {
+          var item = pending.get(preview.id);
+          if (item && !item.urls.preview) item.urls.preview = preview.url;
+        });
+        previewController.refill();
+      })
+      .catch(function () {});
   }
 
   function buildFilesModal() {
@@ -1331,17 +1367,44 @@
     });
   }, { rootMargin: '1000px' });
 
+  var warmImages = new Map();
+  var warmImageBytes = 0;
+
+  function takeWarmImage(url) {
+    var entry = warmImages.get(url);
+    if (!entry) return null;
+    warmImages.delete(url);
+    warmImageBytes -= entry.bytes;
+    return entry.image;
+  }
+
+  function rememberImage(image) {
+    if (dataSaverMode || !image.complete || !image.naturalWidth || !image.currentSrc) return false;
+    if (image.dataset.animated === 'true') return false;
+    var sourceWidth = Number(new URL(image.currentSrc).searchParams.get('w')) || image.naturalWidth;
+    var bytes = Math.max(sourceWidth, image.naturalWidth) ** 2 * image.naturalHeight / image.naturalWidth * 4;
+    var budget = 24 * 1024 * 1024;
+    if (bytes > budget) return false;
+    takeWarmImage(image.dataset.src);
+    warmImages.set(image.dataset.src, { image: image, bytes: bytes });
+    warmImageBytes += bytes;
+    while (warmImages.size > 96 || warmImageBytes > budget) takeWarmImage(warmImages.keys().next().value);
+    return true;
+  }
+
   function dehydrateTile(tile) {
     if (!tile._hydrated || tile._nearViewport || tile.contains(document.activeElement) || tile.matches(':hover')) return;
     if (tile._item.type === 'video') {
       autoplayObserver.unobserve(tile);
-      previewController.release(tile);
+      previewController.setVisible(tile, false);
     }
     var image = tile.querySelector('img.tile-media');
     if (image) {
       lazyObserver.unobserve(image);
-      image.removeAttribute('srcset');
-      image.removeAttribute('src');
+      if (!rememberImage(image)) {
+        image.removeAttribute('srcset');
+        image.removeAttribute('src');
+      }
     }
     tile.replaceChildren();
     tile._hydrated = false;
@@ -1358,49 +1421,67 @@
     });
   }, { rootMargin: dataSaverMode ? '100px' : '500px' });
 
+  var backgroundBusy;
   function updateBackgroundBusy() {
     var activeVideo=lb && lb.open ? lightbox.mediaWrap.querySelector('video') : null;
     var busy=Boolean((previewController && previewController.running.size) || (activeVideo && !activeVideo.paused));
+    if (busy === backgroundBusy) return;
+    backgroundBusy = busy;
     document.documentElement.toggleAttribute('data-render-busy',busy);
     if (bg) bg.setBusy(busy);
   }
-  var previewController = window.StreamPreviewController.create({enabled:function () { return autoplayEnabled; },
+
+  function previewUrl(item) {
+    return previewSource === 'original' ? item.urls.original : item.urls.preview;
+  }
+
+  var previewController = window.StreamPreviewController.create({enabled:function () { return autoplayEnabled && !dataSaverMode; },
     blocked:function () { return document.hidden || document.body.classList.contains('lb-open'); },limit:function () { return MAX_PREVIEWS; },
-    attach:attachVideoPreview,onChange:updateBackgroundBusy});
+    attach:attachVideoPreview,source:previewUrl,onChange:updateBackgroundBusy});
   var runningPreviews = previewController.running;
   var inViewVideoTiles = previewController.inView;
-  var autoplayObserver = new IntersectionObserver(function (entries) {
+  function updatePreviewVisibility(entries) {
     entries.forEach(function (entry) {
       var tile = entry.target;
       if (!tile._hydrated) return;
       previewController.setVisible(tile, entry.isIntersecting);
     });
-  }, { rootMargin: '80px', threshold: 0.4 });
+  }
+  var autoplayObserver = new IntersectionObserver(updatePreviewVisibility, { rootMargin: '80px' });
 
   var scrollObserver = new IntersectionObserver(function (entries) {
     if (entries.at(-1).isIntersecting) loadMore();
   }, { rootMargin: '900px' });
 
-  function attachVideoPreview(tile, item) {
-    if (tile._video) return tile._video;
+  function attachVideoPreview(tile, item, source) {
+    if (tile._video) {
+      if (tile._video.parentNode !== tile) tile.appendChild(tile._video);
+      return tile._video;
+    }
     var video = document.createElement('video');
     video.className = 'tile-media tile-video-el';
     video.muted = true;
     video.loop = true;
     video.playsInline = true;
     video.preload = 'metadata';
-    video.src = previewSource === 'original' ? item.urls.full : item.urls.preview || item.urls.full;
+    video.src = source;
     video._streamItem = item;
-    video.addEventListener('error', function () { if (previewSource === 'original' && video.src.indexOf('/original') >= 0) { video.src = item.urls.preview; video.play().catch(function () {}); showToast('Original format unsupported here; using preview'); } });
+    video.addEventListener('error', function () {
+      video.classList.remove('has-frame');
+      if (previewSource === 'original' && item.urls.preview && video.getAttribute('src') === item.urls.original) {
+        video.src = item.urls.preview;
+        if (!document.hidden && runningPreviews.has(tile)) video.play().catch(function () {});
+        showToast('Original format unsupported here; using preview');
+      }
+    });
     tile.appendChild(video);
-    var liveEl = tile.querySelector('.tile-live');
     video.addEventListener('playing', function () {
-      video.classList.add('playing');
-      if (liveEl) liveEl.classList.add('on');
+      video.classList.add('has-frame', 'playing');
+      tile.querySelector('.tile-live')?.classList.add('on');
     });
     video.addEventListener('pause', function () {
       video.classList.remove('playing');
-      if (liveEl) liveEl.classList.remove('on');
+      tile.querySelector('.tile-live')?.classList.remove('on');
     });
     tile._video = video;
     return video;
@@ -1416,8 +1497,11 @@
     previewController.schedule();
   }
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) runningPreviews.forEach(function (tile) { pausePreview(tile); });
-    else Array.from(inViewVideoTiles).slice(0, MAX_PREVIEWS).forEach(playPreview);
+    if (document.hidden) previewController.suspend();
+    else {
+      updatePreviewVisibility(autoplayObserver.takeRecords());
+      previewController.refill();
+    }
   });
 
   function paintVisibilityButton(btn, guest) {
@@ -1507,12 +1591,16 @@
     sourceLabel.appendChild(originSub);
     tile.appendChild(sourceLabel);
 
-    var img = el('img', { class: 'tile-media', alt: '', loading: 'lazy' });
-    img.dataset.src = item.urls.thumb;
-    if (item.urls.thumbSrcset) img.dataset.srcset = item.urls.thumbSrcset;
-    img.addEventListener('load', function () { img.classList.add('loaded'); window.StreamDiagnostics?.thumbnailLoaded(img); });
+    var retained = takeWarmImage(item.urls.thumb);
+    var img = retained || el('img', { class: 'tile-media', alt: '' });
+    if (!retained) {
+      img.dataset.src = item.urls.thumb;
+      if (item.isAnimated) img.dataset.animated = 'true';
+      if (item.urls.thumbSrcset) img.dataset.srcset = item.urls.thumbSrcset;
+      img.addEventListener('load', function () { img.classList.add('loaded'); window.StreamDiagnostics?.thumbnailLoaded(img); });
+    }
     tile.appendChild(img);
-    lazyObserver.observe(img);
+    if (!retained) lazyObserver.observe(img);
 
     if (item.type === 'video') {
       var expand = el('button', { type: 'button', class: 'tile-expand', title: 'Toggle large video tile', 'aria-label': 'Resize this video tile' }, icon('expand'));
@@ -1528,7 +1616,7 @@
       if (item.duration) {
         tile.appendChild(el('span', { class: 'tile-duration mono' }, formatDuration(item.duration)));
       }
-      if (autoplayEnabled) autoplayObserver.observe(tile);
+      if (!dataSaverMode) autoplayObserver.observe(tile);
     }
 
     if (isAdmin) {
@@ -2225,5 +2313,9 @@
   }
   foldersReady.finally(function () { loadMore(); });
   fetchLibraryStatus();
-  setInterval(fetchLibraryStatus, 20000);
+  setInterval(function () {
+    if (document.hidden) return;
+    fetchLibraryStatus();
+    refreshPendingPreviews();
+  }, 20000);
 })();

@@ -9,23 +9,16 @@
     var running = new Set(),
       inView = new Set(),
       tracked = new Set(),
-      releases = new Map(),
+      warm = new Set(),
       refillFrame = null;
-    var delay = options.releaseMs === undefined ? 2000 : options.releaseMs;
     var raf = options.raf || requestAnimationFrame,
       caf = options.caf || cancelAnimationFrame;
-    var later = options.later || setTimeout,
-      cancel = options.cancel || clearTimeout;
     function notify() {
       if (options.onChange) options.onChange(running.size);
     }
-    function cancelRelease(tile) {
-      if (releases.has(tile)) cancel(releases.get(tile));
-      releases.delete(tile);
-    }
     function release(tile) {
-      cancelRelease(tile);
-      running.delete(tile);
+      warm.delete(tile);
+      var wasRunning = running.delete(tile);
       tracked.delete(tile);
       var video = tile._video;
       if (video) {
@@ -36,17 +29,17 @@
         video.remove();
         tile._video = null;
       }
-      notify();
+      if (wasRunning) notify();
     }
-    function scheduleRelease(tile) {
-      cancelRelease(tile);
-      releases.set(
-        tile,
-        later(function () {
-          releases.delete(tile);
-          if (!inView.has(tile) || !tile.isConnected) release(tile);
-        }, delay)
-      );
+    function trimWarm() {
+      while (warm.size > 8) release(warm.values().next().value);
+    }
+    function trimTracked() {
+      var limit = options.limit() + 8;
+      for (var tile of tracked) {
+        if (tracked.size <= limit) break;
+        if (!running.has(tile)) release(tile);
+      }
     }
     function schedule() {
       if (refillFrame === null)
@@ -56,22 +49,36 @@
         });
     }
     function pause(tile) {
-      running.delete(tile);
-      if (tile._video) tile._video.pause();
-      if (!inView.has(tile)) scheduleRelease(tile);
-      notify();
-      schedule();
+      var wasRunning = running.delete(tile);
+      var video = tile._video;
+      if (video) {
+        video._previewAttempt = null;
+        video.pause();
+        if (!inView.has(tile)) {
+          if (tile.isConnected && video.readyState >= 2 && video.getAttribute('src') === tile._item.urls.preview) {
+            warm.delete(tile);
+            warm.add(tile);
+            trimWarm();
+          } else release(tile);
+        }
+      }
+      if (wasRunning) notify();
+      if (!options.blocked() && options.enabled()) schedule();
     }
     function play(tile) {
+      var limit = options.limit();
       if (
         !options.enabled() ||
         options.blocked() ||
+        limit < 1 ||
         !tile.isConnected ||
         tile._item.type !== 'video' ||
         running.has(tile)
       )
         return;
-      if (running.size >= options.limit()) {
+      var source = options.source(tile._item);
+      if (!source) return;
+      if (running.size >= limit) {
         if (!tile.matches(':hover')) return;
         var victim =
           Array.from(running).find(function (entry) {
@@ -79,9 +86,9 @@
           }) || running.values().next().value;
         if (victim) pause(victim);
       }
-      cancelRelease(tile);
+      warm.delete(tile);
       tracked.add(tile);
-      var video = options.attach(tile, tile._item);
+      var video = options.attach(tile, tile._item, source);
       if (tile._resumeAt > 0 && !video._resumeBound) {
         video._resumeBound = true;
         var resume = function () {
@@ -96,11 +103,14 @@
         else video.addEventListener('loadedmetadata', resume, { once: true });
       }
       running.add(tile);
+      trimTracked();
       notify();
+      var attempt = Symbol();
+      video._previewAttempt = attempt;
       var promise = video.play();
       if (promise && promise.catch)
         promise.catch(function () {
-          if (tile._video !== video) return;
+          if (tile._video !== video || video._previewAttempt !== attempt) return;
           running.delete(tile);
           notify();
         });
@@ -114,13 +124,12 @@
           continue;
         }
         if (running.size >= options.limit()) break;
-        play(tile);
+        if (!tile._video?.error) play(tile);
       }
     }
     function setVisible(tile, visible) {
       if (visible) {
         inView.add(tile);
-        cancelRelease(tile);
         play(tile);
       } else {
         inView.delete(tile);
@@ -131,8 +140,6 @@
       inView.clear();
       Array.from(tracked).forEach(release);
       running.clear();
-      releases.forEach(cancel);
-      releases.clear();
       if (refillFrame !== null) caf(refillFrame);
       refillFrame = null;
       notify();
@@ -145,18 +152,19 @@
       refill: refill,
       schedule: schedule,
       setVisible: setVisible,
-      release: function (tile) {
-        inView.delete(tile);
-        release(tile);
-        schedule();
+      suspend: function () {
+        if (refillFrame !== null) caf(refillFrame);
+        refillFrame = null;
+        Array.from(running).forEach(pause);
       },
+      trim: trimTracked,
       clear: clear,
       stats: function () {
         return {
           running: running.size,
           visible: inView.size,
           retained: tracked.size,
-          pendingRelease: releases.size
+          warm: warm.size
         };
       }
     };

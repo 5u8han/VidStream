@@ -16,7 +16,7 @@ const { renderShell } = require('./lib/template');
 const { pageHandler } = require('./lib/handlers/page');
 const { mediaHandler } = require('./lib/handlers/media');
 const {
-  itemsHandler, itemHandler, rescanHandler, healthHandler, libraryStatusHandler,
+  itemsHandler, itemHandler, rescanHandler, healthHandler, libraryStatusHandler, readyPreviewsHandler,
   setItemVisibilityHandler, setAlbumVisibilityHandler, duplicatesHandler, dashboardHandler, dashboardFilesHandler, aiStatusHandler, aiUpdateHandler, aiInstallHandler,
 } = require('./lib/handlers/api');
 const { feedHandler } = require('./lib/feed');
@@ -87,6 +87,7 @@ router.post('/api/setup', setupHandler(cfg, { onSetup: () => nodes.restartDiscov
 router.post('/api/login', loginHandler(cfg));
 router.post('/api/logout', logoutHandler(cfg));
 router.get('/api/items', itemsHandler(cfg, db));
+router.get('/api/ready-previews', readyPreviewsHandler(cfg, db));
 router.get('/api/item/:id', itemHandler(cfg, db));
 router.get('/api/library-status', libraryStatusHandler(cfg, scanner));
 router.get('/api/dashboard', dashboardHandler(cfg, db, scanner));
@@ -181,9 +182,14 @@ async function main() {
   resources.start();
   console.log(`[stream] Media folder: ${cfg.mediaDir}`);
 
-  server.listen(cfg.port, cfg.host, () => {
+  server.listen(cfg.port, cfg.host, async () => {
     console.log(`[stream] ${cfg.title} listening on http://${cfg.host}:${cfg.port}`);
     nodes.start();
+    if (!cfg.scanOnStart && await scanner.hasSavedScan()) {
+      console.log('[stream] Serving the saved catalog. Startup scan disabled.');
+      scanner.startWatching();
+      return;
+    }
     console.log('[stream] Scanning in the background...');
     scanner.scan()
       .catch((err) => console.error('[stream] Initial scan failed:', err))

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.0 — Large-library browsing and import
+
+- Reuse a bounded set of recent posters and optimized video previews while browsing. Resume visible previews when the tab returns. Pending optimized previews show a poster until their generated clip is available.
+- Schedule derivative work in small batches across selected media mounts, show scan progress, and optionally serve a fully reconciled catalog on restart without an immediate scan.
+- Reduce repeated SQLite sorting for gallery pages and avoid hashing an unchanged compatible copy repeatedly after verification.
+- Add a standalone, resumable media audit that checks sources without modifying them.
+
 ## 2.0.0 — Headless setup and safer defaults
 
 - Start-Here detects desktop pickers, falls back to the terminal when one cannot open, and offers Tab completion during first-time setup and when adding a folder. It prints access instructions for SSH sessions.

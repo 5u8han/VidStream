@@ -330,7 +330,7 @@ button {
   opacity: 0;
   transition: opacity 0.3s ease;
 }
-.tile-video-el.playing { opacity: 1; }
+.tile-video-el.has-frame { opacity: 1; }
 
 .tile-live {
   position: absolute;
