@@ -1,6 +1,6 @@
 # Independent VidStream libraries
 
-**Main 1.11.0 is the official release and includes Nodes.** All reviewed node work is merged, and **main is the only branch**. The former node, Dev and Design branch names have been retired; their commits remain in main's history. This remains downloadable, self-hosted software serving your own locally available media, without a central VidStream cloud, upload service or account provider.
+**The main branch includes Nodes.** All reviewed node work is merged, and **main is the only branch**. The former node, Dev and Design branch names have been retired; their commits remain in main's history. This remains downloadable, self-hosted software serving your own locally available media, without a central VidStream cloud, upload service or account provider.
 
 ## How it works
 
@@ -101,26 +101,10 @@ On Docker Desktop, host networking is an opt-in feature from version 4.34 with p
 - Saved settings/peers live in this instance's durable data store. Browser return addresses are separate: navigation fragments remain temporary/unverified, and persistence requires an explicit remember action. Sleep/outage retains saved entries; removing one never removes media. Replacing an address deliberately requires removing/rechecking the old connection.
 - For shared viewing away from home, every selected instance needs a browser-reachable route. A VPN or your existing per-node HTTPS reverse proxy may provide that; automatic discovery remains local. There is no added central tunnel/relay service.
 
-## Validation
+## Verify your network
 
-The `1.9.0-node.2` consolidation update passed 132 unit/integration tests, 28 common generated-media browser checks and 21 multi-server browser checks with zero page errors. New cases verify loaded build/version/address, owner Nodes on obsolete media URLs, and an explanatory guest Nodes category without private directory requests or access. That tested checkpoint is now included in official main. Current release verification is recorded in the changelog.
-
-Historical `1.9.0-node.1` validation on November 2, 2026: JavaScript syntax checks and all 128 unit/integration tests passed. All 26 existing player/design browser checks and 17 multi-server browser checks passed with zero page errors. The Linux host-network Compose overlay parsed successfully and retained the original media/data/cache/archive mounts. No Docker image was built or deployed during that historical test run. A later `1.9.0-node.2` local deployment was separately verified; it does not establish physical multi-machine discovery. The actual-LAN smoke check on this Mac failed with multicast send `EHOSTUNREACH`; this network/OS limitation is surfaced in the app. Physical NAS/Legion discovery and Docker Desktop multicast remain deployment checks, not claimed successes.
-
-The isolated multi-server Chromium test starts independent temporary runtimes with generated photo/video media. It verifies manual joining, direct-origin playback, independent logins on one hostname, the locked destination/return link, outage/restart recovery, mobile layout, removal without media deletion, and a replacement server at the same address with a different identity. It does not touch personal media, real `.env`, persistent app data or Docker volumes.
-
-```sh
-npm run check
-npm test
-npm run test:browser
-npm run test:nodes
-npm run test:node-lan
-```
-
-- `npm run check` parses project JavaScript for syntax errors.
-- `npm test` runs unit/integration checks, including discovery parsing, address policy, bounded network probes, durable identity and authentication isolation, using temporary/fake fixtures.
-- `npm run test:browser` starts the existing isolated generated-media Chromium regression checks and removes only their temporary fixture data afterward.
-- `npm run test:nodes` starts the isolated multi-server Chromium checks described above, stops its own servers, and removes only their temporary fixtures.
-- `npm run test:node-lan` is an optional real-network check. It sends a handful of generated discovery-test announcements and waits up to eight seconds for two temporary listeners to see each other, then closes them. It uses no media or application state. Run this only when testing local multicast; it is intentionally separate from CI because OS/network permission varies.
-
-FFmpeg and the existing Playwright development dependency/browser are needed for browser checks. Passing same-host checks does not establish multicast behavior across physical machines, across routers/VLANs, on Synology, or in Docker Desktop. Validate the first two real machines before expanding the directory.
+From the device you use to browse, open each server's address directly and
+check that the login and gallery load. Add the other server to the switcher,
+then open a photo or video from it. Test automatic discovery separately on the
+physical LAN if you enable it. Multicast support depends on the operating
+system, Docker networking, and network segmentation.

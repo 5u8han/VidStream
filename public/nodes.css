@@ -1,4 +1,3 @@
-/* A directory of independent libraries. No gallery geometry or media effects. */
 .header.has-node-switcher {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(180px, 300px) minmax(0, 1fr);

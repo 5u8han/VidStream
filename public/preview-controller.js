@@ -100,8 +100,6 @@
       var promise = video.play();
       if (promise && promise.catch)
         promise.catch(function () {
-          // A rejected play() from a discarded element must not clear the
-          // slot for a new preview mounted on the same lightweight tile.
           if (tile._video !== video) return;
           running.delete(tile);
           notify();

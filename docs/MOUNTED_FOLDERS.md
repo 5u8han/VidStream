@@ -1,5 +1,28 @@
 # Select media folders in Docker Compose
 
+For a manual installation with one existing media root, put this in your
+private `docker-compose.media.local.yml`. Replace the example source with
+the directory on the Docker host. This uses the standard `/media/original`
+target, which preserves paths and item identities for existing single-root
+catalogs.
+
+```yaml
+services:
+  stream:
+    volumes:
+      - type: bind
+        source: /mnt/nas/Photos
+        target: /media/original
+        read_only: true
+        bind:
+          create_host_path: false
+```
+
+Use the Compose commands below to apply the local override. For multiple
+top-level folders, use the supplied example instead.
+
+## Select multiple top-level folders
+
 Give each selected host folder a separate read-only mount directly under
 `/media/collections` in the same VidStream service. For example, mount your
 `CiVit` directory at `/media/collections/CiVit` and your `Animations` directory

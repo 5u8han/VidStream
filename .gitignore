@@ -1,4 +1,3 @@
-# Local secrets and runtime state
 .env
 .env.*
 !.env.example
@@ -17,22 +16,17 @@ rclone.conf
 *.pem
 *.key
 
-# Never push personal media, even if a local user creates this folder.
-# Docker media mounts are explicitly chosen by the operator.
 /media/
 
-# Python / editor / system outputs
 __pycache__/
 *.pyc
 .DS_Store
 .vscode/
 .idea/
 
-# Archives and generated artifacts
 *.zip
 coverage/
 
-# Durable local library database
 /data/
 *.sqlite
 *.sqlite-wal
@@ -40,5 +34,4 @@ coverage/
 
 /work/
 
-# Verified original archives live outside the gallery and stay private.
 /originals/

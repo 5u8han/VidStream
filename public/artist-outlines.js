@@ -69,8 +69,6 @@
     grid.addEventListener('focusout', function (event) {
       if (!grid.contains(event.relatedTarget)) select(null);
     });
-    // Track only mounted tile contents. Appending a catalog page or hovering
-    // an artist must not rescan or rewrite every previously loaded tile.
     new MutationObserver(function (records) {
       records.forEach(function (record) { updateTile(record.target); });
     }).observe(grid, { attributes: true, subtree: true, attributeFilter: ['data-hydrated'] });

@@ -1,5 +1,3 @@
-# Keep secrets, caches, and your library out of the build context.
-# Runtime settings reach the container through Compose.
 .env
 .env.*
 !.env.example

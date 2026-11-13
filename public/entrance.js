@@ -6,8 +6,6 @@
 })(typeof window === 'undefined' ? null : window, function () {
   'use strict';
 
-  // Browser-profile state, deliberately separate from synced view preferences
-  // and media activity. No device fingerprint, account record or server call.
   function createState(storage) {
     var memory = Object.create(null), unavailable = !storage;
     var prefix = 'stream-entrance-v1:';
@@ -32,14 +30,13 @@
       welcomeSeen: function () { write('welcome', '1'); },
       needsGallery: function () { return read('gallery') !== '1'; },
       gallerySeen: function () { write('gallery', '1'); },
-      // Call only after the server confirms login or owner setup, before reload.
       signedIn: function () { write('welcome', null); write('gallery', null); },
     };
   }
 
   function install(win) {
     var doc = win.document, storage = null;
-    try { storage = win.localStorage; } catch (_) { /* privacy settings */ }
+    try { storage = win.localStorage; } catch (_) { }
     var state = createState(storage);
     var reduced = win.matchMedia('(prefers-reduced-motion: reduce)');
     var running = new Map(), welcome = null, dismissWelcome = null;
@@ -70,7 +67,6 @@
       node.style.setProperty('--entrance-delay', (delay || 0) + 'ms');
       running.set(node, entry);
       node.classList.add(name);
-      // Also clean up when a hidden/removed element never emits animationend.
       entry.timer = win.setTimeout(function () { finish(node); }, 850);
     }
     function cancel() { Array.from(running.keys()).forEach(finish); }
@@ -123,8 +119,6 @@
         if (!state.needsGallery() || !grid.querySelector('.tile')) return;
         state.gallerySeen();
         if (skipAnimation || !motionAllowed()) return;
-        // One bounded geometry read phase, then writes. Never animate a whole
-        // catalog or create a scroll observer/ongoing animation loop.
         var visible = Array.from(grid.querySelectorAll('.tile')).slice(0, 36).filter(function (tile) {
           var rect = tile.getBoundingClientRect();
           return rect.bottom > 0 && rect.top < win.innerHeight;
@@ -138,7 +132,6 @@
         if (first) {
           var mark = text('span', null, 'entrance-loading-mark');
           mark.setAttribute('aria-hidden', 'true');
-          // CSS handles live reduced-motion/effects changes, including loading.
           if (!motionAllowed()) mark.style.animation = 'none';
           status.append(mark, text('span', 'Opening your library…', 'entrance-loading-copy'));
         } else status.textContent = 'Loading…';

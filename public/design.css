@@ -1,6 +1,3 @@
-/* Design test: original styles informed by the local Design research.
-   Semantic theme roles, brief state feedback, and explicitly owned entrances.
-   Nothing here changes gallery geometry or promotes every tile to a layer. */
 :root {
   --motion-feedback: 140ms;
   --motion-enter: 360ms;
@@ -11,7 +8,6 @@
 .settings-build-info span { color: var(--text-muted); }
 .settings-build-info small { grid-column: 1 / -1; color: var(--text-muted); font: 10px/1.5 var(--font-mono); overflow-wrap: anywhere; }
 
-/* A quiet frame for controls; the media retains the strongest visual weight. */
 .header .filter-select,
 .header .control-launcher,
 .menu-panel .navigation-row,
@@ -31,7 +27,6 @@
   outline-offset: 3px;
 }
 
-/* The sign-in surface is deliberately opaque: it must read over any media. */
 .modal-card.signin-card {
   width: min(368px, calc(100vw - 32px));
   max-height: calc(100vh - 24px);
@@ -83,8 +78,6 @@
 .signin-card button[type="submit"]:disabled { cursor: wait; opacity: .65; }
 .signin-card .modal-cancel { min-height: 32px; }
 
-/* A small welcome note sits above the summary, never between grid rows.
-   It doesn't intercept gestures outside its own visible rectangle. */
 .entrance-welcome {
   position: fixed;
   z-index: 46;
@@ -144,7 +137,6 @@
 }
 .entrance-dismiss:hover { color: var(--text); background: var(--surface-2); border-color: var(--border); }
 
-/* Real loading status only; no fullscreen gate or fabricated percentage. */
 .grid-status.entrance-loading { padding: 34px 16px; }
 .entrance-loading-mark {
   display: inline-block;
@@ -160,8 +152,6 @@
 .entrance-loading-copy { font-size: 12px; letter-spacing: -.02em; }
 .load-retry { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; padding: 8px; }
 
-/* Replace the old every-insertion tile effect with an explicit first batch.
-   JS caps the participant count and removes the class after completion. */
 .tile { animation: none; }
 .entrance-shell { animation: entrance-shell var(--motion-enter) var(--motion-settle) backwards; }
 .signin-card.entrance-card { animation: entrance-card 420ms var(--motion-settle) backwards; }
@@ -189,7 +179,6 @@
   50% { opacity: 1; transform: scale(1); }
 }
 
-/* CSS is a second guard; the lifecycle owner also skips creating motion. */
 [data-effects="off"] .entrance-shell,
 [data-effects="off"] .entrance-card,
 [data-effects="off"] .entrance-tile,

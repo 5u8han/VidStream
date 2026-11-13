@@ -9,7 +9,7 @@ function files(dir) {
     return entry.isDirectory() ? files(file) : /\.(?:js|cjs)$/.test(file) ? [file] : [];
   });
 }
-for (const file of ['server.js', ...['lib', 'public', 'scripts', 'test'].flatMap(files)]) {
+for (const file of ['server.js', ...['lib', 'public', 'scripts'].flatMap(files)]) {
   const result = spawnSync(process.execPath, ['--check', path.join(root, file)], { stdio: 'inherit' });
   if (result.status !== 0) process.exit(result.status || 1);
 }

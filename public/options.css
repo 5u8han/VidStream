@@ -1,4 +1,3 @@
-/* Direct gallery controls. Keep all sizing in this one small panel. */
 .header:has(.view-panel.open) { z-index: 60; }
 .menu-panel.view-panel {
   width: min(416px, calc(100vw - 24px));

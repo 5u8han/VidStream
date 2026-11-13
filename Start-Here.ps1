@@ -1,6 +1,5 @@
 #Requires -Version 5.1
 
-# VidStream starter for Windows. Elevation is used only for the Docker installer.
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -ge 7) { $PSNativeCommandUseErrorActionPreference = $false }
 
@@ -74,7 +73,6 @@ function Assert-LocalDockerContext {
 }
 
 function Get-DockerServerOS {
-    # Bound each probe so a stalled Docker pipe cannot block setup indefinitely.
     $info = [Diagnostics.ProcessStartInfo]::new($script:docker, 'version --format "{{.Server.Os}}"')
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
@@ -198,7 +196,6 @@ function Start-FirstTimeSetup {
     $shippedCompose = Join-Path $PSScriptRoot 'docker-compose.yml'
     foreach ($name in @('compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml')) {
         $existing = Join-Path $setupDirectory $name
-        # Compose prefers the generated compose.yaml over the checkout's manual template.
         if ($existing -eq $shippedCompose) { continue }
         if (Test-Path -LiteralPath $existing) {
             Write-Host "VidStream is already configured at $existing. Use that Compose file to manage it."
@@ -259,7 +256,6 @@ function Start-FirstTimeSetup {
     if ($choice -match '^(2|dark)$') { $theme = 'darkroom' }
     if ($choice -match '^(3|system)$') { $theme = 'system' }
 
-    # The renderer receives paths as literal arguments. Docker does not mount them until Compose starts the app.
     Assert-LocalDockerContext
     $render = @('run', '--rm', '--network', 'none', $image, 'node', 'scripts/setup-compose.js', $image, "$port", $theme, '--') + $folders
     $previousEncoding = [Console]::OutputEncoding
@@ -296,7 +292,6 @@ function Start-FirstTimeSetup {
 }
 
 function ConvertTo-NativeArgument([string]$value) {
-    # Windows PowerShell 5.1 uses .NET Framework's single argument string.
     $escaped = [regex]::Replace($value, '(\\*)"', '$1$1\"')
     return '"' + [regex]::Replace($escaped, '(\\+)$', '$1$1') + '"'
 }

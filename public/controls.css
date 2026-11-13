@@ -1,5 +1,3 @@
-/* Immediate settings, kept separate from gallery layout and its animation.
-   These are original controls using the existing semantic theme colors. */
 .stream-settings.settings-flat {
   width: min(840px, calc(100vw - 32px));
   max-width: calc(100vw - 32px);

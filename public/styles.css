@@ -1,14 +1,3 @@
-/* ============================================================
-   Stream — theme tokens
-   Four real photo-editing viewing conditions rather than a plain
-   light/dark toggle, each with its own accent drawn from actual
-   darkroom/editing tools:
-     Light Table    — cool daylight surface for reviewing slides
-     Darkroom       — near-black, safelight-red (paper-safe light)
-     Golden Hour    — warm dusk light, amber
-     Contact Sheet  — warm paper + a blue grease-pencil mark,
-                      the traditional color for circling picks
-   ============================================================ */
 
 :root {
   --bg: #eef0f2;
@@ -25,16 +14,11 @@
   --font-display: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Consolas, monospace;
 
-  /* near-zero gutters: 1px rows + 1px gap keeps the masonry's height
-     quantization (and so the visible seams) as small as it can be */
   --row: 1px;
   --gap: 0px;
   --radius: 0px;
   --header-h: 56px;
 
-  /* Density presets below override this; each is a fluid clamp, not a
-     fixed pixel value, so tiles also scale continuously with the
-     viewport rather than only jumping at breakpoints. */
   --tile-min: clamp(150px, 24vw, 240px);
 }
 
@@ -52,9 +36,6 @@
   }
 }
 
-/* Explicit choices always win over the OS preference above --
-   :root[data-theme] is more specific than a bare :root, regardless of
-   which comes first in the file. */
 :root[data-theme="light-table"] {
   --bg: #eef0f2; --surface: #ffffff; --surface-2: #e4e7ea;
   --text: #16181a; --text-muted: #63696f; --accent: #a83831;
@@ -128,9 +109,6 @@ button {
   }
 }
 
-/* ============================================================
-   Header
-   ============================================================ */
 
 .header {
   position: sticky;
@@ -211,9 +189,6 @@ button {
   background: var(--accent);
 }
 
-/* ============================================================
-   Search
-   ============================================================ */
 
 .search-wrap {
   display: flex;
@@ -241,9 +216,6 @@ button {
 }
 .search-input::-webkit-search-cancel-button { cursor: pointer; }
 
-/* ============================================================
-   Options menu (sort / contains / density / theme)
-   ============================================================ */
 
 .menu-wrap { position: relative; }
 
@@ -307,9 +279,6 @@ button {
   margin: 4px 6px;
 }
 
-/* ============================================================
-   Grid
-   ============================================================ */
 
 .grid {
   list-style: none;
@@ -476,9 +445,6 @@ button {
 }
 .album-bulk-action button:hover { color: var(--accent); border-color: var(--accent); }
 
-/* ============================================================
-   Empty state
-   ============================================================ */
 
 .empty {
   display: flex;
@@ -520,9 +486,6 @@ button {
   font-size: 13px;
 }
 
-/* ============================================================
-   Bottom links bar
-   ============================================================ */
 
 .links-bottom {
   list-style: none;
@@ -542,9 +505,6 @@ button {
 }
 .links-bottom a:hover, .links-bottom button:hover { color: var(--accent); }
 
-/* ============================================================
-   Lightbox
-   ============================================================ */
 
 .lightbox {
   position: fixed;
@@ -643,9 +603,6 @@ button {
   color: rgba(255, 255, 255, 0.55);
 }
 
-/* ============================================================
-   Lightbox: quick-edit toolbar
-   ============================================================ */
 
 .edit-panel {
   position: absolute;
@@ -684,9 +641,6 @@ button {
   accent-color: var(--accent);
 }
 
-/* ============================================================
-   Lightbox: info sidebar
-   ============================================================ */
 
 .info-panel {
   position: fixed;
@@ -735,9 +689,6 @@ button {
   word-break: break-word;
 }
 
-/* ============================================================
-   Toast
-   ============================================================ */
 
 .toast {
   position: fixed;
@@ -757,9 +708,6 @@ button {
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
-/* ============================================================
-   Selection bar (iOS-style multi-select action bar)
-   ============================================================ */
 
 .selection-bar {
   position: fixed;
@@ -814,10 +762,6 @@ button {
   font-weight: 400;
 }
 
-/* ============================================================
-   Modal (sign in) -- reuses the same card language everywhere
-   a focused, centered dialog is needed
-   ============================================================ */
 
 .modal-scrim {
   position: fixed;
@@ -902,9 +846,6 @@ button {
   80% { transform: translateX(3px); }
 }
 
-/* ============================================================
-   Responsive
-   ============================================================ */
 
 @media (max-width: 640px) {
   .lightbox-stage { padding: 0 8px; }
@@ -920,9 +861,6 @@ button {
   .tile:hover .tile-media { transform: none; }
 }
 
-/* ============================================================
-   Ambient animated background (public/ambient.js)
-   ============================================================ */
 
 .ambient-bg {
   position: fixed;
@@ -934,8 +872,6 @@ button {
 }
 #app { position: relative; z-index: 1; }
 
-/* With the background on, the lightbox's scrim lets it glow through,
-   and the page grid steps out of the way so there's something to see. */
 .lightbox.ambient {
   --scrim: rgba(9, 8, 10, 0.80);
   backdrop-filter: blur(16px) saturate(1.25);
@@ -944,10 +880,6 @@ body.has-ambient.lb-open main,
 body.has-ambient.lb-open .links-bottom,
 body.has-ambient.lb-open .library-summary { visibility: hidden; }
 
-/* ============================================================
-   Header / footer hover: spotlight + trailing ghost + parallax
-   (driven by --fx-* / --px / --py set from ambient.js)
-   ============================================================ */
 
 .header::before, .header::after,
 .links-bottom::before, .links-bottom::after {
@@ -987,9 +919,6 @@ body.has-ambient.lb-open .library-summary { visibility: hidden; }
 .links-bottom li:nth-child(even) { --d: -0.7; }
 .links-bottom li:nth-child(3n) { --d: 1.6; }
 
-/* ============================================================
-   Library summary + file lists
-   ============================================================ */
 
 .library-summary {
   display: flex;
@@ -1061,7 +990,6 @@ body.has-ambient.lb-open .library-summary { visibility: hidden; }
 .files-note { flex: none; max-width: 55%; text-align: right; color: var(--text-muted); word-break: break-word; }
 .files-actions { display: flex; justify-content: center; gap: 14px; }
 
-/* Stream 1.1: always-visible import audit, creator labeling, video size control. */
 body { padding-bottom: max(46px, env(safe-area-inset-bottom)); }
 .library-summary {
   position: fixed;
@@ -1172,7 +1100,6 @@ body.has-ambient.lb-open .library-summary { visibility: hidden; }
 .dashboard-ai-controls > .dashboard-file, .dashboard-ai-controls > .modal-sub { flex-basis: 100%; }
 .dashboard-toggle { display: flex; gap: 8px; align-items: center; font-size: 12px; }
 
-/* VidStream 1.2: complete frames, stable controls, compact glass dock. */
 .grid { grid-template-columns: repeat(auto-fill, minmax(min(var(--tile-min), 100%), 1fr)); }
 .tile-media, .tile-video-el { object-fit: contain; }
 [data-media-fit="cover"] .tile-media { object-fit: cover; }
@@ -1213,7 +1140,6 @@ body { padding-bottom:100px; }
 .lightbox { overflow:hidden; }
 .tile-live { left:48px; }
 
-/* Native modal provides keyboard focus containment and a mobile-safe scroll area. */
 .stream-settings { width: min(700px, calc(100vw - 32px)); max-height: 85dvh; overflow: auto; border: 1px solid #7776; border-radius: 16px; padding: 24px; color: var(--text, #eee); background: var(--bg, #181719); box-shadow: 0 24px 90px #0009; }
 .stream-settings::backdrop { background: #0009; backdrop-filter: blur(5px); }
 .stream-settings header { display:flex; justify-content:space-between; gap:16px; align-items:center; }
@@ -1225,7 +1151,6 @@ body { padding-bottom:100px; }
 .stream-settings article { border:1px solid #8885; border-radius:10px; padding:14px; margin:12px 0; }
 .stream-settings a { display:inline-block; padding:10px; color:inherit; text-decoration:underline; }
 
-/* Compact glass controls: selected state uses color plus a visible border. */
 .menu-panel { width:min(460px,calc(100vw - 24px)); max-height: min(75dvh,680px); overflow-y:auto; overscroll-behavior:contain; background:color-mix(in srgb,var(--surface) 80%,transparent); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); }
 .menu-section { display:flex; flex-wrap:wrap; gap:6px; padding:12px; }
 .menu-section[hidden],.settings-pane[hidden] { display:none!important; }
@@ -1273,7 +1198,6 @@ body { padding-bottom:100px; }
 .map-actions [hidden] { display:none; }
 @media(max-width:600px){.map-toolbar{gap:8px;}.map-toolbar label{flex:1 1 42%;}.map-toolbar select{display:block;width:100%;margin-top:5px;}.map-actions label{max-width:100%;}.map-actions select{width:100%;max-width:100%;}}
 
-/* VidStream 1.6: space-efficient viewer and optional playback telemetry. */
 .lightbox {
   height: 100dvh;
   visibility: hidden;
@@ -1355,7 +1279,6 @@ body.has-ambient.lb-open .library-summary.video-stats {
   .lightbox { background: rgba(9,8,10,.82); }
 }
 
-/* Clear entry points and one-level-at-a-time navigation. */
 .icon-btn.control-launcher { width:auto; gap:7px; padding:0 11px; display:inline-flex; align-items:center; border:1px solid color-mix(in srgb,var(--accent) 30%,transparent); background:color-mix(in srgb,var(--accent) 10%,transparent); border-radius:10px; font-size:12px; }
 .control-launcher svg { width:17px; height:17px; }
 .control-launcher[aria-expanded=true] { background:color-mix(in srgb,var(--accent) 26%,transparent); border-color:var(--accent); }

@@ -1,6 +1,6 @@
 # Catalog and processing changes included in main
 
-Current release: **main 1.11.0**. This document records earlier checkpoints. Video enhancement/processing instructions below are historical and retired; use the current [README](../README.md) for operation. Settings and View options now expose everyday controls directly instead of category drilldowns.
+This document records earlier checkpoints. Video enhancement/processing instructions below are historical and retired; use the current [README](../README.md) for operation. Settings and View options now expose everyday controls directly instead of category drilldowns.
 
 The former `VidStream-Dev-Test-1` checkpoint (`f18cfd8`, version `1.8.0-dev.1`) was merged into main. Official main is now version `1.9.0` and also includes the design and reviewed node-library work. Main is now the only branch; all reviewed node work is included. The old development branch has been retired. The original pre-migration checkpoint was main v1.7.0, commit `479b1da`.
 
@@ -93,20 +93,4 @@ The experimental launcher uses the same server and browser UI. It checks install
 
 `npm run launcher` opens the local native launcher; starting its server uses the folders you select. Stop server shuts down the child and retains media/configuration/data. The launcher binds to localhost; LAN access for the media server is an explicit checkbox.
 
-For development verification:
-
-```sh
-npm ci --ignore-scripts
-npm run check
-npm test
-npx playwright install chromium
-npm run test:browser
-```
-
-- `npm ci --ignore-scripts` installs exact development dependencies from the lockfile, replacing `node_modules`. It does not touch media or application state and runs no dependency install scripts. Production serving needs no npm packages.
-- `npm run check` validates JavaScript syntax, without starting the server.
-- `npm test` runs application and real media-tool tests against generated temporary files. Each test cleans its own temporary data; it does not use the personal library.
-- `npx playwright install chromium` downloads the test browser into Playwright's browser cache. It does not replace your installed Chrome/Brave.
-- `npm run test:browser` starts an isolated temporary server, generates a mixed test library, exercises actual browser interactions and cleans only its generated temporary files after shutting down.
-
-CI installs test dependencies, media tools and Chromium, then runs the same suites. The browser checks follow [Playwright's CI setup](https://playwright.dev/docs/ci-intro). Native hardware/model inference, physical Safari/iOS behavior, long NAS outages and large real-library frame delivery still require device testing. Adaptive streaming, distributed workers, a second frontend and desktop packaging are intentionally outside this development pass. The dedicated security review remains a later workstream; existing access checks remain in place.
+[Current deployment checks](COMMANDS.md#release-and-deployment-checks)

@@ -1,6 +1,6 @@
 # Main is the only branch
 
-**main is the only branch, locally and on GitHub.** Main 1.11.0 includes manually chosen folder shortcuts, optional RAM cache snapshots, the reviewed node library switching plus the completed catalog, player and design work. Every retired branch tip was verified as an ancestor of main before its name was removed. Deleting those branch names does not delete their merged commits, media, configuration or Docker data.
+**main is the only branch, locally and on GitHub.** Main includes manually chosen folder shortcuts, optional RAM cache snapshots, the reviewed node library switching plus the completed catalog, player and design work. Every retired branch tip was verified as an ancestor of main before its name was removed. Deleting those branch names does not delete their merged commits, media, configuration or Docker data.
 
 Main 1.10.0 simplifies Settings and View options and removes video enhancement processing. Historical media, outputs, database rows and backups remain intact. Use main for the current product. Historical commits may retain retired controls, but there are no separate active experiment branches.
 
@@ -72,7 +72,7 @@ git branch -d VidStream-node
 
 ## Retain existing storage before rebuilding
 
-The 1.9 base Compose file no longer binds `./media` automatically. New installations explicitly enable the commented media bind and set `STREAM_MEDIA_PATH` to an existing absolute folder; no repository media skeleton or file copying is needed. Keep an existing deployment's exact media source/target mapping in its local Compose override so relative paths and saved item identities remain consistent. A missing mount may show an empty/offline collection; do not reset or delete the catalog to fix it.
+The 1.9 base Compose file no longer binds `./media` automatically. New installations choose existing directories with [Start-Here](STARTER.md) or an explicit [Compose mount](MOUNTED_FOLDERS.md). Keep an existing deployment's exact media source/target mapping in its local Compose override so relative paths and saved item identities remain consistent. A missing mount may show an empty/offline collection; do not reset or delete the catalog to fix it.
 
 New installations use `stream-originals:/app/originals`. **If this deployment previously bound `./originals:/app/originals`, retain that host bind explicitly in the same local override**; resolve it to the old absolute folder if the source checkout moves. The old archive is not migrated into the new volume automatically. Existing generated originals and recovery journals must remain at the same container path. Keep that folder and its backup. Existing external media/originals overrides continue to take precedence over the base mount at the same target.
 

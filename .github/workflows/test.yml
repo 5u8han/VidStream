@@ -7,34 +7,45 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  validate:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: '24'
           check-latest: true
           package-manager-cache: false
-      - name: Media test tools
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg imagemagick libimage-exiftool-perl
-      - name: Install test dependencies
-        run: npm ci --ignore-scripts
-      - name: Syntax checks
+      - name: Source syntax
         run: |
           npm run check
-          python3 -m py_compile lib/vision/*.py
-      - name: Unit tests
-        run: npm test
-      - name: Docker deployment configuration
-        run: npm run test:compose
-      - name: Install browser test engine
-        run: npx playwright install --with-deps chromium
-      - name: Browser regression checks
-        timeout-minutes: 8
-        run: npm run test:browser
-      - name: Independent node browser checks
-        timeout-minutes: 8
-        run: npm run test:nodes
+          bash -n Start-Here.sh
+          bash -n scripts/build-multiarch.sh
+          pwsh -NoProfile -Command '$tokens = $null; $errors = $null; [System.Management.Automation.Language.Parser]::ParseFile((Join-Path (Get-Location) "Start-Here.ps1"), [ref]$tokens, [ref]$errors) | Out-Null; if ($errors) { $errors; exit 1 }'
+          python3 -m py_compile lib/*.py lib/vision/*.py scripts/*.py
+      - name: Compose configuration
+        run: |
+          if docker compose -f docker-compose.yml config --quiet 2>"$RUNNER_TEMP/compose.log"; then
+            exit 1
+          fi
+          grep -F 'Start-Here.sh' "$RUNNER_TEMP/compose.log"
+          cp .env.example .env
+          docker compose -f docker-compose.yml config --quiet
+          node scripts/setup-compose.js vidstream-ci:local 8080 light-table -- /media-sample/first > "$RUNNER_TEMP/compose.yaml"
+          node scripts/setup-compose.js --add-folder /media-sample/second < "$RUNNER_TEMP/compose.yaml" > "$RUNNER_TEMP/compose-added.yaml"
+          docker compose -f "$RUNNER_TEMP/compose-added.yaml" config --quiet
+      - name: Container startup
+        run: |
+          docker build --pull --tag vidstream-ci:local .
+          container=$(docker run --detach --security-opt no-new-privileges:true \
+            --publish 127.0.0.1::4000 vidstream-ci:local)
+          trap 'docker rm -f "$container" > /dev/null' EXIT
+          port=$(docker port "$container" 4000/tcp)
+          if ! curl --fail --silent --show-error --max-time 5 \
+            --retry 20 --retry-all-errors --retry-delay 1 "http://$port/health"; then
+            docker logs "$container"
+            exit 1
+          fi

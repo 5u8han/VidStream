@@ -28,8 +28,8 @@ setup can continue. [Docker Desktop for Windows](https://docs.docker.com/desktop
 1. Choose **First-time setup** and pick the folder you want to see first.
    Answer Yes each time you want to add another library folder. Answer No
    or press Enter when the list is complete. Where a system folder picker is
-   available, use it to select folders. The terminal accepts paths when a
-   picker is unavailable.
+   available, use it to select folders. Start-Here falls back to the terminal
+   if the picker cannot open. Press **Tab** to complete paths.
 2. Choose **White**, **Dark** or **System**. Press Enter for White. A theme you
    select later in VidStream takes precedence over this starting preference.
 3. Open the address the helper displays, normally `http://127.0.0.1:8080`.
@@ -112,6 +112,42 @@ VidStream service with the added mount. Playback briefly stops during
 recreation. Compose reuses the local image and named volumes, and the media
 mounts stay read-only. The folder appears in the dropdown when the service
 starts.
+
+## Headless Linux over SSH
+
+1. Connect to the Linux server over SSH. Mount the NAS share on Linux first.
+   Its Ethernet link-local IP can carry the NAS connection. VidStream takes
+   the mount directory, such as `/mnt/nas/Photos`, as its source. Use a path
+   you can open on the server. A block device such as `/dev/sda3` must be
+   mounted before its files can be selected. A NAS-only Ethernet link
+   supplies access to the share. The first pull or source build also needs
+   internet access unless the required images and packages are already local.
+2. Run `bash ./Start-Here.sh` in the checkout to open the setup menu. Use an
+   interactive SSH session so Bash can offer completion. Choose
+   **First-time setup** or **Add a media folder**. Start typing your path,
+   press **Tab** to complete it, and press **Enter** to select it. Press Tab
+   twice to list matching entries when the prefix is ambiguous. Enter the
+   path as you would see it on disk, including any spaces. The `--terminal`
+   option forces this mode even in a desktop session.
+3. Keep the default loopback binding and open a second terminal on the
+   computer where you want to browse. Replace `user@ubuntu-host` with the SSH
+   address you normally use and run the following.
+
+   ```sh
+   ssh -N -L 127.0.0.1:8080:127.0.0.1:8080 user@ubuntu-host
+   ```
+
+   This forwards port 8080 on the browsing computer to port 8080 on the
+   Ubuntu server over SSH. Keep the terminal open and visit
+   `http://127.0.0.1:8080` in your browser. Ctrl+C closes the tunnel. Set the
+   second port to the server's published port if you picked another port.
+
+On a fresh checkout, plain `docker compose up -d` displays setup guidance
+when the manual `URL` setting is missing. Start-Here collects the folders
+before launching Docker. In detached mode, Compose starts containers in the
+background. It has no interactive folder prompt. For an intentional manual
+deployment, configure the address and mounts in the
+[manual setup guide](COMMANDS.md#get-the-source-and-start).
 
 ## Where the image comes from
 

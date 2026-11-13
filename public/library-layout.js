@@ -1,4 +1,3 @@
-/* Pure geometry shared by the dashboard map and gallery outlines. */
 (function(root){
  'use strict';
  const PALETTE=['#ec8c78','#77bde0','#b4a0ef','#8ac69a','#e4bf6e','#e49fc5','#7bc7bd','#a9b8e0','#c6bc8d','#d59c78','#b0c985','#bba2c8'];
@@ -12,7 +11,6 @@
   function place(){if(!row.length)return;if(w>=h){const width=sum/h;let top=y;for(const i of row){const height=i.area/width;result.push({...i,x,y:top,w:width,h:height});top+=height;}x+=width;w=Math.max(0,w-width);}else{const height=sum/w;let left=x;for(const i of row){const width=i.area/height;result.push({...i,x:left,y,w:width,h:height});left+=width;}y+=height;h=Math.max(0,h-height);}row=[];sum=0;min=Infinity;max=0;}
   for(const item of scaled){const side=Math.min(w,h);if(row.length&&score(sum+item.area,Math.min(min,item.area),Math.max(max,item.area),side)>score(sum,min,max,side))place();row.push(item);sum+=item.area;min=Math.min(min,item.area);max=Math.max(max,item.area);}place();return result;
  }
- // A one-pixel inset keeps every tile border separate, even with zero gutters.
  function outlines(rects){
   const paths=new Map();
   for(const r of rects){

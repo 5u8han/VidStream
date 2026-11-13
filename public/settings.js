@@ -105,8 +105,6 @@
     current.addEventListener('cancel', function (event) { event.preventDefault(); stepBack(); });
     current.addEventListener('keydown', function (event) { event.stopPropagation(); });
     current.addEventListener('close', function () {
-      // Native close events are queued. Forward may already have reopened
-      // this dialog before an earlier close event is delivered.
       if (current.open || current !== dialog) return;
       if (window.StreamNavigation?.has('settings')) window.StreamNavigation.leave('settings');
       returnFocus?.focus({ preventScroll: true });
@@ -206,8 +204,6 @@
       pane.hidden = !details.open;
       if (!current.open) return;
       if (details.open) {
-        // All advanced cards share one navigation level. Switching cards is
-        // a direct replacement, so Back never walks through a stack of cards.
         if (window.StreamNavigation && !window.StreamNavigation.has('settings-detail')) {
           var entered = window.StreamNavigation.enter('settings-detail', {
             back: function () {

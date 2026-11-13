@@ -21,7 +21,7 @@ import json
 import os
 
 CONFIDENCE_THRESHOLD = 0.45
-IMAGE_SIZE = 480  # inference resolution; presence detection doesn't need full-res
+IMAGE_SIZE = 480
 
 def main():
     try:

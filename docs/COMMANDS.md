@@ -7,7 +7,6 @@
 | Docker on macOS or Windows | A current Docker Desktop installation running Linux containers, plus a checkout or extracted source archive. The host must give Docker access to the selected folders. Windows Start-Here uses PowerShell. [Docker Desktop](https://docs.docker.com/desktop/) |
 | Docker on Linux or a NAS | Docker Engine, the Compose plugin and a host that can read the media. Use an amd64 or arm64 Linux container. Start-Here offers an automatic Docker Engine installation on supported Debian and Ubuntu systems with systemd. [Docker Engine](https://docs.docker.com/engine/install/) · [Compose installation](https://docs.docker.com/compose/install/) |
 | Run natively | A supported Node.js LTS version that meets the `engines` entry in [package.json](../package.json), plus FFmpeg, FFprobe, ImageMagick 7 (`magick`) and ExifTool on the executable path. Node.js 24 LTS is recommended. ImageMagick 6 (`convert`) is also supported. Install `zip` for batch downloads and `ldapwhoami` if configuring LDAP. For optional detection, install Python 3 with OpenCV and NumPy, and Tesseract with the desired language data for OCR. [Node.js release schedule](https://nodejs.org/en/about/previous-releases) |
-| Development and tests | Git, Node.js and npm, Python 3 for Python syntax checks, Docker Compose for config checks, and the native media tools above for generated-media tests. Browser tests also need Playwright's Chromium and its system libraries. [Playwright installation](https://playwright.dev/docs/intro) |
 
 Use a current browser. Video codec support varies by browser and device. Basic hosting needs no GPU. Allow space for the media and a local, writable disk for SQLite and generated previews. Import load and derivative size depend on the collection and enabled recognition. See [hardware and resource settings](HARDWARE.md).
 
@@ -33,7 +32,7 @@ bash ./Start-Here.sh
 
 This opens the guided menu. **First-time setup** writes a Git-ignored `compose.yaml`, creates the starter project's volumes and starts the service with read-only media mounts. **Add a media folder** writes one additional mount and prints the command to apply it. Supply `--terminal` to enter folder paths without a picker. Supply `--help` to list the Bash launcher's options. [Start-Here guide](STARTER.md)
 
-For manual Docker setup, copy `.env.example` to a new `.env` in the checkout and configure your paths. Use your editor or file manager so an existing `.env` stays in place. To mount one folder, set `STREAM_MEDIA_PATH` to its absolute host path and enable the entire read-only bind example under `stream.volumes` in `docker-compose.yml`. Set `URL` to the browser-facing address and `STREAM_HTTP_PORT` if the default HTTP port 80 is occupied. For multiple directories, follow [mounted folders](MOUNTED_FOLDERS.md).
+For manual Docker setup, copy `.env.example` to a new `.env` and set `URL` to the browser-facing address. `STREAM_HTTP_PORT` selects the host port, which defaults to 80. Compose publishes to `127.0.0.1` by default. Set `STREAM_HTTP_BIND` to the host's intended LAN interface address if clients should connect directly. Follow [mounted folders](MOUNTED_FOLDERS.md) to give Docker access to the selected media. Existing manual installs that relied on an all-interface listener must explicitly choose their bind address when upgrading. [Headless and NAS setup](STARTER.md#headless-linux-over-ssh)
 
 ```sh
 docker compose -f docker-compose.yml config --quiet
@@ -134,20 +133,18 @@ Configure `MEDIA_DIR`, `DATA_DIR`, `CACHE_DIR` and `ORIGINALS_DIR` in the shell 
 | `npm run launcher` | Opens the optional local configuration/start window for native operation. Use it to select paths and start or stop the native server. |
 | `python3 scripts/media-inventory.py "/path/to/media"` | Summarizes an existing media tree by depth, extension, sizes and largest subtrees. It reads directory entries and metadata and prints the report. Folder labels are anonymous by default. Adding `--show-folder-names` includes relative folder names. |
 
-## Development and checks
-
-Run these from a checkout with the requirements above.
+## Release and deployment checks
 
 | Command | Effect |
 | --- | --- |
-| `npm ci --ignore-scripts` | Installs the locked development dependencies and replaces an existing `node_modules`. |
-| `npm run check` | Checks JavaScript syntax. |
-| `python3 -m py_compile lib/vision/*.py scripts/media-inventory.py` | Validates Python syntax and may write local bytecode caches. The shell wildcard is for macOS/Linux shells. |
-| `npm test` | Runs unit and integration tests using temporary fixtures. |
-| `npm run test:compose` | Resolves test Compose files and validates mounts, configuration and storage rules without starting containers. |
-| `npx playwright install chromium` | Downloads the Chromium build required by the installed Playwright version. On supported Linux, `npx playwright install --with-deps chromium` also installs required OS libraries and can request administrator access. |
-| `npm run test:browser` | Starts a temporary local instance with generated media and tests the gallery and viewer in Chromium. It cleans its own test files afterward. |
-| `npm run test:nodes` | Tests direct switching and separate server state in Chromium using isolated local servers and generated media. It cleans its own test files afterward. |
-| `npm run test:node-lan` | Sends brief local IPv4 discovery announcements to test multicast on a physical network. It stops the temporary discovery processes afterward. |
+| `npm run check` | Checks JavaScript syntax without starting VidStream. |
+| `bash -n Start-Here.sh` | Checks the Bash launcher's syntax without running setup. |
+| `docker compose config --quiet` | Checks your Compose configuration. It starts no containers. |
+| `docker compose ps stream` | Shows the running service and its health. |
 
-See [Docker Hub publication and verification](DOCKER_HUB.md) for the maintainer's registry commands. See [configuration settings](../.env.example) for a field reference and [security and privacy](../SECURITY.md) for deployment guidance.
+After deploying, open your gallery, confirm the first library, switch folders,
+and open and seek in a video. GitHub validation builds the Docker image and
+checks startup health using temporary Docker resources.
+
+See [the sample configuration](../.env.example) and
+[security and privacy](../SECURITY.md) for deployment settings.

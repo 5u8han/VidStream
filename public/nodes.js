@@ -8,9 +8,6 @@
   var home = '', confirmedHome = '', homeConfirmed = false;
   var fetches = new Set();
 
-  // A navigation fragment is an unverified return hint, retained only in this
-  // tab's session through sign-in. Persistence requires a separate user action.
-  // It never adds a peer, probes a server, grants access, or transports accounts.
   function rootAddress(value) {
     if (typeof value !== 'string' || value.length > 2048 || /[\u0000-\u0020]/.test(value)) return null;
     try {
@@ -34,7 +31,7 @@
     try { record = JSON.parse(previous || 'null'); } catch (_) {}
     var remembered = record && record.confirmed === true ? rootAddress(record.url) : null;
     if (remembered) { confirmedHome = remembered; home = remembered; homeConfirmed = true; }
-    else if (previous) localStorage.removeItem(homeKey); // discard pre-release unconfirmed records
+    else if (previous) localStorage.removeItem(homeKey);
   } catch (_) {}
   try {
     var sessionReturn = rootAddress(sessionStorage.getItem(returnKey));

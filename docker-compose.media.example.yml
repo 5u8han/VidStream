@@ -1,9 +1,6 @@
-# Copy to docker-compose.media.local.yml and replace each source path.
-# Use after the base and any existing storage overrides. See docs/MOUNTED_FOLDERS.md.
 services:
   stream:
     volumes:
-      # Edit this first entry for the folder you want to open at sign-in.
       - type: bind
         source: "/replace-with-your-path/Collection A"
         target: &primary_media "/media/collections/Collection A"

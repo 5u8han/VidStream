@@ -51,7 +51,6 @@ admin() {
 check_new_install() {
   local filename
   for filename in compose.yaml compose.yml docker-compose.yaml docker-compose.yml; do
-    # The checkout ships a manual setup file. Compose prefers compose.yaml.
     if [[ "$filename" == docker-compose.yml && "$install_dir" == "$source_dir" ]]; then continue; fi
     if [[ -e "$install_dir/$filename" || -L "$install_dir/$filename" ]]; then
       fail "A Compose file already exists at $install_dir/$filename. Use Add a media folder for an existing starter setup."
@@ -168,7 +167,6 @@ enable_docker_access() {
 }
 
 docker_engine_type() (
-  # A listening socket alone does not guarantee that the engine will respond.
   "${docker[@]}" info --format '{{.OSType}}' &
   probe=$!
   (sleep 4; kill -KILL "$probe" 2>/dev/null || true) </dev/null >/dev/null 2>&1 &
@@ -219,7 +217,6 @@ wait_for_engine() {
     sleep 2
     enable_docker_access
     if engine_ready; then return; fi
-    # Docker Desktop may create its own socket during first launch.
     if [[ "$platform" == Darwin && "$endpoint" == unix:///var/run/docker.sock && -S "$HOME/.docker/run/docker.sock" ]]; then
       endpoint="unix://$HOME/.docker/run/docker.sock"
       docker=("$docker_bin" --host "$endpoint")
@@ -238,8 +235,7 @@ valid_folder() {
 }
 
 add_folder() {
-  local resolved previous
-  resolved=$(valid_folder "$1") || { printf 'Choose an existing folder with a single-line path.\n' >&2; return 1; }
+  local resolved=$1 previous
   if [[ ${#folders[@]} -gt 0 ]]; then
     for previous in "${folders[@]}"; do
       if [[ "$resolved" == "$previous" ]]; then
@@ -249,6 +245,14 @@ add_folder() {
     done
   fi
   folders+=("$resolved")
+}
+
+gui_session() {
+  [[ "$terminal_only" == false && -t 0 ]] || return 1
+  case "$platform" in
+    Darwin) [[ -z "${SSH_CONNECTION:-}" && $(launchctl managername 2>/dev/null) == Aqua ]] ;;
+    Linux) [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]] ;;
+  esac
 }
 
 pick_mac() {
@@ -276,39 +280,89 @@ end run
 APPLESCRIPT
 }
 
+pick_linux() (
+  local errors choice status=0
+  errors=$(mktemp "${TMPDIR:-/tmp}/vidstream-picker.XXXXXXXX") || return 1
+  trap 'rm -f -- "$errors"' EXIT
+  choice=$(LC_ALL=C zenity --file-selection --directory --title="$1" 2> "$errors" && printf '.') || status=$?
+  if [[ "$status" == 1 ]] && ! grep -Evq '^Gtk-Message: .*GtkDialog mapped without a transient parent\.' "$errors"; then
+    return 0
+  fi
+  [[ "$status" == 0 ]] || return 1
+  choice=${choice%.}
+  choice=${choice%$'\n'}
+  [[ "$choice" != *$'\n'* && "$choice" != *$'\r'* ]] || return 1
+  printf '%s\n' "$choice"
+)
+
+unescape_completion() {
+  local input=$1 prefix output=
+  while [[ "$input" == *\\* ]]; do
+    prefix=${input%%\\*}
+    input=${input#*\\}
+    output+=$prefix${input:0:1}
+    input=${input:1}
+  done
+  printf '%s\n' "$output$input"
+}
+
 pick_terminal() {
-  local choice
+  local choice resolved
+  if [[ -t 0 ]]; then
+    printf 'Type the start of a mounted folder path and press Tab to complete it. Press Tab twice to list matches.\n' >&2
+  fi
   while :; do
-    printf '%s ' "$1" >&2
-    IFS= read -r choice || return 1
+    if [[ -t 0 ]]; then
+      IFS= read -e -r -p "$1 (blank cancels): " choice || return 1
+    else
+      printf '%s (blank cancels): ' "$1" >&2
+      IFS= read -r choice || return 1
+    fi
     [[ -n "$choice" ]] || return 1
-    if add_folder "$choice"; then return; fi
+    if resolved=$(valid_folder "$choice") ||
+       { [[ -t 0 && "$choice" == *\\* ]] && resolved=$(valid_folder "$(unescape_completion "$choice")"); }; then
+      add_folder "$resolved"
+      return
+    fi
+    printf 'Choose an existing directory, such as a mounted share under /mnt.\n' >&2
   done
 }
 
 choose_folder() {
-  local mode=$1 choice selected prompt
+  local mode=$1 choice selected resolved prompt picker= status=0
+  local picked=()
   case "$mode" in
     primary) prompt='Primary media folder' ;;
     add) prompt='Media folder to add' ;;
     *) prompt='Additional media folder' ;;
   esac
-  if [[ "$terminal_only" == false && "$platform" == Darwin && -t 0 ]] && command -v osascript >/dev/null; then
-    if choice=$(pick_mac "$mode"); then
-      [[ -n "$choice" ]] || return 1
-      while IFS= read -r selected; do
-        [[ -z "$selected" ]] || add_folder "$selected" || fail 'A selected folder is unavailable.'
-      done <<< "$choice"
-      return
+  if gui_session; then
+    if [[ "$platform" == Darwin ]] && command -v osascript >/dev/null; then
+      picker=mac
+      choice=$(pick_mac "$mode" 2>/dev/null) || status=$?
+    elif [[ "$platform" == Linux ]] && command -v zenity >/dev/null; then
+      picker=linux
+      choice=$(pick_linux "$prompt") || status=$?
     fi
-  elif [[ "$terminal_only" == false && -t 0 && -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]] && command -v zenity >/dev/null; then
-    # Keep a sentinel so command substitution preserves any newline in a path.
-    choice=$(zenity --file-selection --directory --title="$prompt" && printf '.') || return 1
-    choice=${choice%.}
-    add_folder "${choice%$'\n'}" || fail 'The selected folder is unavailable.'
-    return
   fi
-  pick_terminal "$prompt (blank cancels):"
+  if [[ -n "$picker" && "$status" == 0 ]]; then
+    [[ -n "$choice" ]] || return 1
+    while IFS= read -r selected; do
+      if ! resolved=$(valid_folder "$selected"); then
+        printf 'A selected folder is unavailable. Choose a folder in the terminal.\n' >&2
+        pick_terminal "$prompt"
+        return
+      fi
+      picked+=("$resolved")
+    done <<< "$choice"
+    for resolved in "${picked[@]}"; do add_folder "$resolved"; done
+    return 0
+  fi
+  if [[ "$status" != 0 ]]; then
+    printf 'The graphical folder picker could not open. Use the terminal picker.\n' >&2
+    terminal_only=true
+  fi
+  pick_terminal "$prompt"
 }
 
 choose_folders() {
@@ -348,6 +402,17 @@ prepare_docker() {
   compose=("${docker[@]}" compose --project-name "$project" --project-directory "$install_dir" --env-file /dev/null)
 }
 
+check_host_network() {
+  local engine_version
+  engine_version=$("${docker[@]}" version --format '{{.Server.Version}}' 2>/dev/null) || engine_version=
+  if [[ "$engine_version" =~ ^([1-9][0-9]*)\. ]] && (( BASH_REMATCH[1] < 28 )); then
+    printf 'Docker Engine %s can expose loopback-published ports to peers on the same Ethernet segment. Update Docker Engine to 28 or newer.\n' "$engine_version" >&2
+  fi
+  if [[ "$platform" == Linux ]]; then
+    printf 'VidStream uses a loopback port. If you publish it to the LAN later, check Docker’s firewall rules because published ports can bypass UFW.\n' >&2
+  fi
+}
+
 first_setup() {
   local existing_containers existing_volumes url setup_code attempt
   [[ "$port" =~ ^[0-9]{1,5}$ ]] || fail 'VIDSTREAM_PORT must be a number from 1 to 65535.'
@@ -356,6 +421,7 @@ first_setup() {
   [[ "$image" =~ ^[A-Za-z0-9][A-Za-z0-9._:/@-]*$ ]] || fail 'VIDSTREAM_IMAGE must be a Docker image reference.'
   check_new_install
   prepare_docker setup
+  check_host_network
 
   existing_containers=$("${docker[@]}" ps -aq --filter "label=com.docker.compose.project=$project")
   existing_volumes=$("${docker[@]}" volume ls --quiet --filter "label=com.docker.compose.project=$project")
@@ -366,16 +432,16 @@ first_setup() {
     fail "Port $port is already in use. Set VIDSTREAM_PORT to an unused port and rerun Start-Here."
   fi
 
+  choose_folders
+  choose_theme
+
   if ! "${docker[@]}" pull "$image"; then
     [[ -z "${VIDSTREAM_IMAGE:-}" && -f "$source_dir/Dockerfile" && -f "$source_dir/scripts/setup-compose.js" ]] || \
       fail 'The VidStream image could not be downloaded. Check the image name and your registry access.'
     image=vidstream-starter:local
     printf 'Building VidStream from this checkout because the Docker Hub image is unavailable.\n'
-    "${docker[@]}" build --tag "$image" "$source_dir"
+    "${docker[@]}" build --pull --tag "$image" "$source_dir"
   fi
-
-  choose_folders
-  choose_theme
 
   mkdir -p -- "$install_dir"
   check_new_install
@@ -383,7 +449,6 @@ first_setup() {
   "${docker[@]}" run --rm --network none "$image" node scripts/setup-compose.js "$image" "$port" "$theme" -- "${folders[@]}" > "$draft"
   [[ -s "$draft" ]] || fail 'The image returned an empty Compose file.'
   "${compose[@]}" --file "$draft" config --quiet
-  # An atomic hard link publishes the validated file and refuses a concurrent install.
   ln -n -- "$draft" "$compose_file" || fail "Could not create $compose_file."
   rm -- "$draft"
   draft=
@@ -406,10 +471,15 @@ first_setup() {
     printf '%q ' "${compose[@]}" logs stream
     printf '\n'
   fi
-  if [[ "$platform" == Darwin && -t 0 ]]; then
-    open "$url" || true
-  elif [[ -t 0 && -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]] && command -v xdg-open >/dev/null; then
-    xdg-open "$url" >/dev/null 2>&1 || true
+  if [[ -n "${SSH_CONNECTION:-}" ]]; then
+    printf '\nFrom a separate terminal on the computer with your browser, run:\n  ssh -N -L 127.0.0.1:%s:127.0.0.1:%s user@server\n' "$port" "$port"
+    printf 'Replace user@server with your SSH login. This forwards your computer’s port %s to VidStream without publishing it to the network. Leave SSH open and visit %s in your browser.\n' "$port" "$url"
+  elif gui_session; then
+    if [[ "$platform" == Darwin ]]; then
+      open "$url" || true
+    elif command -v xdg-open >/dev/null; then
+      xdg-open "$url" >/dev/null 2>&1 || true
+    fi
   fi
 }
 
@@ -430,7 +500,6 @@ edit_existing() {
   existing_image=$("${compose[@]}" --file "$snapshot" config --images stream)
   [[ "$existing_image" =~ ^[A-Za-z0-9][A-Za-z0-9._:/@-]*$ ]] || fail 'Could not identify the existing VidStream image.'
 
-  # Docker parses --mount as CSV. Quote the source field, including commas in checkout paths.
   editor_source=${editor//\"/\"\"}
   mount_spec="type=bind,\"source=$editor_source\",target=/tmp/vidstream-setup-compose.js,readonly"
   draft=$(mktemp "$install_dir/.compose.yaml.XXXXXXXX")
@@ -453,7 +522,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --terminal) terminal_only=true ;;
     -h|--help)
-      printf 'VidStream setup and folder management for macOS and Linux.\nUse --terminal to type folder paths.\nNew setups save compose.yaml beside this launcher. VIDSTREAM_INSTALL_DIR overrides that location.\nVIDSTREAM_PORT and VIDSTREAM_IMAGE override first-time setup defaults.\n'
+      printf 'VidStream setup and folder management for macOS and Linux.\nUse --terminal to type folder paths with Tab completion.\nNew setups save compose.yaml beside this launcher. VIDSTREAM_INSTALL_DIR overrides that location.\nVIDSTREAM_PORT and VIDSTREAM_IMAGE override first-time setup defaults.\n'
       exit 0
       ;;
     *) fail 'Use --help to see the available options.' ;;

@@ -5,69 +5,32 @@ services:
       args:
         INSTALL_AI_STACK: ${STREAM_AI_STACK:-false}
         AI_ACCELERATOR: ${STREAM_AI_ACCELERATOR:-cpu}
-    # Or, once published: image: yourname/stream:latest
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     ports:
-      # Standard HTTP on the host; Node still listens on 4000 internally.
-      # Set STREAM_HTTP_PORT=8080 in .env if 80 is already occupied.
-      - "${STREAM_HTTP_PORT:-80}:4000"
+      - target: 4000
+        published: "${STREAM_HTTP_PORT:-80}"
+        host_ip: "${STREAM_HTTP_BIND:-127.0.0.1}"
     volumes:
       - stream-cache:/app/.cache
       - stream-data:/app/data
       - stream-originals:/app/originals
-      # To select several directories in one container, use the child mounts
-      # in docker-compose.media.example.yml. See docs/MOUNTED_FOLDERS.md.
-      # Choose your own existing host folder: set STREAM_MEDIA_PATH in .env,
-      # then uncomment this entire block. No repository media folder is used.
-      # - type: bind
-      #   source: ${STREAM_MEDIA_PATH:?Set STREAM_MEDIA_PATH to an existing absolute media folder}
-      #   target: /media/original
-      #   read_only: true
-      #   bind:
-      #     create_host_path: false
-      # Read-only permits viewing/previews, but not Quick edit or
-      # source edits. Set read_only: false only to allow writes.
-      # Existing installs: retain any previous /app/originals host bind in a
-      # local override until its archives have been deliberately migrated.
-      # Optional custom archive folder (outside your media tree):
-      # Comment the stream-originals entry above before enabling this block.
-      # - type: bind
-      #   source: ${STREAM_ORIGINALS_PATH:?Set STREAM_ORIGINALS_PATH to an existing archive folder}
-      #   target: /app/originals
-      #   bind:
-      #     create_host_path: false
     environment:
-      # PORT/HOST/MEDIA_DIR/CACHE_DIR in .env are native-run settings.
-      # Docker uses stable internal paths/port, independent of host choices.
       PORT: "4000"
       HOST: "0.0.0.0"
+      URL: "${URL:?Run bash ./Start-Here.sh or Start-Here.bat for guided setup. For manual Compose, set URL in .env.}"
       MEDIA_DIR: /media/original
       CACHE_DIR: /app/.cache
       DATA_DIR: /app/data
       ORIGINALS_DIR: /app/originals/original
-      # These host-only Compose variables need not reach the app via env_file.
       STREAM_MEDIA_PATH: ""
       STREAM_ORIGINALS_PATH: ""
     env_file:
       - .env
-    # A hard ceiling so a leak (or just a big library under heavy
-    # processing) degrades as "container restarts" instead of "host
-    # runs out of memory" -- paired with restart: unless-stopped above,
-    # and with the timeouts in lib/exec.js that stop hung ffmpeg/
-    # OpenCV/tesseract subprocesses from accumulating in the first
-    # place. Raise this if you have the headroom and a large library.
-    # The default 2g ceiling is for light browsing/processing, not a
-    # guarantee that large AI models will fit. Raise STREAM_MEM_LIMIT
-    # in .env for heavier jobs AFTER assigning enough RAM to Docker
-    # Desktop / your VM. See docs/HARDWARE.md. No CPU quota is set here;
-    # a small CPU count usually comes from Desktop/VM/host allocation.
     mem_limit: ${STREAM_MEM_LIMIT:-2g}
     memswap_limit: ${STREAM_MEM_LIMIT:-2g}
 
-  # --- Optional: expose this on a subdomain via Cloudflare, no open
-  # firewall ports needed. Configure the tunnel with Cloudflare and supply
-  # CLOUDFLARE_TUNNEL_TOKEN in .env; this opt-in profile is not needed on a LAN.
-  # Run with: docker compose --profile tunnel up -d
   cloudflared:
     image: cloudflare/cloudflared:latest
     command: tunnel --no-autoupdate run
@@ -78,11 +41,6 @@ services:
       - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
     profiles: ["tunnel"]
 
-  # --- Optional: mount remote storage (Google Drive, Dropbox, etc.) as
-  # a local-looking folder that Stream scans normally, instead of
-  # paying for local disk space for your whole library. Configure rclone
-  # separately, then explicitly enable its shared-mount examples below.
-  # Run with: docker compose --profile remote up -d
   rclone:
     image: rclone/rclone:latest
     restart: unless-stopped
@@ -92,20 +50,6 @@ services:
     volumes:
       - ./rclone.conf:/config/rclone/rclone.conf:ro
       - rclone-vfs-cache:/cache
-      # Optional Linux shared mount. Configure rclone first, then uncomment
-      # this block AND the stream media bind above, using the same host path.
-      # Add bind.propagation: rslave to the stream bind; see README.
-      # - type: bind
-      #   source: ${STREAM_MEDIA_PATH:?Set STREAM_MEDIA_PATH to an existing mount folder}
-      #   target: /data
-      #   bind:
-      #     create_host_path: false
-      #     propagation: rshared
-    # remote:path -> replace with what you named it in `rclone config`
-    # (e.g. gdrive:Photos). --vfs-cache-mode full + a max-size keeps
-    # only recently-viewed originals on local disk, evicting the rest,
-    # which is the actual point: the library lives on the remote, not
-    # in this container.
     command: >
       mount remote:path /data
       --allow-other

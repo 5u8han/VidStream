@@ -10,7 +10,7 @@ const { AiManager } = require('./lib/ai-manager');
 const { Scanner } = require('./lib/scanner');
 const { Router } = require('./lib/router');
 const { serveFile } = require('./lib/serve-file');
-const { isAdmin, authConfigured } = require('./lib/auth');
+const { isAdmin, authConfigured, hasSameOrigin } = require('./lib/auth');
 const { renderShell } = require('./lib/template');
 
 const { pageHandler } = require('./lib/handlers/page');
@@ -127,16 +127,15 @@ async function handleRequest(req, res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
 
   if (STATIC_ASSETS.has(pathname)) {
-    serveFile(req, res, path.join(PUBLIC_DIR, pathname), { cacheForever: false });
+    return serveFile(req, res, path.join(PUBLIC_DIR, pathname));
+  }
+
+  if (req.method === 'POST' && (req.headers['sec-fetch-site'] === 'cross-site' || !hasSameOrigin(req, cfg))) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Same-origin request required' }));
     return;
   }
 
-  if(req.method==='POST' && (req.headers['sec-fetch-site']==='cross-site' || (req.headers.origin && req.headers.origin!==((req.headers['x-forwarded-proto']==='https'?'https':'http')+'://'+req.headers.host)))) {
-    res.writeHead(403, {'Content-Type':'application/json'});res.end(JSON.stringify({error:'Same-origin request required'}));return;
-  }
-
-  // REQUIRE_LOGIN: signed-out visitors can reach only the login endpoint
-  // and a login-only page shell -- no gallery UI, media, API, or feed.
   if ((cfg.setupRequired || (cfg.requireLogin && authConfigured(cfg))) && !isAdmin(req, cfg)) {
     const open = pathname === '/api/login' || pathname === '/api/setup' || pathname === '/api/logout' || pathname === '/health' || pathname === '/api/node-info';
     if (!open) {
@@ -175,14 +174,13 @@ let rescanTimer = null;
 async function main() {
   if (cfg.setupRequired) {
     if (cfg.dockerRuntime && !cfg.setupHelperUsed) {
-      console.log('[stream] Setting up VidStream for the first time? Try Start-Here.sh or Start-Here.bat for guided folder and theme setup.');
+      console.log('[stream] Try Start-Here.sh or Start-Here.bat from the checkout to select media folders and a starting theme. For manual Compose, configure media mounts before browsing.');
     }
     console.log('[stream] Owner setup code: ' + cfg.setupCode + ' (enter this once in the web setup screen)');
   }
   resources.start();
   console.log(`[stream] Media folder: ${cfg.mediaDir}`);
-  // Serve the cached index immediately. Scanning remote SMB storage may take a
-  // long time; it must never make the entire website unavailable on startup.
+
   server.listen(cfg.port, cfg.host, () => {
     console.log(`[stream] ${cfg.title} listening on http://${cfg.host}:${cfg.port}`);
     nodes.start();

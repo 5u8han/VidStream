@@ -29,9 +29,6 @@ def main():
         print(json.dumps({"error": "could not read image"}))
         sys.exit(1)
 
-    # Downscale before detection -- Haar cascades run on pixel windows,
-    # so a huge source image just means more work for no accuracy gain
-    # at this scale. 800px on the long edge is plenty.
     h, w = img.shape[:2]
     longest = max(h, w)
     if longest > 800:

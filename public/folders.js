@@ -140,7 +140,6 @@
     });
     paint();
     return request().then(function (data) { update(data, true); }).catch(function () {
-      // A failed shortcut request must never make the gallery unavailable.
       selected = ''; notify(true);
       panel.replaceChildren(); element('p', 'Folder shortcuts could not load. Reload to try again.', panel, 'folder-menu-note');
     });

@@ -1,6 +1,6 @@
 # Design behavior included in main
 
-Current release: **main 1.11.0**. This document records earlier checkpoints. Video enhancement/processing instructions below are historical and retired; use the current [README](../README.md) for operation. Settings and View options now expose everyday controls directly instead of category drilldowns.
+This document records earlier checkpoints. Video enhancement/processing instructions below are historical and retired; use the current [README](../README.md) for operation. Settings and View options now expose everyday controls directly instead of category drilldowns.
 
 The former **VidStream-Design-Test-1** checkpoint (`4510872`, version `1.8.0-design.1`) is included in official **main 1.9.0**, together with the reviewed node work. The separate design branch has been retired. Main is now the only branch; all reviewed node work is included.
 
@@ -52,7 +52,7 @@ git branch --show-current
 docker compose exec stream node -p "require('./package.json').version"
 ```
 
-`git branch --show-current` prints the active local branch. `docker compose exec stream node -p "require('./package.json').version"` reads the package version inside the running container without changing files; expect `1.11.0` on main. For native deployments, `node -p "require('./package.json').version"` reads the checkout's package version without starting the app or changing files. Rebuilding is required for an existing Docker container to use changed source files; reload the browser afterward.
+`git branch --show-current` prints the active local branch. `docker compose exec stream node -p "require('./package.json').version"` reads the package version inside the running container without changing files; this historical checkpoint used `1.11.0`. For native deployments, `node -p "require('./package.json').version"` reads the checkout's package version without starting the app or changing files. Rebuilding is required for an existing Docker container to use changed source files; reload the browser afterward.
 
 Check a new browser profile, sign out/in, then reopen a still-authenticated browser. Try keyboard navigation, a narrow phone-sized window, all viewing themes and reduced motion. Generated test clips cannot establish physical-device playback performance on a large personal library.
 
@@ -62,12 +62,4 @@ The Design chat's saved research informed this implementation: Motion's bounded 
 
 Validation on November 2, 2026: JavaScript syntax checks passed, all 111 unit/integration tests passed, and all 26 Chromium browser checks passed with no page errors. Browser checks include new/reopened profiles, successful and failed logins, logout/login, capped animation timing/cleanup, filter changes, reduced motion/effects off, live preference changes, short landscape sign-in/setup, loading failure/retry, desktop/mobile player sizing, navigation and the existing saved enhancement workflow. The app was visually reviewed using generated sample artwork. These are local native-server checks; this revision did not build a Docker image or establish frame rates on a large personal library.
 
-For developers:
-
-```sh
-npm run check
-npm test
-npm run test:browser
-```
-
-`npm run check` parses project JavaScript for syntax errors. `npm test` runs the unit/integration suite with temporary fixture data. `npm run test:browser` starts an isolated local server and Chromium against generated media, checks design lifecycle plus existing player/navigation/enhancement behavior, then removes only its own temporary fixture directory. These commands do not read or modify your personal media, `.env` or Docker volumes. FFmpeg and the existing development Playwright installation/browser are required for browser checks.
+[Current deployment checks](COMMANDS.md#release-and-deployment-checks)

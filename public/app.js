@@ -8,26 +8,18 @@
 
   var prefersReducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   var canHover = matchMedia('(hover: hover)').matches;
-  // Per-visitor "lite mode" for anyone on constrained hardware/data --
-  // separate from the server-wide VIDEO_AUTOPLAY_PREVIEWS setting, and
-  // off by default so browsing stays full-featured for everyone else.
-  // Applying it takes a reload (see the menu item below) rather than
-  // live-recreating IntersectionObservers mid-session.
   var dataSaverMode = (function () { try { return localStorage.getItem('stream-data-saver') === '1'; } catch (e) { return false; } })();
   var autoplayEnabled = CONFIG.videoAutoplayPreviews && !prefersReducedMotion && !dataSaverMode;
   var isAdmin = Boolean(CONFIG.isAdmin);
-  var libraryStatus = null; // last /api/library-status response (counts + unsupported/failed lists)
+  var libraryStatus = null;
   var effectsMode = storageGet('stream-effects', 'full');
   var pinnedActions=[];try{pinnedActions=JSON.parse(storageGet('stream-pinned-actions','[]'));if(!Array.isArray(pinnedActions))pinnedActions=[];}catch(_){}
   document.documentElement.dataset.effects = effectsMode;
 
-  // Ambient animated background (public/ambient.js). null = none: it's
-  // skipped for reduced-motion and Data saver, and every use below checks.
   var bg = window.StreamAmbient
     ? window.StreamAmbient.start({ reducedMotion: prefersReducedMotion, lite: dataSaverMode, mode:effectsMode })
     : null;
 
-  // REQUIRE_LOGIN: signed-out visitors get nothing but a sign-in card.
   if (CONFIG.locked) {
     appEl.innerHTML = '';
     var lockedModal = buildSignInModal({ locked: true });
@@ -88,7 +80,7 @@
   }
   function storageSet(key, val) {
     window.StreamSettings.preference(key, val);
-    try { localStorage.setItem(key, val); } catch (e) { /* ignore (private browsing etc.) */ }
+    try { localStorage.setItem(key, val); } catch (e) { }
   }
 
   var randomSeed = storageGet('stream-random-seed', 'initial');
@@ -99,18 +91,11 @@
   function uniform() {randomEnabled=false;storageSet('stream-random-enabled','0');refreshSizes();}
   window.StreamSettings.init({randomize:randomize,uniform:uniform,theme:applyTheme,effects:applyEffects,density:function(value){applyDensity(value);remeasureAndReflow();},fit:function(value){document.documentElement.dataset.mediaFit=value;storageSet('stream-media-fit',value);},viewerBlur:applyViewerBlur,videoStats:setVideoStatsEnabled});
 
-  // ---------------------------------------------------------------
-  // Theme + density (data-theme/data-density already applied by the
-  // inline boot script in <head> to avoid a flash; this just keeps
-  // the menu UI and localStorage in sync with further changes).
-  // ---------------------------------------------------------------
 
   var currentTheme = storageGet('stream-theme', CONFIG.defaultTheme || 'system');
   var currentDensity = storageGet('stream-density', 'medium');
   var previewSource = storageGet('stream-preview-source', 'preview');
   document.documentElement.dataset.mediaFit = storageGet('stream-media-fit', 'contain');
-  // One grid-size control replaces the old global video multiplier. Keep
-  // intentional per-tile enlargement and the organic/random option instead.
   var videoScale = '1';
   if (storageGet('stream-video-scale', '1') !== '1') storageSet('stream-video-scale', '1');
   var viewerBlur = Math.max(0, Math.min(30, Number(storageGet('stream-viewer-blur', '10')) || 0));
@@ -148,10 +133,6 @@
   }
   if (!document.documentElement.hasAttribute('data-density')) document.documentElement.setAttribute('data-density', currentDensity);
 
-  // Declared before the App shell section below because buildMenu()
-  // (called synchronously from renderHeader()) reads state.sort while
-  // marking the current selection -- it can't wait for the "Grid
-  // state" section further down the file.
   var state = {
     folder: null,
     type: null,
@@ -172,9 +153,6 @@
   var selection = { active: false, ids: new Set() };
   var foldersReady = Promise.resolve();
 
-  // ---------------------------------------------------------------
-  // App shell
-  // ---------------------------------------------------------------
 
   appEl.innerHTML = '';
   var header = el('header', { class: 'header' });
@@ -210,9 +188,6 @@
     window.StreamAmbient.bindHoverFx(linksBottom);
   }
 
-  // ---------------------------------------------------------------
-  // Options menu (sort / contains / density / theme)
-  // ---------------------------------------------------------------
 
   function buildMenu() {
     var wrap = el('div', { class: 'menu-wrap' });
@@ -448,8 +423,6 @@
       trigger.focus({ preventScroll: true });
       if (afterClose) {
         var next = afterClose; afterClose = null;
-        // The history pop finishes removing the old panel before the new
-        // Settings entry is pushed. Gallery clicks still dismiss only.
         queueMicrotask(function () { if (next.isConnected) { next.focus({ preventScroll: true }); next.click(); } });
       }
     }
@@ -491,9 +464,6 @@
     if(artistOutlines)artistOutlines.refresh();
   }
 
-  // ---------------------------------------------------------------
-  // Search (filename + OCR text)
-  // ---------------------------------------------------------------
 
   function buildSearch() {
     var wrap = el('div', { class: 'search-wrap' });
@@ -532,9 +502,6 @@
     return wrap;
   }
 
-  // ---------------------------------------------------------------
-  // Header
-  // ---------------------------------------------------------------
 
   function renderHeader() {
     var title = el('div', { class: 'header-title' });
@@ -615,10 +582,6 @@
     window.StreamNodes?.mount(header);
   }
 
-  // ---------------------------------------------------------------
-  // Library summary (Google-Photos-style counts) and the lists of files
-  // that didn't make it in, behind the "unsupported"/"unreadable" chips
-  // ---------------------------------------------------------------
 
   function renderQuickActions() {
     if(!header._quickActions)return;header._quickActions.replaceChildren();
@@ -660,7 +623,6 @@
       f.addEventListener('click', function () { filesModal.open(); });
       root.appendChild(f);
     }
-    // total includes unsupported and unreadable files, so it matches what's actually in the folder
     root.appendChild(el('span', { class: 'total' }, s.total.toLocaleString() + ' total'));
     if (libraryStatus && libraryStatus.lastScan && isAdmin) {
       root.appendChild(el('span', { class: 'scan-timing' },
@@ -729,13 +691,11 @@
         if (!data) return;
         libraryStatus = data;
         renderLibrarySummary();
-        // Avoid disrupting an open lightbox or someone deep in the gallery.
-        // Freshly indexed media appears automatically when the user is at the top.
         var before = previous && previous.lastScan && previous.lastScan.at;
         var after = data.lastScan && data.lastScan.at;
         if (previous && before !== after && after && !lb.open && window.scrollY < 200) resetAndLoad();
       })
-      .catch(function () { /* the summary is a nicety; never block the app on it */ });
+      .catch(function () { });
   }
 
   function buildFilesModal() {
@@ -1015,8 +975,6 @@
     });
   }
 
-  // Admin-only: mark every item in the currently-selected album as
-  // guest-visible (or private) in one action, next to the album picker.
   var albumBulkEl = null;
   function renderAlbumBulkAction() {
     if (albumBulkEl) { albumBulkEl.remove(); albumBulkEl = null; }
@@ -1041,9 +999,6 @@
     main.insertBefore(albumBulkEl, grid);
   }
 
-  // ---------------------------------------------------------------
-  // Selection mode (iOS-style multi-select + bulk download)
-  // ---------------------------------------------------------------
 
   function buildSelectionBar() {
     var bar = el('div', { class: 'selection-bar' });
@@ -1165,9 +1120,6 @@
       .catch(function () { showToast('Download failed'); });
   }
 
-  // ---------------------------------------------------------------
-  // Grid state + data loading
-  // ---------------------------------------------------------------
 
   var artistOutlines=window.StreamArtistOutlines.install(grid,{mode:storageGet('stream-artist-outlines','off'),color:creatorColor});
   artistOutlines.setMode(storageGet('stream-artist-outlines','off'));
@@ -1196,9 +1148,6 @@
     var tileHeight = width / aspect;
     var span = Math.max(1, Math.ceil((tileHeight + gap) / (rowUnit + gap)));
     tile.style.gridRowEnd = 'span ' + span;
-    // Keep the responsive <img>/<video> sizes attribute matching the
-    // actual measured column width, so the browser's srcset choice is
-    // based on real layout rather than a guessed vw fraction.
     var media = tile.querySelector('img.tile-media, video.tile-media');
     if (media && media.tagName === 'IMG') media.sizes = Math.round(width) + 'px';
   }
@@ -1242,7 +1191,7 @@
         window.StreamDiagnostics?.catalogResponse(requestStarted, r.status); responseRecorded = true; return data;
       }); })
       .then(function (data) {
-        if (myToken !== state.loadToken) return; // superseded by a filter/sort change; discard
+        if (myToken !== state.loadToken) return;
         state.loadedOnce = true;
         updateAlbumOptions(data.albums);
         updateCreatorOptions(data.creators);
@@ -1263,8 +1212,6 @@
         entrance?.loaded(statusEl);
         grid.setAttribute('aria-busy', 'false');
         state.loading = false;
-        // A short page can leave the sentinel inside the prefetch margin.
-        // Observe it again so pagination does not depend on it leaving view first.
         scrollObserver.unobserve(sentinel);
         grid.appendChild(sentinel);
         if (!state.done) scrollObserver.observe(sentinel);
@@ -1284,10 +1231,6 @@
   }
 
   function resetAndLoad() {
-    // Bumping the token makes any still-in-flight request from before
-    // this reset a no-op when it resolves, even though state.loading
-    // is being force-cleared below to let the new request start
-    // immediately -- see the token check in loadMore().
     state.loadToken = (state.loadToken || 0) + 1;
     state.loading = false;
     grid.classList.add('refreshing');
@@ -1351,10 +1294,6 @@
     });
   }
 
-  // Populates the Contains menu with whatever object classes YOLO has
-  // actually found in this library (e.g. "dog", "car") -- a fixed
-  // guessed list wouldn't match what's really in any given library, and
-  // this is empty (a harmless no-op) when object detection is off.
   var objectClassesPopulated = false;
   function updateObjectClassOptions(classes) {
     if (objectClassesPopulated || !classes || classes.length === 0 || !header._containsSection) return;
@@ -1382,14 +1321,7 @@
     if (existing) existing.remove();
   }
 
-  // ---------------------------------------------------------------
-  // Tiles
-  // ---------------------------------------------------------------
 
-  // Keep only the nearby tiles' images, controls and decoder resources in
-  // the DOM. The lightweight grid shells retain their measured spans and
-  // media records, so scrolling back, masonry placement and player links
-  // keep working without retaining every thumbnail ever visited.
   var tileViewportObserver = new IntersectionObserver(function (entries) {
     entries.forEach(function (entry) {
       var tile = entry.target;
@@ -1426,8 +1358,6 @@
     });
   }, { rootMargin: dataSaverMode ? '100px' : '500px' });
 
-  // A dozen simultaneous 60fps decoders would make even a fast GPU stutter.
-  // Prioritize hovered clips; cap others to keep the page responsive.
   function updateBackgroundBusy() {
     var activeVideo=lb && lb.open ? lightbox.mediaWrap.querySelector('video') : null;
     var busy=Boolean((previewController && previewController.running.size) || (activeVideo && !activeVideo.paused));
@@ -1496,10 +1426,6 @@
     btn.title = guest ? 'Guest-visible — click to make private' : 'Private — click to make guest-visible';
   }
 
-  // Updates every rendered instance of this item's visibility toggle --
-  // the grid tile (if currently rendered) and the lightbox button (if
-  // this item is the one currently open) are separate DOM elements, so
-  // toggling from one must not leave the other showing stale state.
   function syncVisibilityUI(item) {
     var tile = grid.querySelector('[data-item-id="' + item.id + '"] .tile-visibility');
     if (tile) paintVisibilityButton(tile, item.guest);
@@ -1624,9 +1550,6 @@
     applySpan(tile, item);
   }
 
-  // ---------------------------------------------------------------
-  // Lightbox
-  // ---------------------------------------------------------------
 
   function setPreference(item, key) {
     if (!item || !isAdmin) return;
@@ -1752,9 +1675,6 @@
 
     var caption = el('div', { class: 'lightbox-caption mono' }, '');
 
-    // Quick edit toolbar: rotate + brightness always, volume for video
-    // only. Session-only -- reset whenever renderLightboxMedia() shows
-    // a different item, never written back to the file.
     var editPanel = el('div', { class: 'edit-panel' });
     editPanel.inert = true;
     var rotateBtn = el('button', { class: 'icon-btn', title: 'Rotate 90°', 'aria-label': 'Rotate 90 degrees' }, icon('rotate'));
@@ -1772,8 +1692,6 @@
     var savedEditor = el('div', { class:'saved-editor' });
     editPanel.appendChild(savedEditor);
 
-    // Info sidebar: read-only metadata, populated per-item in
-    // renderInfoPanel() below.
     var infoPanel = el('div', { class: 'info-panel' });
     infoPanel.inert = true;
     var infoHeader = el('div', { class: 'info-panel-header' });
@@ -1874,10 +1792,6 @@
     lightbox.slideshowBtn.innerHTML = icon('pause');
     lightbox.slideshowBtn.classList.add('is-playing-slideshow');
     lightbox.slideshowBtn.title = 'Pause slideshow';
-    // If a video is already showing when Play is pressed, its "ended"
-    // listener was never attached (slideshow wasn't active yet when
-    // renderLightboxMedia ran for it) -- bind it retroactively so the
-    // slideshow doesn't just stall on the current item.
     if (lb.item && lb.item.type === 'video') bindSlideshowEnded(lightbox.mediaWrap.querySelector('video'));
     scheduleSlideshowAdvance();
   }
@@ -1894,11 +1808,6 @@
   function scheduleSlideshowAdvance() {
     clearTimeout(slideshow.timer);
     if (!slideshow.active) return;
-    // A video's own "ended" event (attached in renderLightboxMedia)
-    // drives the advance instead of a fixed timer -- otherwise a video
-    // longer than the interval gets cut off, and one shorter than it
-    // would advance twice (once on "ended", again when this timer
-    // still fires afterwards).
     if (lb.item && lb.item.type === 'video') return;
     slideshow.timer = setTimeout(function () {
       if (!slideshow.active) return;
@@ -1915,11 +1824,6 @@
     });
   }
 
-  // Quick edits are session-only (never written back to the file) and
-  // scoped to whatever's currently open -- reset every time a
-  // different item is shown, applied via CSS transform/filter (or,
-  // for volume, the real media element property) rather than any
-  // server-side processing.
   var editState = { rotation: 0, brightness: 100, volume: 100 };
 
   function resetEditState() {
@@ -2108,7 +2012,7 @@
     if(lb.open)window.StreamActivity.record(lb.item,'close');
     window.StreamActivity.record(item,'open');
     lb.open = true;
-    if (fromGrid) lb.openedFromGrid = true; // never reset to false here — navigate() relies on this persisting across prev/next
+    if (fromGrid) lb.openedFromGrid = true;
     lb.item = item;
     document.body.classList.add('lb-open');
     runningPreviews.forEach(function (tile) { pausePreview(tile); });
@@ -2155,10 +2059,6 @@
     lightbox.root.setAttribute('aria-hidden', 'true');
   }
 
-  // User-initiated close (X button, Escape, backdrop click): also
-  // updates history. Reacting to browser back/forward should NOT call
-  // this — see the popstate handler, which uses closeLightboxUI directly
-  // since the history change already happened.
   function closeLightbox() {
     if (!lb.open) return;
     closeLightboxUI();
@@ -2191,10 +2091,10 @@
 
   document.addEventListener('keydown', function (e) {
     if (!lb.open || document.querySelector('dialog[open]')) return;
-    if (e.key === 'Tab') return; // Focus guards preserve traversal through native video controls.
+    if (e.key === 'Tab') return;
     if (e.key === 'Escape') { e.preventDefault(); stopSlideshow(); closeLightbox(); return; }
     if (e.target.closest('input,textarea,select,[contenteditable]')) return;
-    if (e.target.closest('video')) return; // Preserve the native player's seek/volume shortcuts.
+    if (e.target.closest('video')) return;
     if (e.key === 'ArrowLeft') { stopSlideshow(); navigate(-1); }
     else if (e.key === 'ArrowRight') { stopSlideshow(); navigate(1); }
     else if (e.key === ' ' && !e.target.closest('button,a,video')) {
@@ -2229,9 +2129,6 @@
     }
   }
 
-  // ---------------------------------------------------------------
-  // Admin sign-in modal
-  // ---------------------------------------------------------------
 
   function buildSignInModal(opts) {
     var setup = CONFIG.setupRequired;
@@ -2273,7 +2170,7 @@
       setTimeout(function () { userInput.focus(); }, 50);
     }
     function close() {
-      if (locked) return; // the locked screen has nothing behind it to go back to
+      if (locked) return;
       scrim.classList.remove('open');
       if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
       scrim.inert = true;
@@ -2318,9 +2215,6 @@
     return { root: scrim, open: open, close: close };
   }
 
-  // ---------------------------------------------------------------
-  // Boot
-  // ---------------------------------------------------------------
 
   measureColumns();
   renderAlbumBulkAction();

@@ -1,11 +1,6 @@
-# Optional Linux Docker Engine LAN discovery networking.
-# Apply with the base file; see docs/NODES.md for platform requirements.
-# Host networking uses the host's HTTP/UDP ports directly; no port publishing.
-# Media mounts and named application volumes remain inherited from the base.
 services:
   stream:
     network_mode: host
     ports: !reset []
     environment:
-      # Published ports are bypassed in host mode; listen on this host port.
       PORT: "${STREAM_HTTP_PORT:-80}"

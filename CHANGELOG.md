@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.0 — Headless setup and safer defaults
+
+- Start-Here detects desktop pickers, falls back to the terminal when one cannot open, and offers Tab completion during first-time setup and when adding a folder. It prints access instructions for SSH sessions.
+- Plain Compose on an unconfigured checkout prints setup instructions. Manual deployments require an explicit `URL` and publish to localhost by default. Existing LAN deployments can set `STREAM_HTTP_BIND` to their intended interface. New guided and manual services use `no-new-privileges`.
+- Hardened original and ZIP downloads, private media caching, file-stream cleanup, malformed request paths, and forwarded scheme handling. HTTPS reverse proxies must explicitly enable `TRUST_PROXY=1`.
+- Reduced library scan work by reusing the photo and video processing recipes and indexing absent media by content hash for relocation checks.
+- Removed standalone test files and their browser tooling from the checkout. GitHub validation checks source syntax, Docker configuration, and container startup.
+
 ## Unreleased
 
 - Added an end-user guide, command reference, and Docker Hub publishing setup guide. The README now leads with features and guided setup.

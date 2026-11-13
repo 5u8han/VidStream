@@ -16,7 +16,7 @@
         var value = video.getVideoPlaybackQuality();
         return { total: counter(value.totalVideoFrames), dropped: counter(value.droppedVideoFrames) };
       }
-    } catch (_) { /* Some media implementations expose an unusable method. */ }
+    } catch (_) { }
     return { total: counter(video.webkitDecodedFrameCount), dropped: counter(video.webkitDroppedFrameCount) };
   }
 
@@ -27,7 +27,7 @@
           return Math.max(0, video.buffered.end(i) - video.currentTime);
         }
       }
-    } catch (_) { /* A source may be replaced between reading the ranges. */ }
+    } catch (_) { }
     return 0;
   }
 
@@ -72,9 +72,6 @@
       if (stopped) return;
       checkSource();
       var q = quality(video), now = performance.now(), fps = null;
-      // totalVideoFrames includes frames dropped by the playback pipeline.
-      // When frame callbacks are unavailable, subtract dropped frames to make
-      // the fallback an estimate of displayed frames rather than decode rate.
       var count = useFrames ? presented : q.total !== null && q.dropped !== null ? Math.max(0, q.total - q.dropped) : null;
       if (isActive() && count !== null) {
         if (baseline && count >= baseline.count && now > baseline.at) fps = (count - baseline.count) * 1000 / (now - baseline.at);

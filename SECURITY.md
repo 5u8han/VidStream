@@ -19,11 +19,25 @@ Model weights and Ultralytics installations are third-party software. Assess the
 
 Use a patched Node.js LTS release for native hosting and update your Docker
 image as application or base-image patches become available. The application
-has zero runtime npm dependencies. An npm audit covers the JavaScript
-dependency lockfile. The Docker image and optional recognition stack have
+has zero runtime npm dependencies. The Docker image and optional recognition stack have
 their own operating-system and Python packages. For registry publishing, use
 a write-enabled token in GitHub Actions secrets and rotate it before it
 expires. [Update commands](docs/COMMANDS.md) · [Docker Hub publishing](docs/DOCKER_HUB.md)
+
+## Linux host access
+
+Manual and guided bridge-network installs publish to `127.0.0.1` by default.
+On Linux, use a current Docker Engine release. Versions older than 28 can
+expose loopback-published ports to peers on the same Ethernet segment. For
+direct LAN access, bind to the intended host address and check the host's
+Docker-aware firewall rules. Docker can bypass ordinary UFW input rules when
+it publishes ports. Start-Here reports relevant Docker settings and leaves
+firewall rules to the host administrator. [Docker port publishing](https://docs.docker.com/engine/network/port-publishing/) · [Docker firewall behavior](https://docs.docker.com/engine/network/packet-filtering-firewalls/)
+
+For an HTTPS reverse proxy, enable `TRUST_PROXY=1` only on a backend that the
+trusted proxy controls. Preserve the request host and overwrite forwarded
+headers at the proxy. Direct browser or SSH-forwarded HTTP can use the default
+proxy setting. [SSH setup](docs/STARTER.md#headless-linux-over-ssh)
 
 Older versions do not understand web-created owner credentials. Before rolling back below 1.4, configure `ADMIN_PASSWORD` and `REQUIRE_LOGIN=1`; do not assume the web-created lock survives a downgrade.
 

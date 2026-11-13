@@ -1,19 +1,15 @@
-/* Ambient animated background + hover effects. Self-contained: app.js
- * calls StreamAmbient.start() once and feeds it events; if this file
- * fails to load, the app simply runs without it. All the numbers that
- * shape the look live in the block below -- tune there. */
 (function () {
   'use strict';
 
-  var SCALE = 0.5;             // canvas resolution vs. CSS px: lower = softer and cheaper
-  var FADE_ALPHA = 0.085;      // per-frame wash toward the page color: lower = longer trails
+  var SCALE = 0.5;
+  var FADE_ALPHA = 0.085;
   var MAX_BLOBS = 36;
-  var TILE_EMIT_GAP_MS = 150;  // per-tile cooldown for scroll-trail emission
-  var MOUSE_EMIT_PX = 22;      // pointer travel between cursor blobs
-  var IDLE_EMIT_MS = 1400;     // cadence of slow ambient blobs with no interaction
-  var ATTRACT = 0.00018;       // how strongly blobs drift toward the pointer
-  var PARALLAX = 0.07;         // pointer-relative blob offset per unit of depth
-  var MAX_SMEAR_SPEED = 14;    // clamp on a scroll-trail blob's initial speed (canvas px/frame)
+  var TILE_EMIT_GAP_MS = 150;
+  var MOUSE_EMIT_PX = 22;
+  var IDLE_EMIT_MS = 1400;
+  var ATTRACT = 0.00018;
+  var PARALLAX = 0.07;
+  var MAX_SMEAR_SPEED = 14;
 
   function parseColor(str) {
     if (!str) return [136, 136, 136];
@@ -33,8 +29,6 @@
     return [136, 136, 136];
   }
 
-  // A tile's dominant color is an *average*, so it tends to be muddy;
-  // push channels away from their mean so trails read as color.
   function vivid(rgb) {
     var mean = (rgb[0] + rgb[1] + rgb[2]) / 3;
     return rgb.map(function (c) {
@@ -47,7 +41,7 @@
   function start(opts) {
     if (api) return api;
     opts = opts || {};
-    if (opts.reducedMotion || opts.lite) return null;   // accessibility + Data saver: no animated background
+    if (opts.reducedMotion || opts.lite) return null;
     var canvas = document.createElement('canvas');
     var ctx = canvas.getContext && canvas.getContext('2d');
     if (!ctx) return null;
@@ -103,9 +97,6 @@
         })
       : null;
 
-    // Tiles that just scrolled past leave a lingering smear of their own
-    // dominant color: it starts moving with the tile, then (friction)
-    // falls behind it and fades -- a wake, not a particle burst.
     function emitScrollTrail(now) {
       var down = scrollVel > 0;
       var vh = window.innerHeight;
@@ -155,7 +146,6 @@
       lastPaint = t;
       var now = t || Date.now();
 
-      // Follow theme changes (the CSS variables are the source of truth).
       if (frames % 90 === 0) {
         var cs = getComputedStyle(document.documentElement);
         bgRGB = parseColor(cs.getPropertyValue('--bg'));
@@ -163,7 +153,6 @@
       }
       frames++;
 
-      // Wash toward the page color so everything leaves a trail.
       ctx.globalCompositeOperation = 'source-over';
       var a = FADE_ALPHA;
       ctx.fillStyle = 'rgba(' + bgRGB[0] + ',' + bgRGB[1] + ',' + bgRGB[2] + ',' + a + ')';
@@ -188,13 +177,13 @@
       var offX = mouse.sx - W / 2, offY = mouse.sy - H / 2;
       for (var i = blobs.length - 1; i >= 0; i--) {
         var b = blobs[i];
-        b.vx += (mouse.sx - b.x) * ATTRACT * b.depth;   // drift toward the pointer
+        b.vx += (mouse.sx - b.x) * ATTRACT * b.depth;
         b.vy += (mouse.sy - b.y) * ATTRACT * b.depth;
         b.vx *= b.fr; b.vy *= b.fr;
         b.x += b.vx; b.y += b.vy;
         b.life -= b.decay;
         if (b.life <= 0) { blobs.splice(i, 1); continue; }
-        var px = b.x + offX * PARALLAX * b.depth;       // pointer-relative parallax by depth
+        var px = b.x + offX * PARALLAX * b.depth;
         var py = b.y + offY * PARALLAX * b.depth;
         var rad = b.r * (1 + (1 - b.life) * 0.6) * (1 + audioLevel * 0.9);
         var alpha = Math.min(1, b.life) * 0.55 * (1 + audioLevel * 0.8);
@@ -245,11 +234,6 @@
       setMode: function (value) { mode = ['off','subtle','full'].includes(value) ? value : 'full'; canvas.hidden = mode === 'off'; if (mode === 'off') suspend(); else wake(); },
       setHoverColor: function (color) { hoverColor = color; lastColor = color || lastColor; },
 
-      // Taps the lightbox video's audio so the background can pulse with
-      // it. Wiring an element into a *suspended* AudioContext would
-      // silence the video, so this only connects when the context is
-      // actually running (e.g. created inside the click that opened the
-      // lightbox) and otherwise leaves playback completely untouched.
       attachAudio: function (media) {
         try {
           var AC = window.AudioContext || window.webkitAudioContext;
@@ -270,7 +254,7 @@
         } catch (e) { activeSource = null; }
       },
       detachAudio: function () {
-        if (activeSource) { try { activeSource.disconnect(); } catch (e) { /* already gone */ } }
+        if (activeSource) { try { activeSource.disconnect(); } catch (e) { } }
         activeSource = null;
       },
       debug: function () { return { blobs: blobs.length, spawned: spawnedTotal, visibleTiles: visibleTiles.size, audioLevel: audioLevel, mode:mode, busy:busy, scheduled:raf !== null }; },
@@ -278,10 +262,6 @@
     return api;
   }
 
-  // Header/footer hover: a spotlight that follows the pointer, a
-  // fainter wider ghost of it that trails well behind (the "trail"),
-  // and CSS-variable parallax (--px/--py in -1..1) that children read.
-  // Both followers are eased in JS, so no CSS transition is involved.
   function bindHoverFx(host) {
     if (!host || !window.matchMedia) return;
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -299,8 +279,8 @@
     }
     function step() {
       raf = 0;
-      cx += (tx - cx) * 0.2;  cy += (ty - cy) * 0.2;      // spotlight follows quickly...
-      hx += (tx - hx) * 0.055; hy += (ty - hy) * 0.055;   // ...its ghost lags well behind
+      cx += (tx - cx) * 0.2;  cy += (ty - cy) * 0.2;
+      hx += (tx - hx) * 0.055; hy += (ty - hy) * 0.055;
       apply();
       var settled = Math.abs(tx - cx) < 0.4 && Math.abs(ty - cy) < 0.4 &&
                     Math.abs(tx - hx) < 0.4 && Math.abs(ty - hy) < 0.4;
@@ -317,7 +297,7 @@
     host.addEventListener('pointerleave', function () {
       active = false;
       host.classList.remove('fx-on');
-      tx = w() / 2; ty = h() / 2;     // glide back to rest; parallax settles to zero
+      tx = w() / 2; ty = h() / 2;
       kick();
     });
   }

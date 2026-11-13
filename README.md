@@ -7,6 +7,9 @@ you trust. Your files stay on storage you control.
 
 [Quick start](#quick-start) · [User guide](docs/USAGE.md) · [Requirements and commands](docs/COMMANDS.md) · [Docker Hub publishing](docs/DOCKER_HUB.md)
 
+**Version 2.0** adds folder completion and guided access over SSH. Manual
+Compose now publishes to localhost by default.
+
 ## What you can do
 
 | Feature | How it works |
@@ -48,6 +51,11 @@ For an existing guided install, use **Add a media folder** to update its
 private configuration. Apply the change with the launcher’s printed Compose
 command. The container is recreated with its existing app volumes and the
 new read-only media mount.
+
+On a headless Linux server, run Start-Here in your SSH session and press
+**Tab** to complete a folder path. Select the mounted directory that contains
+the media. Then use an SSH port forward from your browsing machine to open
+the gallery. [Headless and NAS setup](docs/STARTER.md#headless-linux-over-ssh)
 
 ## Choose a deployment
 

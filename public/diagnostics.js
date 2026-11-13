@@ -6,9 +6,6 @@
 })(typeof window !== 'undefined' ? window : globalThis, function () {
   'use strict';
   var measuring = false;
-  // Passive timings are bounded and contain no filenames, searches or paths.
-  // The first thumbnail/frame stop observing once measured; catalog timings
-  // reuse requests the gallery already makes rather than adding polling.
   function createMeasurements(clock) {
     clock =
       clock ||
