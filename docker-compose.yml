@@ -5,6 +5,7 @@ services:
       args:
         INSTALL_AI_STACK: ${STREAM_AI_STACK:-false}
         AI_ACCELERATOR: ${STREAM_AI_ACCELERATOR:-cpu}
+        INSTALL_INTEL_VIDEO_DRIVER: ${STREAM_INTEL_VIDEO_DRIVER:-false}
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

@@ -46,16 +46,12 @@
     folders.forEach(function (folder) { option(folder.id, folder.name); });
     if (managedByMounts) {
       option('', 'All media');
-      if (!folders.length) {
-        element('p', config.isAdmin ? 'No media folders are mounted.' : 'No folders are available to you.', panel, 'folder-menu-note');
-      }
-      if (config.isAdmin) element('p', mountHelp, panel, 'folder-menu-note');
-    } else if (config.isAdmin) {
+      if (!folders.length) element('p', 'No media folders are mounted.', panel, 'folder-menu-note');
+      element('p', mountHelp, panel, 'folder-menu-note');
+    } else {
       if (!folders.length) element('p', 'Choose the folders you want here. Nested folders are included.', panel, 'folder-menu-note');
       var manage = element('button', 'Choose folders…', panel, 'folder-manage'); manage.type = 'button';
       manage.onclick = function () { close(function () { window.StreamSettings?.open('folders'); }); };
-    } else if (!folders.length) {
-      element('p', 'No folder shortcuts have been configured.', panel, 'folder-menu-note');
     }
   }
   function update(data, initial, changed) {
@@ -161,7 +157,7 @@
       return;
     }
     status.textContent = 'Name a folder and enter its path inside your mounted media folder. All nested folders are included.';
-    element('p', 'Example: name “Anime”, path “Entertainment/Anime”. These are shortcuts, not separate passwords or sharing rules.', pane, 'settings-footnote');
+    element('p', 'For example, name the shortcut “Anime” and enter “Entertainment/Anime” as its path.', pane, 'settings-footnote');
     var list = element('div', undefined, pane, 'folder-edit-list');
     var rows = [];
     function row(folder) {
@@ -196,7 +192,7 @@
         }) });
         result.folders.forEach(function (folder, index) { submitted[index].id = folder.id; });
         update(result, false, true);
-        if (pane.isConnected) status.textContent = 'Folder menu saved. Media, history and existing sharing rules are unchanged.';
+        if (pane.isConnected) status.textContent = 'Folder menu saved.';
       } catch (error) { if (pane.isConnected) status.textContent = error.message; }
       finally { controls.forEach(function (state) { state.control.disabled = state.disabled; }); }
     };

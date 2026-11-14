@@ -35,6 +35,77 @@ This adds GPU device access to the app, builds and starts/recreates it while ret
 
 Docker Desktop's NVIDIA passthrough support applies to Windows with WSL2; it does not expose an Apple GPU to these Linux containers. This does not prevent the Mac from hosting a library or its browser from decoding video. VidStream no longer includes NCNN/RIFE/Real-ESRGAN enhancement runtimes or their GPU setup.
 
+## Optional Intel Quick Sync for video encoding
+
+Quick Sync uses an Intel graphics media engine. Check the exact CPU model,
+graphics render device, and working FFmpeg encoder on the Linux host. A count
+of 12 CPU threads describes CPU capacity. Quick Sync capability also depends
+on the graphics hardware, driver, device permissions, and FFmpeg build.
+
+```sh
+lscpu
+ls -l /dev/dri/
+ffmpeg -hide_banner -encoders | grep h264_qsv
+```
+
+- `lscpu` prints the CPU model and logical CPU count.
+- `ls` lists the GPU render nodes and permissions. A render node is typically
+  called `renderD128`. Verify it belongs to Intel if there is more than one GPU.
+- The FFmpeg command checks whether the installed binary exposes the H.264
+  Quick Sync encoder. An encoder listing alone does not verify device access.
+
+Run a real Quick Sync test as the account that will run VidStream. Change
+the device path if your Intel GPU uses a different render node.
+
+```sh
+ffmpeg -hide_banner -v error -init_hw_device qsv=vidstream:hw,child_device=/dev/dri/renderD128 -f lavfi -i color=size=128x128:rate=24 -frames:v 4 -c:v h264_qsv -pix_fmt nv12 -f null -
+```
+
+This encodes four synthetic frames using Quick Sync and discards the
+output. It reads no library files and writes no files. Success is silent.
+
+For native hosting, set `VIDEO_ENCODER=qsv` and `QSV_DEVICE=/dev/dri/renderD128`
+in the server environment. Install the Intel VA-API driver that supports your
+GPU and give the account running VidStream access to its render node.
+VidStream attempts a small hardware encode and falls back to software if the
+device is unavailable or a specific encode fails. The server log reports
+whether Quick Sync is available at the first encode. Quick Sync affects new
+gallery preview encodes and compatible video copies that require an encode.
+Existing derivatives remain reusable. Media
+reads, remuxing, image work, hashing, and browser playback have their own costs.
+[FFmpeg hardware device options](https://ffmpeg.org/ffmpeg.html) · [Intel Linux media driver](https://github.com/intel/media-driver)
+
+On Linux Docker Engine, use the same render node in the container. For a
+Start-Here installation that uses `vidstream-starter:local`, build the local
+image with the optional Intel driver packages.
+
+```sh
+docker build --pull --build-arg INSTALL_INTEL_VIDEO_DRIVER=true -t vidstream-starter:local .
+```
+
+This refreshes the configured image base and builds the app and its optional
+drivers into the image your existing starter configuration references.
+Then merge these keys into the existing `stream` service and its existing
+`environment` mapping in the generated `compose.yaml`. Use your actual Intel
+render device on the host side of the device mapping.
+
+```yaml
+services:
+  stream:
+    devices:
+      - "/dev/dri/renderD128:/dev/dri/renderD128:rw"
+    environment:
+      VIDEO_ENCODER: qsv
+      QSV_DEVICE: /dev/dri/renderD128
+```
+
+Apply it using the same file and project you use for startup. Recreating
+the current service reuses its media and volumes. For manual Compose, set
+`STREAM_INTEL_VIDEO_DRIVER=true` in the private `.env` and add the same device
+and environment keys through a local override before rebuilding. Your Intel
+generation may need a driver newer than the packages in the image. Confirm
+an actual encode on the host before enabling this path. [Compose service devices](https://docs.docker.com/reference/compose-file/services/#devices)
+
 ## Moving or adding machines
 
 For an additional library, install the same app with fresh per-server state and connect it through Nodes. For a replacement server, stop the existing instance before moving its complete persistent state and source-media mapping. Keep each live SQLite database on its own host. See [Nodes](NODES.md) for direct library switching and the [command reference](COMMANDS.md) for mounts and backups.

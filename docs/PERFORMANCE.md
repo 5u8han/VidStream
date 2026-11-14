@@ -5,6 +5,24 @@ read-only mount. The server's catalog and generated derivatives live on
 persistent storage. The browser keeps a bounded working set of gallery
 media for the current page.
 
+## Find the slow stage
+
+| What you see | What to check |
+| --- | --- |
+| The gallery takes a while to list items, even with previews paused | In **Check playback smoothness**, compare the catalog response time with the first visible thumbnail time. A slow catalog response points to server work such as SQLite queries or an import competing for resources. |
+| Tiles appear quickly but preview clips wait | Check whether the files are still importing. If the clips are ready, inspect the browser Network timing for `/preview` or `/poster`. Those paths use generated assets. A slow response there can come from the cache disk, server load, or the connection. |
+| Clips start promptly but scrolling drops frames | Compare **4** or **8** simultaneous previews with **64**, leaving the same page and network in use. Simultaneous decoders and compositing run on the viewing device. |
+| Full playback is slow, but optimized previews are quick | Inspect **Stats for nerds** for buffering and playback source. The original may be waiting on the DAS, or the host may be preparing a compatible copy. |
+
+Netflix describes a pipeline that prepares multiple encodes ahead of playback
+and puts frequently viewed content close to clients through Open Connect. The
+equivalent for this local library is to generate small previews in advance,
+store them on the server's SSD, and let the browsing device decode only the
+nearby videos. The DAS then handles initial import and full original playback.
+Adaptive bitrate is useful for a single stream on an unstable link. Dense
+gallery performance still depends on the total number of active videos.
+[Netflix encoding](https://netflixtechblog.com/optimized-shot-based-encodes-now-streaming-4b9464204830) · [Netflix Open Connect](https://openconnect.netflix.com/Open-Connect-Overview.pdf)
+
 ## Set up the server
 
 For a large DAS library, keep `/app/data` and `/app/.cache` on a local SSD.

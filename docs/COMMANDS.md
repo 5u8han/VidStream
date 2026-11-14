@@ -133,6 +133,27 @@ Configure `MEDIA_DIR`, `DATA_DIR`, `CACHE_DIR` and `ORIGINALS_DIR` in the shell 
 | `npm run launcher` | Opens the optional local configuration/start window for native operation. Use it to select paths and start or stop the native server. |
 | `python3 scripts/media-inventory.py "/path/to/media"` | Summarizes an existing media tree by depth, extension, sizes and largest subtrees. It reads directory entries and metadata and prints the report. Folder labels are anonymous by default. Adding `--show-folder-names` includes relative folder names. |
 
+For a native test on Ubuntu, use a small mounted folder and separate SSD
+directories for database and cache. From the checkout, replace the sample
+source path and start a private instance.
+
+```sh
+HOST=127.0.0.1 PORT=4000 MEDIA_DIR="/mnt/das/sample" DATA_DIR="$HOME/vidstream-native/data" CACHE_DIR="$HOME/vidstream-native/cache" ORIGINALS_DIR="$HOME/vidstream-native/originals" node server.js
+```
+
+This runs the server in the foreground, on port 4000, with separate native
+state. It reads the selected source during import and writes generated
+files and the catalog under `$HOME/vidstream-native`. It creates or uses an
+owner account in that state directory. Reach a headless instance through an
+[SSH port forward](STARTER.md#headless-linux-over-ssh), using server port 4000.
+A long-running installation can be managed by your operating system's service
+manager. An existing HTTP reverse proxy can continue to serve a URL like
+`http://subuntu/` by forwarding to this port.
+Avoid running Docker and native VidStream against the same state directory.
+To migrate an existing deployment, stop it and keep the same media-relative
+paths as you copy its persisted state. See [Intel Quick Sync](HARDWARE.md#optional-intel-quick-sync-for-video-encoding)
+for native and Docker device access.
+
 ## Release and deployment checks
 
 | Command | Effect |

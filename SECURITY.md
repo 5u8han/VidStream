@@ -5,13 +5,12 @@ VidStream serves media from your own storage. Keep your `.env`, generated `compo
 ## Before allowing anyone outside your LAN
 
 1. Complete owner setup with a long unique passphrase, or set `ADMIN_USERNAME` / `ADMIN_PASSWORD` or configure LDAPS.
-2. Set `REQUIRE_LOGIN=1` if every visitor must authenticate, and `ALLOW_INDEXING=0`.
+2. Verify that a signed-out browser is redirected to sign-in when opening a library or media link.
 3. Put Stream behind HTTPS and an access-aware reverse proxy. Avoid exposing the container port directly to the internet.
 4. Never enable broad caching of personalized/private media via a CDN.
 5. Back up the entire data and cache volumes, including security settings and SQLite. Original media is never automatically backed up by Stream.
-6. Test signed-out sessions and shared albums before publishing any content.
 
-Starting in 1.4, a server without credentials is locked behind owner setup. The one-time setup code is stored with owner-only file permissions and printed in the server log; it is never returned by a public API. Setup creates a salted scrypt password hash and a new session signing secret in the persistent data directory. Logout clears the session and no longer restores anonymous admin access. Existing environment-password and LDAP configuration remain supported. Settings can require sign-in for the entire library. Keep setup codes, persistent data and server logs private.
+Starting in 2.2, library pages, feeds, files, and downloads all require owner sign-in. Upgrades ignore previous guest visibility and sign-in switches. A server without credentials is locked behind owner setup. The one-time setup code is stored with owner-only file permissions and printed in the server log. Setup creates a salted scrypt password hash and a session signing secret in the persistent data directory. Existing environment-password and LDAP configuration remain supported. Keep setup codes, persistent data, and server logs private.
 
 New dashboard, AI download, and rescan endpoints require admin authorization. The AI installer uses a fixed whitelist of model presets, not user-provided download URLs. GPU detection only shows devices visible to the server. Video enhancement runtimes, downloads and job APIs have been removed. Historical files are preserved, and no saved enhancement job is executed. Native Mac telemetry uses read-only IOKit/netstat without administrator access. Avoid mounting the Docker socket, root filesystem, or system logs into Stream.
 

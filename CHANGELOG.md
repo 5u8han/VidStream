@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.0 — Owner access, archived originals and Intel Quick Sync
+
+- Require owner sign-in for library pages, media, feeds, and downloads. Remove the guest sharing controls and ignore old guest settings during upgrades.
+- Add optional conversion to the standalone media audit. Validate each replacement before archiving its original in a sibling `.vidstream-source-originals` directory. VidStream excludes that directory from the library.
+- Support opt-in Intel Quick Sync H.264 encoding for newly generated previews and compatible playback copies, with software fallback.
+
 ## 2.1.0 — Large-library browsing and import
 
 - Reuse a bounded set of recent posters and optimized video previews while browsing. Resume visible previews when the tab returns. Pending optimized previews show a poster until their generated clip is available.

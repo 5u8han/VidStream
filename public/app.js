@@ -22,7 +22,7 @@
 
   if (CONFIG.locked) {
     appEl.innerHTML = '';
-    var lockedModal = buildSignInModal({ locked: true });
+    var lockedModal = buildSignInModal();
     appEl.appendChild(lockedModal.root);
     window.StreamNodes?.mountLocked(appEl);
     lockedModal.open();
@@ -36,14 +36,11 @@
     close: '<path d="M6 6L18 18M18 6L6 18"/>',
     chevronLeft: '<path d="M15 6l-6 6 6 6"/>',
     chevronRight: '<path d="M9 6l6 6-6 6"/>',
-    share: '<circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.7l7.4-4.4M8.3 13.3l7.4 4.4"/>',
     download: '<path d="M12 3v11M7.5 10L12 14.5 16.5 10M5 19h14"/>',
     refresh: '<path d="M4 10a8 8 0 0114-5.3M20 5v5h-5M20 14a8 8 0 01-14 5.3M4 19v-5h5"/>',
     rss: '<circle cx="6.2" cy="17.8" r="1.6" fill="currentColor" stroke="none"/><path d="M4 10.5a9.5 9.5 0 019.5 9.5M4 4.8a15.2 15.2 0 0115.2 15.2"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="m9 3 1-2h4l1 2 3 2 2 1v4l-2 1v3l2 1v4l-2 1-3 2-1 2h-4l-1-2-3-2-2-1v-4l2-1v-3l-2-1V6l2-1z"/>',
     sliders: '<line x1="4" y1="7" x2="20" y2="7"/><circle cx="14" cy="7" r="2" fill="currentColor"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="8" cy="12" r="2" fill="currentColor"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="16" cy="17" r="2" fill="currentColor"/>',
-    eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
-    eyeOff: '<path d="M3 3l18 18"/><path d="M10.6 5.2A10.6 10.6 0 0122 12s-1.1 2.2-3.2 4M6.5 6.7C3.7 8.6 2 12 2 12s3.5 7 10 7c1.4 0 2.7-.3 3.9-.7"/><path d="M9.5 9.6a3 3 0 004.1 4.2"/>',
     play: '<path d="M7 5l12 7-12 7V5z" fill="currentColor"/>',
     pause: '<rect x="6" y="5" width="4" height="14" fill="currentColor"/><rect x="14" y="5" width="4" height="14" fill="currentColor"/>',
     search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>',
@@ -163,7 +160,6 @@
   var lightbox = buildLightbox();
   if (bg) lightbox.root.classList.add('ambient');
   var toastEl = el('div', { class: 'toast' });
-  var signInModal = buildSignInModal();
   var selectionBar = buildSelectionBar();
   var librarySummary = buildLibrarySummary();
   var filesModal = buildFilesModal();
@@ -174,7 +170,6 @@
   appEl.appendChild(librarySummary.root);
   appEl.appendChild(linksBottom);
   appEl.appendChild(lightbox.root);
-  appEl.appendChild(signInModal.root);
   appEl.appendChild(filesModal.root);
   appEl.appendChild(dashboardModal.root);
   appEl.appendChild(selectionBar.root);
@@ -455,7 +450,7 @@
     header.querySelectorAll('input[type="date"]').forEach(function(input){input.value='';});
     header.querySelector('[aria-label="Filter by type"]').value='';
     header.querySelector('[aria-label="Minimum resolution"]').value='0';
-    var search=header.querySelector('input[type="search"]');if(search)search.value='';refreshContainsHighlight();renderAlbumBulkAction();
+    var search=header.querySelector('input[type="search"]');if(search)search.value='';refreshContainsHighlight();
   }
   function remeasureAndReflow() {
     measureColumns();
@@ -523,7 +518,6 @@
     albumSelect.addEventListener('change', function () {
       state.album = albumSelect.value || null;
       resetAndLoad();
-      renderAlbumBulkAction();
     });
     controls.appendChild(albumSelect);
     header._albumSelect = albumSelect;
@@ -567,14 +561,6 @@
     if (CONFIG.showRssFeed) {
       var rssLink = el('a', { class: 'icon-btn', href: '/feed.xml', title: 'RSS feed', 'aria-label': 'RSS feed' }, icon('rss'));
       controls.appendChild(rssLink);
-    }
-
-    if (isAdmin) {
-      controls.appendChild(el('span', { class: 'admin-badge' }, 'Admin'));
-    } else if (CONFIG.adminEnabled) {
-      var signInBtn = el('button', { class: 'icon-btn', title: 'Admin sign in', 'aria-label': 'Admin sign in' }, icon('eye'));
-      signInBtn.addEventListener('click', function () { signInModal.open(); });
-      controls.appendChild(signInBtn);
     }
 
     header.appendChild(title);
@@ -1011,31 +997,6 @@
     });
   }
 
-  var albumBulkEl = null;
-  function renderAlbumBulkAction() {
-    if (albumBulkEl) { albumBulkEl.remove(); albumBulkEl = null; }
-    if (!isAdmin || !state.album) return;
-    albumBulkEl = el('div', { class: 'album-bulk-action' });
-    var btn = el('button', {}, 'Mark "' + state.album + '" guest-visible');
-    var isMakingPrivate = false;
-    btn.addEventListener('click', function () {
-      var guest = !isMakingPrivate;
-      fetch('/api/albums/visibility', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ album: state.album, guest: guest }),
-      }).then(function (r) { return r.json(); }).then(function (data) {
-        showToast((data.changed || 0) + ' item(s) updated');
-        isMakingPrivate = guest;
-        btn.textContent = guest ? 'Mark "' + state.album + '" private' : 'Mark "' + state.album + '" guest-visible';
-        resetAndLoad();
-      });
-    });
-    albumBulkEl.appendChild(btn);
-    main.insertBefore(albumBulkEl, grid);
-  }
-
-
   function buildSelectionBar() {
     var bar = el('div', { class: 'selection-bar' });
     var countEl = el('div', { class: 'selection-count mono' }, '0 selected');
@@ -1046,16 +1007,6 @@
     downloadBtn.appendChild(el('span', {}, 'Download'));
     downloadBtn.addEventListener('click', downloadSelected);
     actions.appendChild(downloadBtn);
-
-    var visGuestBtn = null, visPrivateBtn = null;
-    if (isAdmin) {
-      visGuestBtn = el('button', { class: 'selection-btn' }, 'Make guest-visible');
-      visGuestBtn.addEventListener('click', function () { bulkSetVisibility(true); });
-      actions.appendChild(visGuestBtn);
-      visPrivateBtn = el('button', { class: 'selection-btn' }, 'Make private');
-      visPrivateBtn.addEventListener('click', function () { bulkSetVisibility(false); });
-      actions.appendChild(visPrivateBtn);
-    }
 
     var cancelBtn = el('button', { class: 'selection-btn selection-cancel' }, 'Cancel');
     cancelBtn.addEventListener('click', exitSelectionMode);
@@ -1100,21 +1051,6 @@
       tile.classList.add('selected');
     }
     updateSelectionUI();
-  }
-
-  function bulkSetVisibility(guest) {
-    var ids = Array.from(selection.ids);
-    Promise.all(ids.map(function (id) {
-      return fetch('/api/items/' + encodeURIComponent(id) + '/visibility', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guest: guest }),
-      });
-    })).then(function () {
-      showToast(ids.length + ' item(s) updated');
-      exitSelectionMode();
-      resetAndLoad();
-    });
   }
 
   function downloadSelected() {
@@ -1504,34 +1440,6 @@
     }
   });
 
-  function paintVisibilityButton(btn, guest) {
-    btn.classList.toggle('is-guest', guest);
-    btn.innerHTML = icon(guest ? 'eye' : 'eyeOff');
-    btn.title = guest ? 'Guest-visible — click to make private' : 'Private — click to make guest-visible';
-  }
-
-  function syncVisibilityUI(item) {
-    var tile = grid.querySelector('[data-item-id="' + item.id + '"] .tile-visibility');
-    if (tile) paintVisibilityButton(tile, item.guest);
-    if (lb.item && lb.item.id === item.id) paintVisibilityButton(lightbox.visBtn, item.guest);
-  }
-
-  function toggleItemVisibility(item) {
-    var next = !item.guest;
-    fetch('/api/items/' + encodeURIComponent(item.id) + '/visibility', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ guest: next }),
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        item.guest = data.item.guest;
-        syncVisibilityUI(item);
-        showToast(item.guest ? 'Now guest-visible' : 'Now private');
-      })
-      .catch(function () { showToast('Could not update visibility'); });
-  }
-
   function creatorColor(name) {return window.StreamLayout.color(name,storageGet('stream-artist-palette','default'));}
 
   function addTile(item, parent) {
@@ -1624,13 +1532,6 @@
       best.classList.toggle('active', item.favorite === true);
       best.addEventListener('click', function (e) { e.stopPropagation(); setPreference(item, 'favorite'); });
       tile.appendChild(best);
-      var visBtn = el('button', { class: 'tile-visibility', 'aria-label': 'Toggle guest visibility' });
-      paintVisibilityButton(visBtn, item.guest);
-      visBtn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        toggleItemVisibility(item);
-      });
-      tile.appendChild(visBtn);
     }
 
     var selectMark = el('span', { class: 'tile-select-mark' }, icon('checkCircle'));
@@ -1722,7 +1623,6 @@
     var bar = el('div', { class: 'lightbox-bar' });
     var counter = el('div', { class: 'frame-counter mono' }, '');
     var actions = el('div', { class: 'lightbox-actions' });
-    var visBtn = el('button', { class: 'icon-btn', title: 'Toggle guest visibility', 'aria-label': 'Toggle guest visibility', style: 'display:none' }, icon('eyeOff'));
     var slideshowBtn = el('button', { class: 'icon-btn', title: 'Play slideshow', 'aria-label': 'Play slideshow' }, icon('play'));
     var editBtn = el('button', { class: 'icon-btn', title: 'Quick edit', 'aria-label': 'Quick edit' }, icon('edit'));
     var infoBtn = el('button', { class: 'icon-btn', title: 'Info', 'aria-label': 'Photo/video info' }, icon('info'));
@@ -1731,7 +1631,6 @@
     var speed = el('select', { class: 'player-speed', 'aria-label': 'Playback speed', title: 'Playback speed', style: 'display:none' });
     [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2].forEach(function (rate) { speed.add(new Option(rate + '×', String(rate))); });
     speed.value = '1';
-    var shareBtn = el('button', { class: 'icon-btn', title: 'Share', 'aria-label': 'Share' }, icon('share'));
     var downloadLink = el('a', { class: 'icon-btn', title: 'Download original', 'aria-label': 'Download original' }, icon('download'));
     var closeBtn = el('button', { class: 'icon-btn', title: 'Close', 'aria-label': 'Close' }, icon('close'));
     var preferenceButtons = {};
@@ -1740,14 +1639,12 @@
       button.addEventListener('click', function () { setPreference(lb.item, entry[0]); });
       preferenceButtons[entry[0]] = button; actions.appendChild(button);
     });
-    actions.appendChild(visBtn);
     actions.appendChild(slideshowBtn);
     actions.appendChild(editBtn);
     actions.appendChild(infoBtn);
     actions.appendChild(statsBtn);
     actions.appendChild(speed);
     actions.appendChild(viewerSettingsBtn);
-    actions.appendChild(shareBtn);
     actions.appendChild(downloadLink);
     bar.appendChild(counter);
     bar.appendChild(actions);
@@ -1810,8 +1707,6 @@
     root.addEventListener('click', function (e) { if (e.target === root) { stopSlideshow(); closeLightbox(); } });
     prevBtn.addEventListener('click', function () { stopSlideshow(); navigate(-1); });
     nextBtn.addEventListener('click', function () { stopSlideshow(); navigate(1); });
-    shareBtn.addEventListener('click', shareCurrent);
-    visBtn.addEventListener('click', function () { toggleItemVisibility(lb.item); });
     slideshowBtn.addEventListener('click', toggleSlideshow);
     statsBtn.addEventListener('click', function () { setVideoStatsEnabled(!videoStatsEnabled); });
     viewerSettingsBtn.addEventListener('click', window.StreamSettings.open);
@@ -1856,7 +1751,7 @@
     return {
       preferenceButtons: preferenceButtons, savedEditor: savedEditor,
       root: root, card: card, speed: speed, closeBtn: closeBtn, counter: counter, mediaWrap: mediaWrap, prevBtn: prevBtn, nextBtn: nextBtn,
-      caption: caption, downloadLink: downloadLink, visBtn: visBtn, slideshowBtn: slideshowBtn,
+      caption: caption, downloadLink: downloadLink, slideshowBtn: slideshowBtn,
       editBtn: editBtn, infoBtn: infoBtn, statsBtn: statsBtn, editPanel: editPanel, infoPanel: infoPanel, infoList: infoList,
       rotateBtn: rotateBtn, brightnessSlider: brightnessSlider, volumeGroup: volumeGroup, volumeSlider: volumeSlider,
     };
@@ -2067,13 +1962,6 @@
     } else {
       lightbox.downloadLink.style.display = 'none';
     }
-    lightbox.root.querySelector('.icon-btn[title="Share"]').style.display = CONFIG.allowSharing ? '' : 'none';
-    if (isAdmin) {
-      lightbox.visBtn.style.display = '';
-      paintVisibilityButton(lightbox.visBtn, lb.item.guest);
-    } else {
-      lightbox.visBtn.style.display = 'none';
-    }
     renderInfoPanel(lb.item);
   }
 
@@ -2207,29 +2095,17 @@
     showToast._t = setTimeout(function () { toastEl.classList.remove('show'); }, 2200);
   }
 
-  function shareCurrent() {
-    if (!lb.item) return;
-    var url = (CONFIG.url || location.origin) + '/' + lb.item.id;
-    if (navigator.share) {
-      navigator.share({ title: lb.item.filename, url: url }).catch(function () {});
-    } else if (navigator.clipboard) {
-      navigator.clipboard.writeText(url).then(function () { showToast('Link copied'); });
-    }
-  }
-
-
-  function buildSignInModal(opts) {
+  function buildSignInModal() {
     var setup = CONFIG.setupRequired;
-    var locked = Boolean(opts && opts.locked);
-    var scrim = el('div', { class: 'modal-scrim' + (locked ? ' locked' : ''), 'aria-hidden': 'true' });
+    var scrim = el('div', { class: 'modal-scrim locked', 'aria-hidden': 'true' });
     scrim.inert = true;
     var card = el('form', { class: 'modal-card signin-card', 'aria-label': setup ? 'Set up owner' : 'Sign in' });
     card.appendChild(el('div', { class: 'modal-mark', 'aria-hidden': 'true' }));
     card.appendChild(el('p', { class: 'signin-eyebrow' }, 'Your media · Your machine'));
     var heading = el('h1');
-    heading.textContent = locked ? CONFIG.title : 'Sign in';
+    heading.textContent = CONFIG.title;
     card.appendChild(heading);
-    var sub = el('p', { class: 'modal-sub' }, locked ? 'This stream is private. Sign in to continue.' : 'Sign in to see the full library.');
+    var sub = el('p', { class: 'modal-sub' }, 'This stream is private. Sign in to continue.');
     sub.setAttribute('role', 'status');
     card.appendChild(sub);
     var userInput = el('input', { type: 'text', name: 'username', placeholder: 'Username', autocomplete: 'username', autocapitalize: 'none', spellcheck: 'false' });
@@ -2239,44 +2115,25 @@
     var input = el('input', { type: 'password', name: 'password', placeholder: 'Password', autocomplete: 'current-password' });
     input.setAttribute('aria-label','Password');if(setup){input.autocomplete='new-password';input.minLength=10;input.placeholder='New passphrase (10+ characters)';}
     card.appendChild(input);
-    var submit = el('button', { type: 'submit' }, setup ? 'Create owner & lock library' : 'Sign in');
+    var submit = el('button', { type: 'submit' }, setup ? 'Create owner account' : 'Sign in');
     card.appendChild(submit);
-    var cancel = null;
-    if (!locked) {
-      cancel = el('button', { type: 'button', class: 'modal-cancel' }, 'Cancel');
-      card.appendChild(cancel);
-    }
     scrim.appendChild(card);
-    var returnFocus = null;
 
     function open() {
-      returnFocus = document.activeElement;
       scrim.inert = false;
       scrim.setAttribute('aria-hidden', 'false');
       scrim.classList.add('open');
       entrance?.signIn(card);
       setTimeout(function () { userInput.focus(); }, 50);
     }
-    function close() {
-      if (locked) return;
-      scrim.classList.remove('open');
-      if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
-      scrim.inert = true;
-      scrim.setAttribute('aria-hidden', 'true');
-      input.value = '';
-    }
     card.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape' && !locked) {
-        event.preventDefault(); event.stopPropagation(); close();
-      } else if (event.key === 'Tab') {
+      if (event.key === 'Tab') {
         var controls = Array.from(card.querySelectorAll('input, button')).filter(function (control) { return !control.disabled; });
         var first = controls[0], last = controls[controls.length - 1];
         if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
       }
     });
-    if (cancel) cancel.addEventListener('click', close);
-    scrim.addEventListener('click', function (e) { if (e.target === scrim) close(); });
     card.addEventListener('submit', function (e) {
       e.preventDefault();
       submit.disabled = true;
@@ -2290,22 +2147,21 @@
         .then(function (res) {
           if (res.ok) { entrance?.state.signedIn(); location.reload(); return; }
           submit.disabled = false;
-          submit.textContent = setup ? 'Create owner & lock library' : 'Sign in';
+          submit.textContent = setup ? 'Create owner account' : 'Sign in';
           card.classList.add('modal-shake');
           sub.textContent = res.data.error || 'Incorrect username or password.';
           input.value = '';
           input.focus();
           setTimeout(function () { card.classList.remove('modal-shake'); }, 400);
         })
-        .catch(function () { submit.disabled = false; submit.textContent = setup ? 'Create owner & lock library' : 'Sign in'; sub.textContent = 'Something went wrong. Try again.'; });
+        .catch(function () { submit.disabled = false; submit.textContent = setup ? 'Create owner account' : 'Sign in'; sub.textContent = 'Something went wrong. Try again.'; });
     });
 
-    return { root: scrim, open: open, close: close };
+    return { root: scrim, open: open };
   }
 
 
   measureColumns();
-  renderAlbumBulkAction();
 
   if (INITIAL_ITEM) {
     openLightbox(INITIAL_ITEM, false);

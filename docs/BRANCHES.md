@@ -27,9 +27,7 @@ The earlier consolidated main version `1.8.0` additionally passed 115 unit/integ
 
 In the reported case, a forced browser reload made Nodes appear. Rebuilding a container does not reload JavaScript already running in an open tab. The container inspected during diagnosis was already a node build with its node assets present.
 
-Settings now displays the actual loaded version, browser origin, owner/guest state and whether Nodes is included. Asset URLs carry the application version on a fresh page load. A separate confirmed bug was also fixed: opening an obsolete media URL previously returned a page shell with the owner flag missing, even for an authenticated owner. The fixed shell preserves the role without exposing unavailable/private media.
-
-Node configuration remains owner-only. Main shows an explanatory Nodes entry for guest views instead of silently omitting the category; this does not grant access to its private APIs or directory.
+After signing in, Settings shows the loaded version, browser address, and whether Nodes is included. Asset URLs carry the application version on a fresh page load. Configure connections in **Settings → Nodes**.
 
 One inspected deployment was built from a downloaded ZIP folder rather than this Git checkout. A Git update in one folder does not update source in another folder. Build/recreate from the same deployment folder/project you intend to run. Keep the existing media mounts, `.env`, and persistent volume names when changing a deployment's source location; changing the Compose project name can select different volumes.
 

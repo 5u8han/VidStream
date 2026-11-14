@@ -76,7 +76,6 @@
 .signin-card input:hover { border-color: color-mix(in srgb, var(--text-muted) 60%, var(--border)); }
 .signin-card button[type="submit"] { min-height: 44px; border-radius: 10px; }
 .signin-card button[type="submit"]:disabled { cursor: wait; opacity: .65; }
-.signin-card .modal-cancel { min-height: 32px; }
 
 .entrance-welcome {
   position: fixed;

@@ -14,6 +14,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+ARG INSTALL_INTEL_VIDEO_DRIVER=false
+RUN if [ "$INSTALL_INTEL_VIDEO_DRIVER" = "true" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends intel-media-va-driver i965-va-driver && \
+      rm -rf /var/lib/apt/lists/*; \
+    fi
+
 ARG INSTALL_AI_STACK=false
 ARG AI_ACCELERATOR=cpu
 RUN if [ "$INSTALL_AI_STACK" = "true" ]; then \

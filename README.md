@@ -2,14 +2,14 @@
 
 **A self-hosted photo and video gallery for the files you already have.** Run
 VidStream on your computer, NAS, or home server. Open it in a browser to
-browse your folders, play videos, and share selected media with people
-you trust. Your files stay on storage you control.
+browse your folders, play videos, and review what you want to keep. Your
+files stay on storage you control.
 
 [Quick start](#quick-start) · [User guide](docs/USAGE.md) · [Requirements and commands](docs/COMMANDS.md) · [Docker Hub publishing](docs/DOCKER_HUB.md)
 
-**Version 2.1** improves large-library imports, scroll-back, and tab resume.
-See the [large-library performance guide](docs/PERFORMANCE.md) for cache and
-startup settings.
+**Version 2.2** requires owner sign-in, adds optional Intel Quick Sync encoding
+and lets the standalone audit create compatible viewing copies while archiving
+originals beside them. [Large-library performance guide](docs/PERFORMANCE.md)
 
 ## What you can do
 
@@ -18,7 +18,7 @@ startup settings.
 | Browse and play | A dense gallery with muted video previews, adjustable tiles, filters, and a responsive lightbox. Playback includes seeking, speed control, and optional statistics. |
 | Organize several folders | Mount only the folders you want to serve. Switch between them in the top-left menu, with the first selected folder opening by default. |
 | Keep track of media | Save favorites, pins, and bookmarks, resume playback, and review viewing history. The SQLite catalog retains these across container rebuilds. |
-| Share with controls | Create an owner account, control guest visibility, and require sign-in when appropriate. Media mounts are read-only in guided setup. |
+| Keep the library private | Catalogs, playback, and downloads require owner sign-in. Guided setup mounts source media read-only. |
 | Connect independent servers | Save the addresses of other VidStream installations and switch libraries from the top-center menu. Each server manages its own media, catalog, and sign-in. |
 | Inspect and maintain | View storage and server resources, run catalog maintenance, and create catalog backups. Optional local recognition makes images and videos easier to find. |
 
@@ -68,8 +68,8 @@ the gallery. [Headless and NAS setup](docs/STARTER.md#headless-linux-over-ssh)
 | Native Node.js | Run on the host using its media tools and resources | [Native setup](docs/COMMANDS.md#native-commands) · [Hardware](docs/HARDWARE.md) |
 
 Start-Here publishes to the setup machine by default. For LAN access, use a
-reachable host address and review sign-in and guest visibility before
-sharing. Keep the generated Compose file, credentials, and media private.
+reachable host address and complete owner setup. Keep the generated Compose
+file, credentials, and media private.
 [Security and privacy](SECURITY.md)
 
 ## Tech stack
@@ -94,12 +94,12 @@ workflow, then mount the finished files.
 
 | I want to… | Read |
 | --- | --- |
-| Use the gallery, player, collections, dashboard, and sharing controls | [User guide](docs/USAGE.md) |
+| Use the gallery, player, collections, and dashboard | [User guide](docs/USAGE.md) |
 | Install, start, stop, update, back up, or test the app | [Requirements and commands](docs/COMMANDS.md) |
 | Choose folder shortcuts or mount specific source directories | [Folder shortcuts](docs/FOLDERS.md) · [Mounted folders](docs/MOUNTED_FOLDERS.md) |
 | Configure GPU access, a RAM cache, or connected servers | [Hardware](docs/HARDWARE.md) · [RAM cache](docs/RAM_CACHE.md) · [Nodes](docs/NODES.md) |
 | Tune a large library or troubleshoot preview stalls | [Large-library performance](docs/PERFORMANCE.md) |
-| Check source videos for decode errors | [Standalone media audit](docs/MEDIA_AUDIT.md) |
+| Check source videos, create compatible copies, and archive originals | [Standalone media audit](docs/MEDIA_AUDIT.md) |
 | Publish and verify the Docker Hub image | [Docker Hub publishing](docs/DOCKER_HUB.md) |
 | Upgrade an older installation or review changes | [Storage migration](docs/BRANCHES.md#retain-existing-storage-before-rebuilding) · [Changelog](CHANGELOG.md) |
 

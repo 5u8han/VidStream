@@ -10,14 +10,14 @@ const { AiManager } = require('./lib/ai-manager');
 const { Scanner } = require('./lib/scanner');
 const { Router } = require('./lib/router');
 const { serveFile } = require('./lib/serve-file');
-const { isAdmin, authConfigured, hasSameOrigin } = require('./lib/auth');
+const { isAdmin, hasSameOrigin } = require('./lib/auth');
 const { renderShell } = require('./lib/template');
 
 const { pageHandler } = require('./lib/handlers/page');
 const { mediaHandler } = require('./lib/handlers/media');
 const {
   itemsHandler, itemHandler, rescanHandler, healthHandler, libraryStatusHandler, readyPreviewsHandler,
-  setItemVisibilityHandler, setAlbumVisibilityHandler, duplicatesHandler, dashboardHandler, dashboardFilesHandler, aiStatusHandler, aiUpdateHandler, aiInstallHandler,
+  duplicatesHandler, dashboardHandler, dashboardFilesHandler, aiStatusHandler, aiUpdateHandler, aiInstallHandler,
 } = require('./lib/handlers/api');
 const { feedHandler } = require('./lib/feed');
 const { loginHandler, logoutHandler, setupHandler } = require('./lib/handlers/auth');
@@ -37,7 +37,6 @@ cfg.sessionCookieName = 'stream_session_' + nodes.id.replace(/-/g, '');
 Object.defineProperty(cfg, 'node', { get: () => ({ id: nodes.id, name: nodes.descriptor().name }) });
 const nodeHandlers = require('./lib/handlers/nodes').nodesHandlers(cfg, nodes);
 const coordinator = new (require('./lib/work-coordinator').WorkCoordinator)(db.store);
-if(!cfg.setupRequired)cfg.requireLogin=db.store.setting('requireLogin',cfg.requireLogin);
 const scanner = new Scanner(cfg, db, {
   coordinator,
   onLog: (msg) => console.log(`[stream] ${msg}`),
@@ -95,8 +94,6 @@ router.get('/api/dashboard/files', dashboardFilesHandler(cfg, db));
 router.get('/api/ai', aiStatusHandler(cfg, ai));
 router.post('/api/ai', aiUpdateHandler(cfg, ai));
 router.post('/api/ai/install', aiInstallHandler(cfg, ai));
-router.post('/api/items/:id/visibility', setItemVisibilityHandler(cfg, db));
-router.post('/api/albums/visibility', setAlbumVisibilityHandler(cfg, db));
 router.get('/api/duplicates', duplicatesHandler(cfg, db));
 router.post('/api/download-zip', downloadZipHandler(cfg, db));
 router.post('/api/rescan', rescanHandler(cfg, db, scanner));
@@ -131,26 +128,25 @@ async function handleRequest(req, res) {
     return serveFile(req, res, path.join(PUBLIC_DIR, pathname));
   }
 
+  res.setHeader('Cache-Control', 'private, no-store');
+
   if (req.method === 'POST' && (req.headers['sec-fetch-site'] === 'cross-site' || !hasSameOrigin(req, cfg))) {
     res.writeHead(403, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Same-origin request required' }));
     return;
   }
 
-  if ((cfg.setupRequired || (cfg.requireLogin && authConfigured(cfg))) && !isAdmin(req, cfg)) {
-    const open = pathname === '/api/login' || pathname === '/api/setup' || pathname === '/api/logout' || pathname === '/health' || pathname === '/api/node-info';
-    if (!open) {
-      if (pathname.startsWith('/api/') || pathname.startsWith('/media/') || pathname === '/feed.xml') {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Sign-in required' }));
-        return;
-      }
-      if (req.method === 'GET') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
-        res.end(renderShell(cfg, { locked: true }));
-        return;
-      }
+  const publicRead = req.method === 'GET' && (pathname === '/health' || pathname === '/api/node-info');
+  const publicAuth = req.method === 'POST' && ['/api/login', '/api/setup', '/api/logout'].includes(pathname);
+  if (!publicRead && !publicAuth && !isAdmin(req, cfg)) {
+    if (req.method !== 'GET' || pathname.startsWith('/api/') || pathname.startsWith('/media/') || pathname === '/feed.xml') {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Sign-in required' }));
+      return;
     }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(renderShell(cfg, { locked: true }));
+    return;
   }
 
   const match = router.match(req.method, pathname);

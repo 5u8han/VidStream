@@ -207,7 +207,7 @@
         action('Manage libraries in Settings', panel, function () {
           afterClose = function () { window.StreamSettings?.open(); }; back();
         });
-      } else text('p', 'Sign in to manage connected libraries.', panel, 'node-help');
+      }
       if (home && home !== location.origin && !homeConfirmed) action('Remember this return address', panel, function () {
         saveHome(home); render(); panel.querySelector('.node-return')?.focus({ preventScroll: true });
       });
@@ -230,12 +230,8 @@
   }
 
   async function settings(pane) {
-    if (!pane) return;
+    if (!pane || !config.isAdmin) return;
     pane.replaceChildren(); pane.classList.add('node-settings');
-    if (!config.isAdmin) {
-      text('p', 'Owner sign-in required to manage nodes. Close Settings and choose Admin sign in.', pane, 'node-help');
-      return;
-    }
     var dialog = pane.closest('dialog'), initialized = false, poll = null;
     function alive() { return pane.isConnected && (!dialog || dialog.open); }
     var status = text('p', 'Loading library connections…', pane, 'node-status');

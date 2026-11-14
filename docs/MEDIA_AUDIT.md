@@ -52,7 +52,7 @@ checksums from a known-good copy. Recover missing data from an independent
 original or backup when available.
 [FFmpeg options](https://ffmpeg.org/ffmpeg.html) · [ffprobe options](https://ffmpeg.org/ffprobe-all.html)
 
-## Choose viewing copies after reviewing the results
+## Create viewing copies and archive the originals
 
 The report's compatibility field is a hint, separate from decode results.
 A healthy file can still use a codec your browser cannot play. For local
@@ -62,6 +62,47 @@ audio, subtitles, and archive sources. MPEG-TS can carry HLS segments.
 HLS uses playlists and independently requested segments and is most useful
 here if you need adaptive bitrate over variable links.
 [Browser codec guidance](https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/Video_codecs) · [Apple HLS overview](https://developer.apple.com/documentation/HTTP-Live-Streaming)
+
+After a read-only pass on a small sample, use the same folder and journal
+with conversion enabled.
+
+```sh
+python3 scripts/media-audit.py "/mnt/das/sample" --journal "$HOME/vidstream-audit.sqlite" --convert
+```
+
+This checks each candidate and creates a fast-start MP4 where conversion is
+appropriate. It copies compatible H.264 and AAC tracks and encodes other
+supported video and audio tracks when necessary. It checks the new
+container, dimensions, duration and audio channel layout and decodes the
+whole copy before publishing it. The source then moves into
+`.vidstream-source-originals` beside the viewing copy.
+
+For example, `Movies/clip.mkv` becomes `Movies/clip.mp4`, with the original
+at `Movies/.vidstream-source-originals/clip.mkv`. Conversion mode creates an
+archive folder in every visited directory with supported photos or video,
+including folders whose files need no conversion. VidStream and the audit both
+skip these hidden folders. Enable hidden files in your file manager to
+review the originals. Run **Rescan library** after converting. When a
+filename extension changes, VidStream may index the new copy as a separate
+item. The scan hides the old entry when the archive contains the original
+under its old name with matching size and modification time. Its saved
+preferences and history stay in the catalog.
+
+Conversion requires Python on Linux or macOS, write access to the mounted
+media, enough space for the new files alongside the originals, and
+filesystem support for hard links and directory synchronization. Keep
+the journal on local storage. Run the conversion with one writer on this
+media tree. Pause VidStream imports and other source changes while it runs.
+If interrupted during publication, run the same conversion command using
+the same journal before moving the media or clearing the archive.
+
+Existing broadly compatible MP4s stay in place. Files with bad decodes,
+HDR, extra video or subtitle tracks, and name collisions go to review.
+Corrupt sources need a verified backup or a separate salvage decision.
+Publication keeps a durable archive entry for the original and reserves
+the viewing-copy name without overwriting any other file.
+
+## Manually remux a reviewed file to a separate destination
 
 For a confirmed healthy input containing only H.264 video and compatible
 AAC tracks, this example copies the audio and video streams into a separate
@@ -75,8 +116,7 @@ ffmpeg -n -i "/mnt/das/sample/clip.mkv" -map 0:V -map '0:a?' -c copy -movflags +
 This reads the MKV and writes a new file in your home directory without
 re-encoding or replacing an existing file. Audit the new copy, compare its
 duration and tracks, and play it before adding it to a viewing library.
-A failed remux can leave a partial output. Inspect and remove only that
-explicit output before retrying. Remuxing preserves the encoded packets and
-cannot reconstruct lost frames. This utility reports faults for review and
-does not automatically repair or replace library files.
+A failed manual remux can leave a partial output. Inspect and remove only
+that explicit output before retrying. Remuxing preserves the encoded packets.
+Recover lost frames from a known-good original when one exists.
 [FFmpeg stream copy](https://ffmpeg.org/ffmpeg.html#Streamcopy) · [MP4 fast start](https://ffmpeg.org/ffmpeg-formats.html)

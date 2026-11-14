@@ -95,7 +95,7 @@
     var build = node('section', undefined, footer, 'settings-build-info');
     build.setAttribute('aria-label', 'Running application');
     node('strong', 'VidStream ' + (config.version || 'unknown version'), build);
-    node('span', config.isAdmin ? 'Signed in as owner' : 'Guest view', build);
+    node('span', 'Signed in as owner', build);
     node('small', location.origin + ' · ' + (config.features?.nodes ? 'Nodes included' : 'Single-library build'), build);
     current._back = function () {
       var expanded = Array.from(current.querySelectorAll('details[open]')).pop();
@@ -231,7 +231,7 @@
     return details;
   }
   async function open(section) {
-    if (dialog?.open) return;
+    if (!config.isAdmin || dialog?.open) return;
     var body = shell();
     if (!body) return;
     var current = dialog;
@@ -257,67 +257,53 @@
     blur.oninput = function () { paintBlur(); adapter.viewerBlur?.(blur.value); };
     toggle(player, 'Show Stats for nerds in video player', 'Resolution, frame rate and playback details.', read('stream-video-stats', '0') === '1', function (value) { adapter.videoStats?.(value); });
 
-    var tracking, lock, account, loadNote, retry;
-    if (config.isAdmin) {
-      var library = card(grid, 'Library', 'Keep your place across this library.');
-      tracking = toggle(library, 'Record media activity', 'Save intentional hovers, opens and viewing progress.', config.tracking !== false, async function (value) {
-        await api('/api/settings', { tracking: value }, current);
-        window.StreamActivity?.setEnabled(value);
-        message(value ? 'Viewing history is on.' : 'Viewing history is off.', false, current);
-      });
-      tracking.disabled = true;
-      var pending = window.StreamActivity?.pending() || 0;
-      loadNote = node('p', 'Loading library settings…', library, 'settings-footnote');
-      if (pending) node('p', pending + ' activity records waiting to sync from this browser.', library, 'settings-footnote');
-      retry = button('Retry library settings', library, function () { return hydrate(); }, 'settings-small-button'); retry.hidden = true;
-      var access = card(grid, 'Access', 'Control who can view this server.');
-      lock = toggle(access, 'Require sign-in for the entire library', 'Only signed-in people can browse when enabled.', true, async function (value) {
-        await api('/api/settings', { requireLogin: value }, current);
-        message(value ? 'Library sign-in is required.' : 'Only items explicitly shared with guests are public.', false, current);
-      });
-      lock.disabled = true;
-      account = node('p', 'Loading account…', access, 'settings-footnote');
-      button('Sign out', access, async function () { await api('/api/logout', {}, current); location.href = '/'; }, 'settings-signout');
-    }
+    var library = card(grid, 'Library', 'Keep your place across this library.');
+    var tracking = toggle(library, 'Record media activity', 'Save intentional hovers, opens and viewing progress.', config.tracking !== false, async function (value) {
+      await api('/api/settings', { tracking: value }, current);
+      window.StreamActivity?.setEnabled(value);
+      message(value ? 'Viewing history is on.' : 'Viewing history is off.', false, current);
+    });
+    tracking.disabled = true;
+    var pending = window.StreamActivity?.pending() || 0;
+    var loadNote = node('p', 'Loading library settings…', library, 'settings-footnote');
+    if (pending) node('p', pending + ' activity records waiting to sync from this browser.', library, 'settings-footnote');
+    var retry = button('Retry library settings', library, function () { return hydrate(); }, 'settings-small-button'); retry.hidden = true;
+    var access = card(grid, 'Account', 'This library requires owner sign-in.');
+    var account = node('p', 'Loading account…', access, 'settings-footnote');
+    button('Sign out', access, async function () { await api('/api/logout', {}, current); location.href = '/'; }, 'settings-signout');
     var tools = node('div', undefined, body, 'settings-details');
-    if (config.isAdmin) {
-      advanced(tools, 'Folders', 'View or manage the folders in the top-left menu.', function (pane) {
-        if (window.StreamFolders) return window.StreamFolders.settings(pane);
-        node('p', 'Folder controls could not load. Reload the page to try again.', pane);
-      });
-    }
+    advanced(tools, 'Folders', 'View or manage the folders in the top-left menu.', function (pane) {
+      if (window.StreamFolders) return window.StreamFolders.settings(pane);
+      node('p', 'Folder controls could not load. Reload the page to try again.', pane);
+    });
     if (config.features?.nodes || window.StreamNodes) {
       advanced(tools, 'Nodes', 'Connect another machine or manage saved libraries.', function (pane) {
         if (window.StreamNodes) return window.StreamNodes.settings(pane);
         node('p', 'Library connections could not load. Reload the page to try again.', pane);
       });
     }
-    if (config.isAdmin) {
-      advanced(tools, 'Library tools', 'Storage, background work, backups and moved files.', function (pane) {
-        if (window.StreamLibraryTools?.maintenance) return window.StreamLibraryTools.maintenance(pane);
-        node('p', 'Library tools could not load. Reload the page to try again.', pane);
-      });
-      advanced(tools, 'History', 'Review recently recorded viewing activity.', function (pane) {
-        var list = node('div', undefined, pane, 'settings-activity-list'), cursor = null, loaded = false;
-        var more = button('Load more activity', pane, async function () {
-          var page = await api('/api/activity' + (cursor ? '?before=' + encodeURIComponent(cursor) : ''), undefined, current);
-          if (!current.open) return;
-          if (!loaded && !page.events.length) node('p', 'No activity recorded yet.', list, 'settings-footnote');
-          page.events.forEach(function (event) {
-            var row = node('article', undefined, list);
-            node('strong', event.path, row);
-            node('small', event.action + ' · ' + new Date(event.occurred_at).toLocaleString(), row);
-          });
-          loaded = true; cursor = page.next; more.disabled = !cursor; more.hidden = !cursor;
-        }, 'settings-small-button');
-        more.click();
-      });
-    } else {
-      node('p', 'Sign in as the owner to manage access, library activity and backups.', body, 'settings-guest-note');
-    }
+    advanced(tools, 'Library tools', 'Storage, background work, backups and moved files.', function (pane) {
+      if (window.StreamLibraryTools?.maintenance) return window.StreamLibraryTools.maintenance(pane);
+      node('p', 'Library tools could not load. Reload the page to try again.', pane);
+    });
+    advanced(tools, 'History', 'Review recently recorded viewing activity.', function (pane) {
+      var list = node('div', undefined, pane, 'settings-activity-list'), cursor = null, loaded = false;
+      var more = button('Load more activity', pane, async function () {
+        var page = await api('/api/activity' + (cursor ? '?before=' + encodeURIComponent(cursor) : ''), undefined, current);
+        if (!current.open) return;
+        if (!loaded && !page.events.length) node('p', 'No activity recorded yet.', list, 'settings-footnote');
+        page.events.forEach(function (event) {
+          var row = node('article', undefined, list);
+          node('strong', event.path, row);
+          node('small', event.action + ' · ' + new Date(event.occurred_at).toLocaleString(), row);
+        });
+        loaded = true; cursor = page.next; more.disabled = !cursor; more.hidden = !cursor;
+      }, 'settings-small-button');
+      more.click();
+    });
     var loaded = false, loading = false;
     async function hydrate() {
-      if (!config.isAdmin || loading || loaded) return;
+      if (loading || loaded) return;
       loading = true; retry.hidden = true;
       try {
         var data = await api('/api/settings', undefined, current);
@@ -325,7 +311,6 @@
         loaded = true;
         tracking.checked = data.tracking !== false; tracking.disabled = false;
         window.StreamActivity?.setEnabled(data.tracking !== false);
-        lock.checked = Boolean(data.security?.requireLogin); lock.disabled = false;
         account.textContent = data.security?.username ? 'Signed in as ' + data.security.username : data.security?.mode || 'Owner account';
         loadNote.textContent = 'History stays with this server, across devices and updates.';
       } catch (error) {
@@ -337,12 +322,12 @@
         }
       } finally { loading = false; }
     }
-    current._resume = function () { if (config.isAdmin) void hydrate(); };
+    current._resume = function () { void hydrate(); };
     if (section === 'folders') {
       var folderDetail = tools.querySelector('#settings-folders');
       if (folderDetail) { folderDetail.open = true; folderDetail.scrollIntoView({ block: 'nearest' }); }
     }
-    if (config.isAdmin) await hydrate();
+    await hydrate();
   }
   function savePending() { try { localStorage.setItem('stream-ui-pending', JSON.stringify(pendingUI)); } catch (_) {} }
   async function syncPreferences() {
@@ -361,6 +346,7 @@
   }
   if (Object.keys(pendingUI).length) saveTimer = setTimeout(syncPreferences, 500);
   document.addEventListener('keydown', function (event) {
+    if (!config.isAdmin) return;
     if (dialog?.open) {
       if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); stepBack(); }
       return;

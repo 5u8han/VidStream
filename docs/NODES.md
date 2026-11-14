@@ -43,9 +43,9 @@ These are organizational examples, not a requirement to move any files. Kubernet
 4. On your starting instance, enter the other machine under **Other library address** → **Check library**. Review its name/address/identity, then **Add to switcher**.
 5. Use **Switch library** in the top center. Sign in on the destination when requested. Signing in to one instance does not grant access to another. The browser can remember each destination's ordinary session.
 
-The saved directory and node management are owner-only in this release. Guest Settings shows Nodes with a sign-in explanation instead of hiding the category. A discovered or saved connection never bypasses the destination's own media access rules. There is no password field for joining because the app does not store another machine's password; sign-in happens on the destination itself.
+The saved directory and node management require owner sign-in. Each destination authenticates you when you open its gallery. A switcher entry stores the destination address and identity.
 
-If Nodes seems missing after rebuilding Docker, reload the browser's gallery home page. An open tab keeps its already-loaded JavaScript. In the reported case, a forced reload made Nodes appear. Settings now shows the running version/address, owner/guest state and **Nodes included**. Versioned asset URLs refresh the scripts on a new page load. An obsolete media link also now preserves the authenticated owner role instead of hiding owner settings. See the [branch comparison and update guide](BRANCHES.md).
+If Nodes seems missing after rebuilding Docker, reload the browser's gallery home page. An open tab keeps its already-loaded JavaScript. Settings shows the running version, browser address, and **Nodes included**. Versioned asset URLs refresh the scripts when you reload. See the [branch comparison and update guide](BRANCHES.md).
 
 Keep every instance's data volume independent. Git source can be the same everywhere. Do **not** clone a live node's database/security files/session secret to create another node: that copies identity and security state. A fresh installation creates its own random persistent node ID. To move one existing node to replacement hardware, stop it and move its complete state deliberately; do not run two copies of that identity simultaneously.
 
@@ -61,7 +61,7 @@ If it was installed before the explicit media and archive mounts, follow the
 before recreating the container.
 
 After an update, reload the gallery and use **Settings** to check the running
-version, browser address, owner or guest state, and Nodes support. The source
+version, browser address, and Nodes support. The source
 checkout and running container update separately. Changing the server address
 can require a fresh sign-in on that server.
 

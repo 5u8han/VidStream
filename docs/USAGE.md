@@ -33,7 +33,7 @@ The scanner recognizes JPEG, PNG, GIF, WebP, HEIC/HEIF, TIFF and BMP photos and 
 - Use the **Media size** slider and choose **Whole frame** or **Fill tiles**. Use a video's resize control to enlarge one tile. **Randomly enlarge videos** and **Reshuffle** adjust the arrangement. **Artist outlines** offers fine borders, outlines on hover and an optional color shuffle.
 - **Settings → Appearance** controls theme and visual effects. The browser's reduced-motion preference applies. Effects and several playback choices are browser-specific, so set them separately on a phone, tablet or desktop.
 
-## Play, inspect and share
+## Play and inspect
 
 Select any tile to open the viewer. Use **Previous** or **Next**, or the left and right arrow keys when focus is outside native video controls. Press **Escape** to close the viewer. **Play slideshow** advances photos and continues when a video ends. Double-click to zoom or use pinch on a touch screen, then drag to pan.
 
@@ -41,9 +41,7 @@ Videos open the original source in the browser's player, with controls for seeki
 
 Open **Info** for available metadata, technical details and the permanent media ID. Owners can inspect stored activity and revision details. For video, use **Stats for nerds** or enable it in **Settings → Video player** to see source and viewport resolution, reported frame rates, dropped frames, buffering and the playback source. Use the same settings card to adjust background blur.
 
-**Share** copies or opens a media link when enabled. The recipient needs a working address and permission to view that item. To share specific items with signed-out viewers, the owner can change the eye control on a tile or in the viewer. **Select** also offers bulk visibility changes. If **Require sign-in for the entire library** is on, visitors still need to sign in. Test the link in a separate signed-out browser before sending it. [Security and privacy](../SECURITY.md)
-
-If `SHOW_RSS_FEED` is enabled, add `/feed.xml` to the server address to get recent items in an RSS reader. Signed-out readers can see only guest-visible items when the server allows guest browsing. Set `ALLOW_IMAGE_SHARING`, `ALLOW_ORIGINAL_DOWNLOAD` and `ALLOW_INDEXING` in the [configuration](../.env.example) to control the corresponding feature. Sign-in and guest visibility govern who can access media.
+Library and media addresses require an owner session. **Download original** stays available to the signed-in owner when `ALLOW_ORIGINAL_DOWNLOAD` is enabled. If you enable `SHOW_RSS_FEED`, visit `/feed.xml` in your signed-in browser. Feed clients that cannot send the owner session cookie cannot access it. [Security and privacy](../SECURITY.md)
 
 ## Adjust previews and playback load
 

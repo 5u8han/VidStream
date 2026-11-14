@@ -38,15 +38,10 @@ shortcuts queries the existing catalog; it does not trigger a scan or copy
 files. This menu supports the application's existing photo/video formats; it
 does not add document rendering for PDF or every file extension in a folder.
 
-## Sharing and privacy
+## Access
 
-Shortcuts are navigation, not new access-control boundaries. Owner sign-in can
-still access the whole catalog. Existing whole-server sign-in and per-media
-guest visibility continue to apply. Guests receive only shortcut names with
-guest-visible media below them; the menu API omits their configured paths and
-collections containing no guest-visible items. A selected folder does not make
-other shared items private. Library statistics and owner tools remain scoped
-to the server as a whole.
+Owner sign-in grants access to the whole catalog. Shortcuts select what the
+gallery shows. Library statistics and owner tools cover the whole server.
 
 ## Large libraries
 

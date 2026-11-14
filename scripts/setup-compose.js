@@ -90,8 +90,6 @@ ${mounts}
       DATA_DIR: /app/data
       CACHE_DIR: /app/.cache
       ORIGINALS_DIR: /app/originals/original
-      REQUIRE_LOGIN: "1"
-      ALLOW_INDEXING: "0"
       DEFAULT_THEME: ${yamlString(theme)}
       VIDSTREAM_SETUP_HELPER: "1"
 volumes:

@@ -170,26 +170,6 @@ button {
   text-overflow: ellipsis;
 }
 
-.admin-badge {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  color: var(--accent);
-  border: 1px solid var(--accent);
-  border-radius: 20px;
-  padding: 4px 9px 4px 7px;
-  white-space: nowrap;
-}
-.admin-badge::before {
-  content: '';
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--accent);
-}
-
-
 .search-wrap {
   display: flex;
   align-items: center;
@@ -380,25 +360,6 @@ button {
   pointer-events: none;
 }
 
-.tile-visibility {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 3;
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: rgba(10, 9, 10, 0.55);
-  backdrop-filter: blur(3px);
-  color: #fff;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.tile-visibility:hover { background: rgba(10, 9, 10, 0.8); }
-.tile-visibility.is-guest { color: #7fd99a; }
-.tile-visibility svg { width: 15px; height: 15px; }
-
 .tile-select-mark {
   position: absolute;
   top: 8px;
@@ -415,7 +376,6 @@ button {
 }
 .tile-select-mark svg { width: 20px; height: 20px; }
 .grid.selecting .tile-select-mark { display: grid; }
-.grid.selecting .tile-visibility { display: none; }
 .tile.selected .tile-select-mark { background: var(--accent); color: var(--accent-text); }
 .tile.selected { outline: 3px solid var(--accent); outline-offset: -3px; }
 
@@ -428,23 +388,6 @@ button {
   font-family: var(--font-mono);
   font-size: 13px;
 }
-
-.album-bulk-action {
-  display: flex;
-  justify-content: center;
-  padding: 10px var(--gap) 0;
-}
-.album-bulk-action button {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-  border: 1px dashed var(--border);
-  border-radius: 20px;
-  padding: 6px 14px;
-  transition: color 0.15s ease, border-color 0.15s ease;
-}
-.album-bulk-action button:hover { color: var(--accent); border-color: var(--accent); }
-
 
 .empty {
   display: flex;
@@ -545,7 +488,6 @@ button {
 .lightbox-actions { display: flex; align-items: center; gap: 2px; }
 .lightbox-actions .icon-btn { color: #d8d4d1; }
 .lightbox-actions .icon-btn:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
-.lightbox-actions .icon-btn.is-guest { color: #7fd99a; }
 .lightbox-actions .icon-btn.is-playing-slideshow { color: var(--accent); }
 
 .lightbox-stage {

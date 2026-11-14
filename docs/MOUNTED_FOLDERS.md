@@ -53,8 +53,8 @@ Put the folder you want to see first in the template's first mount. Leave
 uses the same target automatically. The marker records the primary folder in
 Compose because the container's directory listing has its own order. If you
 reorder the entries, move the marker to the new first target. The primary
-folder opens on sign-in and when the gallery reloads. If that mount is removed
-or hidden from a guest, the gallery opens the first folder that viewer can see.
+folder opens on sign-in and when the gallery reloads. If that mount is removed,
+the gallery opens the first configured folder.
 
 Remove the old whole-library media bind from your local Compose configuration
 when switching to child mounts. Retain your existing Compose project name,
@@ -93,5 +93,4 @@ Use a new target name for an unrelated source directory.
 
 The initial import still processes all media under each selected folder. Add
 large folders in stages if you want to spread out initial scanning and preview
-generation. Existing owner and guest visibility rules apply within the active
-folders.
+generation. Owner sign-in grants access to the active folders.
