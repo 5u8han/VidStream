@@ -1,13 +1,13 @@
 (function () {
   'use strict';
   var config = JSON.parse(document.getElementById('app').dataset.config || '{}');
-  var folders = [], selected = '', trigger, panel, label, host, pendingAction, tabbing = false;
+  var folders = [], selected = '', remembered = null, trigger, panel, label, host, pendingAction, tabbing = false;
   var managedByMounts = false;
   var scanStatus = {}, scanRows = new Map(), expandedInfo = '';
   var statusLabels = { success: 'Successful', partial: 'Completed with issues', failed: 'Failed', interrupted: 'Interrupted' };
   var mountHelp = 'The folder list comes from Docker mounts. Edit Compose and recreate the container to change it.';
   var storageKey = 'stream-folder-' + (config.node?.id || 'local');
-  try { selected = localStorage.getItem(storageKey) || ''; } catch (_) {}
+  try { remembered = localStorage.getItem(storageKey); } catch (_) {}
 
   function element(tag, text, parent, className) {
     var value = document.createElement(tag);
@@ -24,16 +24,17 @@
     if (!response.ok) throw Error(data.error || 'Could not load folders.');
     return data;
   }
-  function notify(initial) {
+  function notify(initial, history, settingsChanged) {
     window.dispatchEvent(new CustomEvent('stream:folder-change', { detail: {
-      id: selected, configured: configured(), initial: Boolean(initial)
+      id: selected, configured: configured(), initial: Boolean(initial), history: Boolean(history),
+      settingsChanged: Boolean(settingsChanged)
     } }));
   }
   function configured() { return managedByMounts || folders.length > 0; }
   function paint() {
     if (!trigger) return;
     var current = folders.find(function (folder) { return folder.id === selected; });
-    label.textContent = 'Folders';
+    label.textContent = current?.name || 'All media';
     trigger.title = current?.name || 'All media';
     trigger.setAttribute('aria-label', 'Choose media folder: ' + (current ? current.name : 'All media'));
     panel.replaceChildren();
@@ -127,27 +128,48 @@
     scanStatus = data || {};
     if (panel && !panel.hidden) renderScanRows();
   }
-  function update(data, initial, changed) {
+  function validFolder(id) {
+    return id === '' || folders.some(function (folder) { return folder.id === id; });
+  }
+  function defaultFolder(primaryId) {
+    if (!managedByMounts) return '';
+    return folders.find(function (folder) { return folder.id === primaryId; })?.id || folders[0]?.id || '';
+  }
+  function folderForAlbum(album) {
+    if (!album) return '';
+    return folders.reduce(function (match, folder) {
+      var prefix = folder.path;
+      if (prefix && (album === prefix || album.startsWith(prefix + '/')) &&
+          (!match || prefix.length > match.path.length)) return folder;
+      return match;
+    }, null)?.id || '';
+  }
+  function update(data, initial, changed, album) {
     managedByMounts = data.managedByMounts === true;
     folders = Array.isArray(data.folders) ? data.folders : [];
     var old = selected;
-    if (managedByMounts) {
-      var primary = folders.find(function (folder) { return folder.id === data.primaryFolderId; });
-      selected = (primary || folders[0])?.id || '';
-    } else {
-      if (selected && !folders.some(function (folder) { return folder.id === selected; })) selected = '';
-      try { localStorage.setItem(storageKey, selected); } catch (_) {}
+    if (initial) {
+      var requested = new URLSearchParams(location.search).get('folder');
+      if (validFolder(requested)) selected = requested;
+      else if (album !== undefined) selected = folderForAlbum(album);
+      else selected = validFolder(remembered) ? remembered : defaultFolder(data.primaryFolderId);
+    } else if (!validFolder(selected)) {
+      selected = defaultFolder(data.primaryFolderId);
+      rememberSelection();
     }
     paint();
-    if (initial || old !== selected || changed) notify(initial);
+    if (initial || old !== selected || changed) notify(initial, false, changed);
   }
-  function select(id) {
-    if (id && !folders.some(function (folder) { return folder.id === id; })) return;
+  function rememberSelection() {
+    remembered = selected;
+    try { localStorage.setItem(storageKey, selected); } catch (_) {}
+  }
+  function select(id, history) {
+    if (!validFolder(id)) return false;
     selected = id;
-    if (!managedByMounts) {
-      try { localStorage.setItem(storageKey, id); } catch (_) {}
-    }
-    paint(); notify(false);
+    rememberSelection();
+    paint(); notify(false, history);
+    return true;
   }
   function hide() {
     panel.hidden = true; trigger.setAttribute('aria-expanded', 'false');
@@ -177,7 +199,7 @@
     event.preventDefault(); event.stopImmediatePropagation();
     close(next ? function () { if (next.isConnected) { next.focus({ preventScroll: true }); next.click(); } } : null);
   }
-  function mount(title) {
+  function mount(title, album) {
     host = title; host.classList.add('folder-switcher'); host.replaceChildren();
     trigger = element('button', undefined, host, 'folder-trigger'); trigger.type = 'button';
     trigger.setAttribute('aria-expanded', 'false'); trigger.setAttribute('aria-controls', 'folder-menu');
@@ -208,8 +230,8 @@
       });
     });
     paint();
-    return request().then(function (data) { update(data, true); }).catch(function () {
-      selected = ''; notify(true);
+    return request().then(function (data) { update(data, true, false, album); }).catch(function () {
+      selected = ''; paint(); notify(true);
       panel.replaceChildren(); element('p', 'Folder shortcuts could not load. Reload to try again.', panel, 'folder-menu-note');
     });
   }
@@ -248,8 +270,10 @@
     }
     data.folders.forEach(row);
     var actions = element('div', undefined, pane, 'folder-edit-actions');
-    var add = element('button', 'Add folder', actions, 'settings-small-button'); add.type = 'button';
-    add.onclick = function () { row({}).focus(); };
+    if (data.canAddFolders !== false) {
+      var add = element('button', 'Add folder', actions, 'settings-small-button'); add.type = 'button';
+      add.onclick = function () { row({}).focus(); };
+    }
     var save = element('button', 'Save folder menu', actions, 'settings-small-button'); save.type = 'button';
     save.onclick = async function () {
       var submitted = rows.slice();
@@ -271,5 +295,5 @@
     };
     element('p', 'Removing a shortcut does not delete any files. Use the row order to set the menu order; new folders are added at the end.', pane, 'settings-footnote');
   }
-  window.StreamFolders = { mount: mount, settings: settings, updateScanStatus: updateScanStatus, selected: function () { return selected; }, selectedPath: function () { return folders.find(function (folder) { return folder.id === selected; })?.path || ''; }, configured: configured };
+  window.StreamFolders = { mount: mount, settings: settings, updateScanStatus: updateScanStatus, select: select, selected: function () { return selected; }, selectedPath: function () { return folders.find(function (folder) { return folder.id === selected; })?.path || ''; }, configured: configured };
 })();

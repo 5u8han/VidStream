@@ -6,6 +6,26 @@ a different time from the initial VidStream import if both use the same DAS.
 At 100 MB/s, a single sequential read of 12–14 TB takes about 33–39 hours.
 Decoding, seeking, and writing any replacements take additional time.
 
+## Retry a failed file in VidStream
+
+Sign in as the owner and open **Dashboard → Notifications** or the server
+log. A failed import of a supported photo or video offers **Repair media**.
+It rechecks just that file and retries importing its metadata, thumbnails,
+posters and previews where applicable. A successful repair can add a file
+that failed before making it into the catalog. The outcome stays in the
+notification. The file itself remains unchanged.
+
+If the player’s automatic attempt to prepare a compatible video copy fails,
+the resulting notification offers **Retry playback copy**. A successful retry
+adds an **Open playback copy** link. The copy lives in VidStream’s cache and
+uses the existing playback compatibility checks.
+
+Wait for the current scan to finish before starting a repair. If the source
+cannot be read or decoded, the result includes the error from the attempt.
+The standalone audit below can perform a full-library decode check. Its
+conversion option archives originals on disk when a replacement passes
+verification.
+
 ## Probe and decode
 
 Use Python 3.10 or newer and a current FFmpeg installation with `ffprobe`

@@ -213,12 +213,12 @@
     try {
       for (var attempt = 0; attempt < 180; attempt++) {
         if (!video.isConnected) return;
-        var r = await api('/api/items/' + item.id + '/playback', {});
+        var r = await api('/api/items/' + item.id + '/playback', { retry: attempt === 0 });
         if (r.state === 'failed') throw Error(r.error);
         if (r.state === 'completed') {
           video.dataset.sourceKind = 'compatible';
           video.src = r.url;
-          await video.play();
+          await video.play().catch(function () {});
           message.remove();
           return;
         }

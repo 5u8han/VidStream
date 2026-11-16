@@ -211,7 +211,7 @@
         text('span', state.label, link, 'node-state ' + state.className);
       });
       if (!peers.length && config.isAdmin) text('p', snapshot ? 'No other libraries saved yet.' : lastError || 'Loading your libraries…', panel, 'node-help');
-      if (snapshot?.nearby.length) text('p', snapshot.nearby.length + ' nearby ' + (snapshot.nearby.length === 1 ? 'library' : 'libraries') + ' found. Review them in Settings → Nodes.', panel, 'node-help');
+      if (snapshot?.self.role !== 'node' && snapshot?.nearby.length) text('p', snapshot.nearby.length + ' nearby ' + (snapshot.nearby.length === 1 ? 'library' : 'libraries') + ' found. Review them in Settings → Nodes.', panel, 'node-help');
       returnLink(panel);
       if (config.isAdmin) {
         action('Refresh library status', panel, async function (event) {
@@ -267,6 +267,11 @@
       return input;
     }
     var name = field('Library name', selfForm); name.maxLength = 80; name.required = true;
+    var roleLabel = text('label', 'Machine role', selfForm, 'node-field');
+    var role = text('select', null, roleLabel);
+    text('option', 'Server', role).value = 'server';
+    text('option', 'Node', role).value = 'node';
+    text('p', 'A server can add other machines to its switcher. A node serves its existing library and can still be opened from another machine.', selfForm, 'node-help');
     var address = field('This library address', selfForm, 'url'); address.placeholder = 'http://192.168.1.50'; address.autocomplete = 'url';
     text('p', 'Use the address other devices can open, including the published port. A container-only address or localhost will not work from your phone.', selfForm, 'node-help');
     var discoveryLabel = text('label', null, selfForm, 'node-check');
@@ -274,6 +279,7 @@
     text('span', 'Find nearby libraries', discoveryLabel);
     text('p', 'Optional local-network discovery sends a small name/identity announcement. It never shares media, passwords or settings. Docker and routed networks may block discovery; manual addresses remain available.', selfForm, 'node-help');
     var save = text('button', 'Save library settings', selfForm, 'node-button'); save.type = 'submit';
+    save.disabled = true;
     var discoveryStatus = text('p', '', selfSection, 'node-help');
     var identity = text('small', '', selfSection, 'node-identity');
     selfForm.addEventListener('submit', function (event) {
@@ -281,12 +287,13 @@
       void run(save, async function () {
         var url = address.value.trim();
         if (url && !rootAddress(url)) throw Error('Enter a complete http:// or https:// address without a path, password, query or fragment.');
-        var data = await api('/api/nodes/settings', { name: name.value.trim(), url: url, discoveryEnabled: discovery.checked }, pane);
+        var data = await api('/api/nodes/settings', { name: name.value.trim(), url: url, discoveryEnabled: discovery.checked, role: role.value }, pane);
         if (!alive()) return;
         accept(data); message('Library settings saved.');
       });
     });
     var manual = text('section', null, pane, 'node-settings-section');
+    manual.hidden = true;
     text('h3', 'Add another machine', manual);
     var addForm = text('form', null, manual, 'node-form');
     var otherAddress = field('Other library address', addForm, 'url'); otherAddress.required = true; otherAddress.placeholder = 'http://192.168.1.60'; otherAddress.autocomplete = 'url';
@@ -348,14 +355,22 @@
       });
     });
     var nearbySection = text('section', null, pane, 'node-settings-section');
+    nearbySection.hidden = true;
     text('h3', 'Nearby libraries', nearbySection);
     text('p', 'Nearby announcements are unverified hints. Check a machine before saving it; discovery never automatically joins a library.', nearbySection, 'node-help');
     var nearbyList = text('div', null, nearbySection, 'node-peer-list');
     function render(data) {
       if (!pane.isConnected) { subscribers.delete(render); clearTimeout(poll); return; }
       if (!alive() || !data) return;
-      if (!initialized) { name.value = data.self.name || currentName(); address.value = data.self.url || ''; discovery.checked = Boolean(data.self.discoveryEnabled); initialized = true; }
-      discoveryStatus.textContent = data.discovery?.error ? 'Discovery unavailable: ' + data.discovery.error + '. Manual addresses still work.' : data.discovery?.active ? 'Nearby discovery is active on this network.' : data.self.discoveryEnabled ? 'Discovery is enabled but not active. Check the library address and network.' : 'Nearby discovery is off. Add a machine by its address below.';
+      var canAdd = data.self.role !== 'node';
+      if (!initialized) {
+        name.value = data.self.name || currentName(); address.value = data.self.url || '';
+        discovery.checked = Boolean(data.self.discoveryEnabled); role.value = canAdd ? 'server' : 'node';
+        save.disabled = false; initialized = true;
+      }
+      manual.hidden = nearbySection.hidden = !canAdd;
+      if (!canAdd) { checkGeneration++; verifiedBox.hidden = true; verifiedBox.replaceChildren(); }
+      discoveryStatus.textContent = data.discovery?.error ? 'Discovery unavailable: ' + data.discovery.error : data.discovery?.active ? 'Nearby discovery is active on this network.' : data.self.discoveryEnabled ? 'Discovery is enabled but not active. Check the library address and network.' : 'Nearby discovery is off.';
       identity.textContent = 'This library identity: ' + data.self.id;
       savedList.replaceChildren();
       if (!data.peers.length) text('p', 'No other libraries saved yet.', savedList, 'node-help');

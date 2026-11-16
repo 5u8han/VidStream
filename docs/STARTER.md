@@ -25,14 +25,19 @@ menu in PowerShell and keeps the terminal open for the result. Docker Desktop
 may ask you to accept its terms or finish installing WSL before first-time
 setup can continue. Use a checkout in your own user directory so the host storage inherits private permissions. [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/)
 
-1. Choose **First-time setup** and pick the folder you want to see first.
-   Answer Yes each time you want to add another library folder. Answer No
-   or press Enter when the list is complete. Where a system folder picker is
-   available, use it to select folders. Start-Here falls back to the terminal
-   if the picker cannot open. Press **Tab** to complete paths.
-2. Choose **White**, **Dark** or **System**. Press Enter for White. A theme you
+1. Choose **First-time setup**. Pick **Server** to host multiple libraries
+   and manage connections to other instances, or **Library node** to serve
+   a library to a server. You can change the role under **Settings → Nodes**
+   in VidStream.
+2. Enter a RAM ceiling and optional extra swap in GiB, then choose local-only
+   or LAN access. See the options below.
+3. Pick the folder you want to see first. On a server, answer Yes to add each
+   additional library folder and press Enter when the list is complete.
+   Start-Here falls back to the terminal if the folder picker cannot open.
+   Press **Tab** to complete paths.
+4. Choose **White**, **Dark** or **System**. Press Enter for White. A theme you
    select later in VidStream takes precedence over this starting preference.
-3. Open the address the helper displays, normally `http://127.0.0.1/`.
+5. Open the address the helper displays, normally `http://127.0.0.1/`.
    Enter the owner setup code shown by the helper and choose a passphrase
    in the browser.
 
@@ -51,14 +56,33 @@ The project name keeps it connected to the same Docker volumes. Keep custom
 relative paths valid when moving the file. `VIDSTREAM_INSTALL_DIR` explicitly
 selects a different directory.
 
-The starter binds the published port to localhost. To serve viewers
-on your LAN later, update the published address and `URL` deliberately in
-that file. New guided installs keep the account, catalog and cache in `vidstream-local/`
+New guided installs keep the account, catalog and cache in `vidstream-local/`
 beside the Compose file. Existing installs can move from Docker volumes using
 Start-Here. [Portable storage and migration](PORTABLE_CACHE.md) [Docker bind mount reference](https://docs.docker.com/engine/storage/bind-mounts/)
 
-If port 80 is in use or Docker cannot publish it, set `VIDSTREAM_PORT` before setup. An existing setup keeps its saved port. If the helper has
-already created `compose.yaml`, adjust its published port and `URL` instead. The default is HTTP. For certificate-backed HTTPS on port 443, use the [local HTTPS overlay](NODES.md#optional-https-on-port-443).
+## Choose memory and network access
+
+For an existing guided installation, choose **Configure memory and access**.
+The launcher starts from the saved values and changes only the RAM limit,
+RAM-plus-swap limit, port binding and advertised address. You can apply the
+settings immediately or save them until your next start. Applying the
+changes briefly recreates the service using the existing media mounts,
+catalog and cache. For custom port mappings or an existing reverse proxy,
+edit the Compose configuration directly.
+
+- **Maximum RAM in GiB** is a ceiling. It defaults to 2 GiB for new installs.
+  Leave room for the host and any other services. **Extra swap** defaults to
+  zero. Docker can use the amount you give it only if the host has swap
+  available. [Docker memory and swap limits](https://docs.docker.com/engine/containers/resource_constraints/#--memory-swap-details)
+- **This machine only** publishes to loopback. **Other devices on the LAN**
+  can listen on a specific IPv4 address or all IPv4 interfaces. Enter the
+  hostname or IP your viewers can reach. The launcher records that name
+  without registering it in DNS. [Docker port publishing](https://docs.docker.com/engine/network/port-publishing/)
+- **Published port** defaults to 80, so the HTTP address needs no port
+  suffix. Use 8080 or 4000 if 80 is occupied. Choosing 443 still serves
+  HTTP. For HTTPS on port 443, configure a certificate with the
+  [local HTTPS overlay](NODES.md#optional-https-on-port-443).
+
 From the checkout with the generated `compose.yaml`, you can check the
 configuration, read the setup code or start again after fixing a path or port.
 
@@ -114,8 +138,10 @@ media and temporary configurations.
 
 ## Add a folder to an existing setup
 
-With your local Docker engine running, open Start-Here and choose **Add a
-media folder**. This option edits the `compose.yaml` created by Start-Here and
+With your VidStream server running, open Start-Here and choose **Add a
+media folder**. The launcher checks the current role before opening the
+folder picker. Change the instance to **Server** in VidStream to enable
+adding a folder. This option edits the `compose.yaml` created by Start-Here and
 uses the VidStream image already on your machine. Select one folder. The
 launcher validates the edit and saves a new read-only mount. The original
 primary folder still opens after sign-in. When you are ready to apply the
@@ -141,7 +167,8 @@ starts.
    twice to list matching entries when the prefix is ambiguous. Enter the
    path as you would see it on disk, including any spaces. The `--terminal`
    option forces this mode even in a desktop session.
-3. Keep the default loopback binding and open a second terminal on the
+3. With LAN access, open the chosen address from your Mac or other computer.
+   With local-only access, open a second terminal on the
    computer where you want to browse. Replace `user@ubuntu-host` with the SSH
    address you normally use and run the following.
 

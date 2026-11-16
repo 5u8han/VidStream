@@ -50,6 +50,56 @@
     summaryRequest = request('limit=1').catch(function () {}).finally(function () { summaryRequest = null; });
   }
 
+  function repairAction(id, parent, initial, kind) {
+    var label = kind === 'playback' ? 'Retry playback copy' : 'Repair media';
+    var button = node('button', label, parent, 'dashboard-next');
+    button.type = 'button';
+    var status = node('span', '', parent, 'modal-sub');
+    status.setAttribute('role', 'status');
+    var link = node('a', 'Open playback copy', parent, 'dashboard-next');
+    link.target = '_blank';
+    link.rel = 'noopener';
+    var pathname = '/api/notifications/' + encodeURIComponent(id) + '/repair';
+
+    function show(result) {
+      button.disabled = result?.state === 'running';
+      button.textContent = button.disabled ? 'Repairing…' : label;
+      status.textContent = result?.message || '';
+      link.hidden = !result?.playbackUrl;
+      if (result?.playbackUrl) link.href = result.playbackUrl;
+      else link.removeAttribute('href');
+    }
+
+    async function check() {
+      while (button.isConnected && button.disabled) {
+        await new Promise(function (resolve) { setTimeout(resolve, 2000); });
+        if (!button.isConnected) return;
+        try {
+          var response = await fetch(pathname);
+          if (!response.ok) throw Error('Could not check repair status.');
+          show(await response.json());
+        } catch (error) {
+          show({ message: error.message });
+        }
+      }
+    }
+
+    button.onclick = async function () {
+      show({ state: 'running', message: 'Starting repair…' });
+      try {
+        var response = await fetch(pathname, { method: 'POST' });
+        var result = await response.json();
+        if (!response.ok) throw Error(result.error || 'Could not start repair.');
+        show(result);
+        void check();
+      } catch (error) {
+        show({ message: error.message });
+      }
+    };
+    show(initial);
+    if (button.disabled) void check();
+  }
+
   function mount(head, callbacks) {
     var toggle = node('button', 'Notifications', head, 'dashboard-issues-toggle');
     toggle.type = 'button';
@@ -94,6 +144,7 @@
         open.type = 'button';
         open.onclick = function () { callbacks.openItem(issue.itemId); };
       }
+      if (issue.repairable) repairAction(issue.id, actions, issue.repair, issue.repairKind);
       var copy = node('button', 'Copy path', actions, 'dashboard-next');
       copy.type = 'button';
       copy.onclick = async function () {
@@ -160,5 +211,5 @@
     return { open: show, close: close, isOpen: function () { return !pane.hidden; } };
   }
 
-  window.StreamDashboardNotifications = { mount: mount, poll: poll };
+  window.StreamDashboardNotifications = { mount: mount, poll: poll, repairAction: repairAction };
 })();

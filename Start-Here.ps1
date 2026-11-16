@@ -192,6 +192,54 @@ function Write-ValidatedDraft([string]$yaml) {
     }
 }
 
+function Read-SetupInteger([string]$prompt, [int]$default, [int]$min, [int]$max) {
+    do {
+        $answer = Read-Host "$prompt [$default]"
+        if (-not $answer) { return $default }
+        $value = 0
+        if ($answer -match '^\d{1,5}$' -and [int]::TryParse($answer, [ref]$value) -and $value -ge $min -and $value -le $max) {
+            return $value
+        }
+        Write-Host "Enter a whole number between $min and $max."
+    } while ($true)
+}
+
+function Read-DeploymentSettings([int]$memory, [int]$swap, [string]$bind, [string]$address, [int]$port) {
+    $memory = Read-SetupInteger 'Maximum RAM in GiB' $memory 1 99999
+    $swap = Read-SetupInteger 'Extra swap in GiB (requires host swap)' $swap 0 99999
+    $defaultAccess = if ($bind -eq '127.0.0.1') { 1 } else { 2 }
+    $access = Read-SetupInteger 'Access: [1] This machine only, [2] Other devices on the LAN' $defaultAccess 1 2
+    $port = Read-SetupInteger 'Published HTTP port (80 for a bare URL, 8080 or 4000 as alternatives; 443 needs separate TLS for HTTPS)' $port 1 65535
+    if ($port -eq 443) { Write-Host 'Port 443 will still serve HTTP. Use the HTTPS overlay with a certificate for TLS.' }
+    if ($access -eq 1) {
+        $bind = '127.0.0.1'
+        $address = '127.0.0.1'
+    } else {
+        if ($bind -eq '127.0.0.1') { $bind = '0.0.0.0' }
+        do {
+            $inputBind = Read-Host "IPv4 address to listen on (0.0.0.0 for all IPv4 interfaces) [$bind]"
+            if (-not $inputBind) { $inputBind = $bind }
+            $parsed = $null
+            $validBind = $inputBind -match '^(?:0|[1-9][0-9]{0,2})(?:\.(?:0|[1-9][0-9]{0,2})){3}$' -and
+                $inputBind -notmatch '^127\.' -and [System.Net.IPAddress]::TryParse($inputBind, [ref]$parsed)
+            if (-not $validBind) { Write-Host 'Enter an IPv4 LAN address or 0.0.0.0.' }
+        } until ($validBind)
+        $bind = $inputBind
+
+        if ($address -in @('127.0.0.1', 'localhost', '0.0.0.0')) { $address = $env:COMPUTERNAME }
+        do {
+            $inputAddress = Read-Host "Hostname or IPv4 address other devices use to reach this server [$address]"
+            if (-not $inputAddress) { $inputAddress = $address }
+            $validAddress = $inputAddress -match '^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' -and
+                $inputAddress -notmatch '^127\.' -and $inputAddress -notin @('localhost', '0.0.0.0')
+            if (-not $validAddress) { Write-Host 'Enter a LAN hostname or IPv4 address, such as subuntu.local.' }
+        } until ($validAddress)
+        $address = $inputAddress
+    }
+    $url = if ($port -eq 80) { "http://$address/" } else { "http://${address}:$port/" }
+    return @{ memory = "$memory"; swap = "$swap"; bind = $bind; address = $address; port = "$port"; url = $url }
+}
+
 function Start-FirstTimeSetup {
     $shippedCompose = Join-Path $PSScriptRoot 'docker-compose.yml'
     foreach ($name in @('compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml')) {
@@ -207,7 +255,6 @@ function Start-FirstTimeSetup {
     if ($env:VIDSTREAM_PORT -and (-not [int]::TryParse($env:VIDSTREAM_PORT, [ref]$port) -or $port -lt 1 -or $port -gt 65535)) {
         throw 'VIDSTREAM_PORT must be a number from 1 to 65535.'
     }
-    $url = if ($port -eq 80) { "http://127.0.0.1/" } else { "http://127.0.0.1:$port/" }
     $script:docker = Find-DockerCli
     if (-not $script:docker) {
         Install-DockerDesktop
@@ -223,9 +270,14 @@ function Start-FirstTimeSetup {
     $existingVolumes = & $script:docker volume ls -q --filter $projectFilter
     if ($LASTEXITCODE -ne 0) { throw 'Could not check for existing VidStream starter data.' }
     if ($existingVolumes) { throw 'VidStream starter volumes already exist. Locate their Compose file before running setup again.' }
-    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+    $roleChoice = Read-SetupInteger 'Instance role: [1] Server, [2] Library node' 1 1 2
+    $role = if ($roleChoice -eq 2) { 'node' } else { 'server' }
+    $deployment = Read-DeploymentSettings 2 0 '127.0.0.1' '127.0.0.1' $port
+    $port = [int]$deployment.port
+    $url = $deployment.url
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse($deployment.bind), $port)
     try { $listener.Start() }
-    catch { throw "Port $port is unavailable. Set VIDSTREAM_PORT to an unused port and reopen Start-Here." }
+    catch { throw "Port $port is unavailable at $($deployment.bind). Choose an available bind address and port in Start-Here." }
     finally { $listener.Stop() }
 
     $image = $defaultImage
@@ -247,7 +299,7 @@ function Start-FirstTimeSetup {
     $primary = Get-ExistingFolder 'Choose the first media folder (cancel to stop setup)'
     if (-not $primary) { Write-Host 'Setup cancelled.'; return }
     $folders = @($primary)
-    while ((Read-Host 'Add another library folder? [y/N]') -match '^(y|yes)$') {
+    while ($role -eq 'server' -and (Read-Host 'Add another library folder? [y/N]') -match '^(y|yes)$') {
         $folder = Get-ExistingFolder 'Choose another folder (cancel or Enter to skip)'
         if (-not $folder) { continue }
         if ($folder -notin $folders) { $folders += $folder }
@@ -261,7 +313,9 @@ function Start-FirstTimeSetup {
 
     Assert-LocalDockerContext
     $editor = Join-Path $PSScriptRoot 'scripts\setup-compose.js'
-    $yaml = Invoke-ComposeEditor $image $editor (@('--storage-dir', $portableDirectory, $image, "$port", $theme, '--') + $folders) ([byte[]]@())
+    $editorArgs = @('--storage-dir', $portableDirectory, '--deployment', $deployment.memory, $deployment.swap,
+        $deployment.bind, $deployment.address, $role, $image, "$port", $theme, '--') + $folders
+    $yaml = Invoke-ComposeEditor $image $editor $editorArgs ([byte[]]@())
     if ([IO.Directory]::Exists($portableDirectory) -or [IO.File]::Exists($portableDirectory)) {
         throw "Storage already exists at $portableDirectory. Use its saved Compose file to reuse it."
     }
@@ -352,10 +406,6 @@ function Add-MediaFolder {
     $script:docker = Find-DockerCli
     if (-not $script:docker) { throw "Docker Desktop is required to edit the saved project. See $dockerHelp" }
 
-    Initialize-FolderPicker
-    $folder = Get-ExistingFolder 'Choose one folder to add (cancel or Enter to stop)'
-    if (-not $folder) { Write-Host 'No folder was added.'; return }
-
     Assert-LocalDockerContext
     Start-LocalDocker -RequireRunning
     $lockPath = Join-Path $setupDirectory '.vidstream-edit.lock'
@@ -375,7 +425,15 @@ function Add-MediaFolder {
             throw 'Could not identify the existing VidStream stream image.'
         }
         Assert-LocalDockerContext
-        $yaml = Invoke-ComposeEditor $images[0] $editor @('--add-folder', $folder, $portableDirectory) $original
+        $currentRole = Get-EffectiveRole $images[0] $editor $original
+        if ($currentRole -eq 'node') {
+            throw 'A node cannot add a library. Change this instance to Server in VidStream before adding a folder.'
+        }
+        Initialize-FolderPicker
+        $folder = Get-ExistingFolder 'Choose one folder to add (cancel or Enter to stop)'
+        if (-not $folder) { Write-Host 'No folder was added.'; return }
+        $currentRole = Get-EffectiveRole $images[0] $editor $original
+        $yaml = Invoke-ComposeEditor $images[0] $editor @('--add-folder', $folder, $portableDirectory, $currentRole) $original
         $draft = Write-ValidatedDraft $yaml
         try {
             Assert-PlainComposeFile
@@ -401,6 +459,53 @@ function Add-MediaFolder {
     Write-Host "    & $quotedDocker compose --project-name vidstream-starter --project-directory $quotedDirectory --file $quotedFile up -d --pull never --force-recreate stream"
     Write-Host '}'
     Write-Host 'This briefly stops and recreates the VidStream container using the existing image and data volumes. Media folders are mounted read-only.'
+}
+
+function Get-EffectiveRole([string]$image, [string]$editor, [byte[]]$original) {
+    $containers = @(Invoke-StarterCompose $composeFile @('ps', '-q', '--status', 'running', 'stream'))
+    if ($LASTEXITCODE -ne 0 -or $containers.Count -ne 1) {
+        throw 'Choose Start existing VidStream before adding a folder so the launcher can check its current role.'
+    }
+    $source = 'fetch("http://127.0.0.1:4000/health",{signal:AbortSignal.timeout(3000)}).then(r=>r.json()).then(d=>{if(!d.ok)throw Error();console.log(d.role||"legacy")}).catch(()=>process.exitCode=1)'
+    try {
+        $result = (Invoke-StorageDocker @('exec', $containers[0], 'node', '-e', $source) ([byte[]]@()) 5000).Trim()
+    } catch { throw 'Could not check the VidStream role. Wait until the saved project is healthy and try again.' }
+    if ($result -in @('node', 'server')) { return $result }
+    if ($result -eq 'legacy') { return (Invoke-ComposeEditor $image $editor @('--role') $original).Trim() }
+    throw 'VidStream returned an unrecognized role.'
+}
+
+function Set-ExistingDeployment {
+    Initialize-ExistingProject -RequireRunning
+    $editor = Join-Path $PSScriptRoot 'scripts\setup-compose.js'
+    $images = @(Invoke-StarterCompose $composeFile @('config', '--images', 'stream'))
+    if ($LASTEXITCODE -ne 0 -or $images.Count -ne 1 -or $images[0] -notmatch '^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$') {
+        throw 'Could not identify the existing VidStream stream image.'
+    }
+    $original = [IO.File]::ReadAllBytes($composeFile)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $fingerprint = [BitConverter]::ToString($sha.ComputeHash($original)).Replace('-', '') }
+    finally { $sha.Dispose() }
+    $current = (Invoke-ComposeEditor $images[0] $editor @('--deployment-summary') $original).Trim() -split '\r?\n'
+    $deployment = Read-DeploymentSettings ([int]$current[0]) ([int]$current[1]) $current[2] $current[3] ([int]$current[4])
+    $editorArgs = @('--configure', $deployment.memory, $deployment.swap, $deployment.bind, $deployment.address, $deployment.port)
+    $yaml = Invoke-ComposeEditor $images[0] $editor $editorArgs $original
+    $draft = Write-ValidatedDraft $yaml
+    try {
+        Assert-PlainComposeFile
+        if ((Get-FileHash -LiteralPath $composeFile -Algorithm SHA256).Hash -ne $fingerprint) {
+            throw 'The Compose file changed during setup. Run Configure memory and access again.'
+        }
+        [IO.File]::Replace($draft, $composeFile, [NullString]::Value)
+    } finally { Remove-Item -LiteralPath $draft -Force -ErrorAction SilentlyContinue }
+
+    Write-Host "Saved RAM and access settings at $composeFile. New address: $($deployment.url)"
+    if ((Read-Host 'Apply now? VidStream will restart and reuse its saved media mounts, catalog and cache. [y/N]') -match '^(y|yes)$') {
+        Invoke-StarterCompose $composeFile @('up', '-d', '--pull', 'never', '--wait', 'stream') | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw 'Could not apply the saved settings. Review the Docker error above.' }
+    } else {
+        Write-Host 'Choose Start existing VidStream when you are ready to apply these settings.'
+    }
 }
 
 function Assert-PlainComposeFile {
@@ -567,17 +672,19 @@ try {
     $portableDirectory = Join-Path $setupDirectory 'vidstream-local'
     Write-Host 'VidStream'
     Write-Host '  1. First-time setup'
-    Write-Host '  2. Add a media folder'
+    Write-Host '  2. Add a media folder (server only)'
     Write-Host '  3. Start existing VidStream'
     Write-Host '  4. Stop VidStream'
     Write-Host '  5. Prepare storage to move'
+    Write-Host '  6. Configure memory and access'
     Write-Host '  Q. Quit'
-    do { $action = Read-Host 'Choose an option [1-5/Q]' } until ($action -match '^[1-5q]$')
+    do { $action = Read-Host 'Choose an option [1-6/Q]' } until ($action -match '^[1-6q]$')
     if ($action -eq '1') { Start-FirstTimeSetup }
     if ($action -eq '2') { Add-MediaFolder }
     if ($action -eq '3') { Invoke-LockedLifecycle { Start-ExistingVidStream } }
     if ($action -eq '4') { Invoke-LockedLifecycle { Initialize-ExistingProject -RequireRunning; Stop-ExistingVidStream } }
     if ($action -eq '5') { Invoke-LockedLifecycle { Prepare-PortableMove } }
+    if ($action -eq '6') { Invoke-LockedLifecycle { Set-ExistingDeployment } }
 } catch {
     [Console]::Error.WriteLine($_.Exception.Message)
     exit 1

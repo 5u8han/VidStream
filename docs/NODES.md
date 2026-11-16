@@ -19,7 +19,9 @@ flowchart LR
   Legion -. Optional local discovery: identity hints only .- Desktop
 ```
 
-There is no required master/child distinction. Your always-on NAS can be your usual starting library and hold your connection list. A browser-only return link follows you to another server, including its sign-in screen. It carries only an origin in a URL fragment; it does not copy a server directory, credentials, settings or authentication. Incoming return addresses are unverified, clearly show their host, and stay temporary in that browser tab/session. They become persistent browser bookmarks only when you explicitly choose **Remember this return address**. **Make this my starting library** explicitly selects the current instance. Each server has its own saved connection list. You can make additional connections there, or return to your starting library to choose another machine.
+Set **Settings → Nodes → Machine role** to **Server** on a machine that should add other instances to its switcher. A **Node** can serve its existing library and advertise it for discovery. Adding machines and folder shortcuts is disabled in Node mode. Saved connections and mounted folders survive role changes. Start-Here sets the initial role and an owner can change it without restarting. Existing deployments default to Server.
+
+A browser-only return link follows you to another server, including its sign-in screen. It carries only an origin in a URL fragment. Incoming return addresses are unverified, clearly show their host, and stay temporary in that browser tab. They become persistent browser bookmarks only when you explicitly choose **Remember this return address**. **Make this my starting library** explicitly selects the current instance.
 
 This combines access to several libraries. It does **not** combine disks into a single filesystem, distribute files automatically, deduplicate across machines, create one global catalog, synchronize history, or offload enhancement jobs. A sleeping/offline machine takes only its own media offline. Saved connections are retained. Each machine still needs enough local space for its own previews and catalog. Historical processing files are retained but are not executed.
 
@@ -39,7 +41,7 @@ These are organizational examples, not a requirement to move any files. Kubernet
 
 1. Install VidStream on each machine using its own source media and persistent data and cache directories. Complete owner setup or use that instance's configured sign-in.
 2. Open each machine's address from the browser/device you will actually use. For example, a NAS at `http://192.168.1.50/` and a Legion at `http://192.168.1.60/`. These are examples; use your real addresses. A DHCP reservation or stable local DNS name helps keep them consistent.
-3. On each instance, open **Settings → Nodes**. Set **Library name** and **This library address** to the address other devices can open. Save it. A Docker container's private bridge address, `host.docker.internal`, or `localhost` is not a general LAN address for your phone.
+3. On each instance, open **Settings → Nodes**. Set **Library name** and **This library address** to the address other devices can open. Select **Server** on the starting instance and **Node** on each machine that only serves its own library. Save the settings. Use a reachable LAN hostname or IP address.
 4. On your starting instance, enter the other machine under **Other library address** → **Check library**. Review its name/address/identity, then **Add to switcher**.
 5. Use **Node** in the top center. Sign in on the destination when requested. Signing in to one instance does not grant access to another. The browser can remember each destination's ordinary session.
 

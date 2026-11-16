@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Configure RAM, swap and local or LAN access from Start-Here, including for an existing guided installation.
+- Choose a Server or Node role during setup or in Settings. Servers can add nodes to their switcher.
+- Show the active folder in the gallery header and restore the folder and browsing position after a reload.
+- Retry a single failed import from its Dashboard notification or log entry and rebuild its cached derivatives.
 - Add an opt-in double scan-worker budget for hosts with spare CPU and RAM. Keep source read concurrency independently configurable.
 - Show active scan operations, recent outcomes, source hashing progress and storage waits in Dashboard. Keep recent operations with completed scan reports.
 

@@ -371,9 +371,83 @@ choose_folder() {
 
 choose_folders() {
   choose_folder primary || exit 0
+  [[ "$role" == server ]] || return 0
   while ask_yes 'Add another media folder?'; do
     choose_folder additional || true
   done
+}
+
+choose_integer() {
+  local prompt=$1 default=$2 min=$3 max=$4 answer
+  while :; do
+    printf '%s [%s] ' "$prompt" "$default" >&2
+    IFS= read -r answer || return 1
+    answer=${answer:-$default}
+    if [[ "$answer" =~ ^[0-9]{1,5}$ ]] && (( 10#$answer >= min && 10#$answer <= max )); then
+      printf '%s\n' "$((10#$answer))"
+      return
+    fi
+    printf 'Enter a whole number between %s and %s.\n' "$min" "$max" >&2
+  done
+}
+
+choose_role() {
+  local answer
+  while :; do
+    printf 'Instance role: [1] Server (default), [2] Library node. ' >&2
+    IFS= read -r answer || exit 0
+    case "$answer" in ''|1) role=server; return ;; 2) role=node; return ;; esac
+    printf 'Choose 1 or 2.\n' >&2
+  done
+}
+
+choose_deployment() {
+  local answer access default_access=1 default_host address part
+  if [[ "$bind" != 127.0.0.1 ]]; then default_access=2; fi
+  memory=$(choose_integer 'Maximum RAM in GiB' "$memory" 1 99999) || return 1
+  swap=$(choose_integer 'Extra swap in GiB (requires host swap)' "$swap" 0 99999) || return 1
+  access=$(choose_integer 'Access: [1] This machine only, [2] Other devices on the LAN' "$default_access" 1 2) || return 1
+  port=$(choose_integer 'Published HTTP port (80 for a bare URL, 8080 or 4000 as alternatives; 443 needs separate TLS for HTTPS)' "$port" 1 65535) || return 1
+  if [[ "$port" == 443 ]]; then
+    printf 'Port 443 will still serve HTTP. Use the HTTPS overlay with a certificate for TLS.\n' >&2
+  fi
+  if [[ "$access" == 1 ]]; then
+    bind=127.0.0.1
+    host=127.0.0.1
+    return
+  fi
+  [[ "$bind" != 127.0.0.1 ]] || bind=0.0.0.0
+  while :; do
+    printf 'IPv4 address to listen on (0.0.0.0 for all IPv4 interfaces) [%s] ' "$bind" >&2
+    IFS= read -r answer || return 1
+    address=${answer:-$bind}
+    if [[ "$address" =~ ^(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$ && "$address" != 127.* ]]; then
+      for part in "${BASH_REMATCH[@]:1}"; do if (( part > 255 )); then continue 2; fi; done
+      bind=$address
+      break
+    fi
+    printf 'Enter an IPv4 LAN address or 0.0.0.0.\n' >&2
+  done
+  default_host=$host
+  if [[ "$default_host" == 127.0.0.1 ]]; then
+    default_host=$(hostname 2>/dev/null) || default_host=
+  fi
+  while :; do
+    printf 'Hostname or IPv4 address other devices use to reach this server [%s] ' "$default_host" >&2
+    IFS= read -r answer || return 1
+    address=${answer:-$default_host}
+    if [[ "$address" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ &&
+          "$address" != 127.* && "$address" != 0.0.0.0 && "$address" != localhost ]]; then
+      host=$address
+      return
+    fi
+    printf 'Enter a LAN hostname or IPv4 address, such as subuntu.local.\n' >&2
+  done
+}
+
+deployment_url() {
+  printf 'http://%s' "$host"
+  if [[ "$port" != 80 ]]; then printf ':%s' "$port"; fi
 }
 
 choose_theme() {
@@ -412,9 +486,6 @@ check_host_network() {
   if [[ "$engine_version" =~ ^([1-9][0-9]*)\. ]] && (( BASH_REMATCH[1] < 28 )); then
     printf 'Docker Engine %s can expose loopback-published ports to peers on the same Ethernet segment. Update Docker Engine to 28 or newer.\n' "$engine_version" >&2
   fi
-  if [[ "$platform" == Linux ]]; then
-    printf 'VidStream uses a loopback port. If you publish it to the LAN later, check Docker’s firewall rules because published ports can bypass UFW.\n' >&2
-  fi
 }
 
 first_setup() {
@@ -425,15 +496,18 @@ first_setup() {
   [[ "$image" =~ ^[A-Za-z0-9][A-Za-z0-9._:/@-]*$ ]] || fail 'VIDSTREAM_IMAGE must be a Docker image reference.'
   check_new_install
   prepare_docker setup
-  check_host_network
 
   existing_containers=$("${docker[@]}" ps -aq --filter "label=com.docker.compose.project=$project")
   existing_volumes=$("${docker[@]}" volume ls --quiet --filter "label=com.docker.compose.project=$project")
   if [[ -n "$existing_containers$existing_volumes" ]]; then
     fail "Docker already contains the $project setup. Start it with its existing Compose file."
   fi
-  if command -v nc >/dev/null && nc -z -w 1 127.0.0.1 "$port" >/dev/null 2>&1; then
-    fail "Port $port is already in use. Set VIDSTREAM_PORT to an unused port and rerun Start-Here."
+  memory=2 swap=0 bind=127.0.0.1 host=127.0.0.1
+  choose_role
+  choose_deployment || return 0
+  if [[ "$bind" == 127.0.0.1 ]]; then check_host_network; fi
+  if command -v nc >/dev/null && nc -z -w 1 "${bind/0.0.0.0/127.0.0.1}" "$port" >/dev/null 2>&1; then
+    fail "Port $port is already in use. Choose another port and rerun Start-Here."
   fi
 
   choose_folders
@@ -450,7 +524,8 @@ first_setup() {
   mkdir -p -- "$install_dir"
   check_new_install
   draft=$(mktemp "$install_dir/.compose.yaml.XXXXXXXX")
-  compose_editor "$image" --storage-dir "$portable_dir" "$image" "$port" "$theme" -- "${folders[@]}" > "$draft"
+  compose_editor "$image" --storage-dir "$portable_dir" --deployment "$memory" "$swap" "$bind" "$host" "$role" \
+    "$image" "$port" "$theme" -- "${folders[@]}" > "$draft"
   [[ -s "$draft" ]] || fail 'The editor returned an empty Compose file.'
   "${compose[@]}" --file "$draft" config --quiet
   mkdir -- "$portable_dir" || fail "Storage already exists at $portable_dir. Use the saved Compose file to reuse it."
@@ -463,8 +538,7 @@ first_setup() {
   compose+=(--file "$compose_file")
   "${compose[@]}" up -d --pull never || fail "Could not start VidStream. Your configuration is saved at $compose_file."
 
-  url=http://127.0.0.1
-  if [[ "$port" != 80 ]]; then url+=:$port; fi
+  url=$(deployment_url)
   printf '\nOpen %s to create your owner account.\n' "$url"
   setup_code=
   for ((attempt = 0; attempt < 10; attempt++)); do
@@ -479,7 +553,7 @@ first_setup() {
     printf '%q ' "${compose[@]}" logs stream
     printf '\n'
   fi
-  if [[ -n "${SSH_CONNECTION:-}" ]]; then
+  if [[ -n "${SSH_CONNECTION:-}" && "$bind" == 127.0.0.1 ]]; then
     printf '\nFrom a separate terminal on the computer with your browser, run:\n  ssh -N -L 127.0.0.1:8080:127.0.0.1:%s user@server\n' "$port"
     printf 'Replace user@server with your SSH login. This forwards your computer’s port 8080 to VidStream without publishing it to the network. Leave SSH open and visit http://127.0.0.1:8080 in your browser.\n'
   elif gui_session; then
@@ -491,32 +565,77 @@ first_setup() {
   fi
 }
 
-edit_existing() {
-  local existing_image
-  [[ -f "$compose_file" && ! -L "$compose_file" ]] || fail "No starter Compose file found at $compose_file. Check VIDSTREAM_INSTALL_DIR or choose first-time setup."
-  choose_folder add || exit 0
-  prepare_docker edit
-
-  lock_existing
+snapshot_existing() {
   snapshot=$(mktemp "$install_dir/.compose-original.XXXXXXXX")
   [[ -f "$compose_file" && ! -L "$compose_file" ]] || fail 'The starter Compose file moved during the edit.'
   cp -- "$compose_file" "$snapshot"
-  existing_image=$("${compose[@]}" --file "$snapshot" config --images stream)
-  [[ "$existing_image" =~ ^[A-Za-z0-9][A-Za-z0-9._:/@-]*$ ]] || fail 'Could not identify the existing VidStream image.'
+}
 
-  draft=$(mktemp "$install_dir/.compose.yaml.XXXXXXXX")
-  compose_editor "$existing_image" --add-folder "${folders[0]}" "$portable_dir" < "$snapshot" > "$draft" || \
-    fail 'Could not add the folder. Check the editor message and whether your existing VidStream image is available locally.'
+apply_compose_draft() {
   [[ -s "$draft" ]] || fail 'The editor returned an empty Compose file.'
-  "${compose[@]}" --file "$draft" config --quiet
+  "${compose[@]:0:${#compose[@]}-2}" --file "$draft" config --quiet
   [[ -f "$compose_file" && ! -L "$compose_file" ]] && cmp -s -- "$snapshot" "$compose_file" || \
     fail 'The Compose file changed during this edit. Open Start-Here and try again.'
   mv -f -- "$draft" "$compose_file"
   draft=
+}
+
+existing_image_name() {
+  local saved_image
+  saved_image=$("${compose[@]}" config --images stream)
+  [[ "$saved_image" =~ ^[A-Za-z0-9][A-Za-z0-9._:/@-]*$ ]] || fail 'Could not identify the existing VidStream image.'
+  printf '%s\n' "$saved_image"
+}
+
+effective_role() {
+  local container running_role
+  container=$("${compose[@]}" ps -q --status running stream)
+  [[ -n "$container" ]] || fail 'Choose Start existing VidStream before adding a folder so the launcher can check its current role.'
+  running_role=$("${docker[@]}" exec "$container" node -e \
+    'fetch("http://127.0.0.1:4000/health",{signal:AbortSignal.timeout(3000)}).then(r=>r.json()).then(d=>{if(!d.ok)throw Error();console.log(d.role||"legacy")}).catch(()=>process.exitCode=1)' 2>/dev/null) ||
+    fail 'Could not check the VidStream role. Wait until the saved project is healthy and try again.'
+  case "$running_role" in
+    server|node) printf '%s\n' "$running_role" ;;
+    legacy) compose_editor "$1" --role < "$snapshot" ;;
+    *) fail 'VidStream returned an unrecognized role.' ;;
+  esac
+}
+
+edit_existing() {
+  local existing_image current_role
+  prepare_existing edit
+  snapshot_existing
+  existing_image=$(existing_image_name)
+  current_role=$(effective_role "$existing_image")
+  [[ "$current_role" != node ]] || fail 'A node cannot add a library. Change this instance to Server in VidStream before adding a folder.'
+  choose_folder add || return 0
+  current_role=$(effective_role "$existing_image")
+  draft=$(mktemp "$install_dir/.compose.yaml.XXXXXXXX")
+  compose_editor "$existing_image" --add-folder "${folders[0]}" "$portable_dir" "$current_role" < "$snapshot" > "$draft"
+  apply_compose_draft
   printf 'Added the folder to %s.\n' "$compose_file"
   printf '\nWhen you are ready, run the command below. It briefly stops and recreates the VidStream container with the updated read-only mounts and reuses its existing volumes.\n  COMPOSE_REMOVE_ORPHANS=0 '
-  printf '%q ' "${compose[@]}" --file "$compose_file" up -d --pull never --force-recreate stream
+  printf '%q ' "${compose[@]}" up -d --pull never --force-recreate stream
   printf '\n'
+}
+
+configure_existing() {
+  local existing_image current
+  prepare_existing edit
+  snapshot_existing
+  existing_image=$(existing_image_name)
+  current=$(compose_editor "$existing_image" --deployment-summary < "$snapshot")
+  { read -r memory; read -r swap; read -r bind; read -r host; read -r port; } <<< "$current"
+  choose_deployment || return 0
+  draft=$(mktemp "$install_dir/.compose.yaml.XXXXXXXX")
+  compose_editor "$existing_image" --configure "$memory" "$swap" "$bind" "$host" "$port" < "$snapshot" > "$draft"
+  apply_compose_draft
+  printf 'Saved RAM and access settings at %s. New address: %s.\n' "$compose_file" "$(deployment_url)"
+  if ask_yes 'Apply now? VidStream will restart and reuse its saved media mounts, catalog and cache.'; then
+    "${compose[@]}" up -d --pull never --wait stream || fail 'Could not apply the saved settings. Review the Docker error above.'
+  else
+    printf 'Choose Start existing VidStream when you are ready to apply these settings.\n'
+  fi
 }
 
 mount_spec() {
@@ -665,7 +784,7 @@ platform=$(uname -s)
 case "$platform" in Darwin|Linux) ;; *) fail 'Use Start-Here.bat on Windows.' ;; esac
 folders=()
 while :; do
-  printf '\nVidStream\n  1. First-time setup\n  2. Add a media folder\n  3. Start existing VidStream\n  4. Stop VidStream\n  5. Prepare storage to move\n  Q. Exit\nChoose an option. ' >&2
+  printf '\nVidStream\n  1. First-time setup\n  2. Add a media folder (server only)\n  3. Start existing VidStream\n  4. Stop VidStream\n  5. Prepare storage to move\n  6. Configure memory and access\n  Q. Exit\nChoose an option. ' >&2
   IFS= read -r action || exit 0
   case "$action" in
     1) first_setup; break ;;
@@ -673,6 +792,7 @@ while :; do
     3) start_existing; break ;;
     4) prepare_existing edit; stop_existing; break ;;
     5) prepare_move; break ;;
+    6) configure_existing; break ;;
     q|Q) exit 0 ;;
   esac
 done

@@ -14,11 +14,11 @@ An existing owner account stays with its persistent data. An installation that u
 
 | To do this | Where to go |
 | --- | --- |
-| Switch folders on one server | Open **Folders** at the top left and pick a folder or **All media**. Start-Here adds a menu entry for each mounted folder. Its first selection opens by default. |
+| Switch folders on one server | Open the current folder name at the top left and pick a folder or **All media**. Start-Here adds a menu entry for each mounted folder. VidStream remembers the selected folder in your browser and restores your gallery position after a refresh. |
 | Add another directory on the host | Reopen Start-Here and choose **Add a media folder**. The printed Compose command applies the new read-only mount and briefly restarts the service. [Start-Here guide](STARTER.md#add-a-folder-to-an-existing-setup) |
 | Manage mounts by hand | Bind each chosen host folder as a direct child of `/media/collections` and set the primary mount. [Mounted folders](MOUNTED_FOLDERS.md) |
 | Create navigation shortcuts within a single media root | As owner, open **Settings → Folders** or **Choose folders…** in the title menu. Name a shortcut and give it a path relative to the mounted root. [Folder shortcuts](FOLDERS.md) |
-| Switch to a separate server | Open **Settings → Nodes** as owner, check the other server's address and add it. Use **Switch library** in the top bar to open it. [Independent libraries](NODES.md) |
+| Switch to a separate server | On a machine with the **Server** role, open **Settings → Nodes**, check the other machine's address and add it. Open it from **Node** in the top bar. Change the machine role in the same settings panel. [Independent libraries](NODES.md) |
 
 Mounted folders and shortcuts are both views into a server's library. A shortcut filters existing catalog records. A mount controls which files Docker makes available to index. The selected folder does not grant or revoke access. With several servers, each one stores its own catalog, accounts, history and previews. Your browser connects directly to the selected server.
 
