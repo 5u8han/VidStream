@@ -7,9 +7,9 @@ files stay on storage you control.
 
 [Quick start](#quick-start) · [User guide](docs/USAGE.md) · [Requirements and commands](docs/COMMANDS.md) · [Docker Hub publishing](docs/DOCKER_HUB.md)
 
-**Version 2.2** requires owner sign-in, adds optional Intel Quick Sync encoding
-and lets the standalone audit create compatible viewing copies while archiving
-originals beside them. [Large-library performance guide](docs/PERFORMANCE.md)
+**Version 3.0** adds the Dashboard benchmark, portable cache and
+migration, and improved large-library scanning and node switching.
+[Benchmark guide](docs/BENCHMARK.md) · [Large-library performance](docs/PERFORMANCE.md)
 
 ## What you can do
 
@@ -20,7 +20,7 @@ originals beside them. [Large-library performance guide](docs/PERFORMANCE.md)
 | Keep track of media | Save favorites, pins, and bookmarks, resume playback, and review viewing history. The SQLite catalog retains these across container rebuilds. |
 | Keep the library private | Catalogs, playback, and downloads require owner sign-in. Guided setup mounts source media read-only. |
 | Connect independent servers | Save the addresses of other VidStream installations and switch libraries from the top-center menu. Each server manages its own media, catalog, and sign-in. |
-| Inspect and maintain | View storage and server resources, run catalog maintenance, and create catalog backups. Optional local recognition makes images and videos easier to find. |
+| Inspect and maintain | Benchmark the host and browser, inspect storage and resources, and create catalog backups. Optional local recognition makes images and videos easier to find. |
 
 ## Quick start
 
@@ -39,13 +39,13 @@ bash ./Start-Here.sh
 - `git clone` downloads the source into a new `VidStream` directory.
 - `cd VidStream` enters that directory.
 - `bash ./Start-Here.sh` opens the guided setup. It creates a private
-  `compose.yaml`, sets up Docker volumes, and starts the service after you
+  `compose.yaml`, creates `vidstream-local/` for durable application state, and starts the service after you
   select folders and a theme.
 
 On Windows, open [Start-Here.bat](Start-Here.bat) from the downloaded checkout.
 Choose **First-time setup**. Select the folder that should open first, add
 any others, and choose a theme. Open the address the launcher prints, usually
-`http://127.0.0.1:8080`. Enter its one-time setup code to create your owner
+`http://127.0.0.1/`. Enter its one-time setup code to create your owner
 account. [Complete setup and update guide](docs/STARTER.md)
 
 For an existing guided install, use **Add a media folder** to update its
@@ -98,6 +98,8 @@ workflow, then mount the finished files.
 | Install, start, stop, update, back up, or test the app | [Requirements and commands](docs/COMMANDS.md) |
 | Choose folder shortcuts or mount specific source directories | [Folder shortcuts](docs/FOLDERS.md) · [Mounted folders](docs/MOUNTED_FOLDERS.md) |
 | Configure GPU access, a RAM cache, or connected servers | [Hardware](docs/HARDWARE.md) · [RAM cache](docs/RAM_CACHE.md) · [Nodes](docs/NODES.md) |
+| Benchmark a machine or compare viewing devices | [Deployment benchmark](docs/BENCHMARK.md) |
+| Put the cache beside your checkout or move to another machine | [Portable cache and migration](docs/PORTABLE_CACHE.md) |
 | Tune a large library or troubleshoot preview stalls | [Large-library performance](docs/PERFORMANCE.md) |
 | Check source videos, create compatible copies, and archive originals | [Standalone media audit](docs/MEDIA_AUDIT.md) |
 | Publish and verify the Docker Hub image | [Docker Hub publishing](docs/DOCKER_HUB.md) |

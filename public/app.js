@@ -12,13 +12,30 @@
   var autoplayEnabled = CONFIG.videoAutoplayPreviews && !prefersReducedMotion && !dataSaverMode;
   var isAdmin = Boolean(CONFIG.isAdmin);
   var libraryStatus = null;
+  var galleryRefreshSuggested = false;
   var effectsMode = storageGet('stream-effects', 'full');
+  var lightweightGallery = storageGet('stream-lightweight', '0') === '1';
+  var previewMemoryEnabled = storageGet('stream-preview-memory', '0') === '1';
   var pinnedActions=[];try{pinnedActions=JSON.parse(storageGet('stream-pinned-actions','[]'));if(!Array.isArray(pinnedActions))pinnedActions=[];}catch(_){}
-  document.documentElement.dataset.effects = effectsMode;
+  var bg = null;
 
-  var bg = window.StreamAmbient
-    ? window.StreamAmbient.start({ reducedMotion: prefersReducedMotion, lite: dataSaverMode, mode:effectsMode })
-    : null;
+  function syncEffects() {
+    var mode = lightweightGallery || dataSaverMode ? 'off' : effectsMode;
+    document.documentElement.dataset.effects = mode;
+    document.documentElement.toggleAttribute('data-lightweight', lightweightGallery);
+    if (mode !== 'full') entrance?.cancel();
+    if (mode === 'off') {
+      bg?.setMode(mode);
+      return;
+    }
+    if (!bg && !prefersReducedMotion) {
+      bg = window.StreamAmbient?.start({ mode: mode }) || null;
+      bg?.setBusy(backgroundBusy);
+    }
+    bg?.setMode(mode);
+  }
+
+  syncEffects();
 
   if (CONFIG.locked) {
     appEl.innerHTML = '';
@@ -38,14 +55,12 @@
     chevronRight: '<path d="M9 6l6 6-6 6"/>',
     download: '<path d="M12 3v11M7.5 10L12 14.5 16.5 10M5 19h14"/>',
     refresh: '<path d="M4 10a8 8 0 0114-5.3M20 5v5h-5M20 14a8 8 0 01-14 5.3M4 19v-5h5"/>',
-    rss: '<circle cx="6.2" cy="17.8" r="1.6" fill="currentColor" stroke="none"/><path d="M4 10.5a9.5 9.5 0 019.5 9.5M4 4.8a15.2 15.2 0 0115.2 15.2"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="m9 3 1-2h4l1 2 3 2 2 1v4l-2 1v3l2 1v4l-2 1-3 2-1 2h-4l-1-2-3-2-2-1v-4l2-1v-3l-2-1V6l2-1z"/>',
     sliders: '<line x1="4" y1="7" x2="20" y2="7"/><circle cx="14" cy="7" r="2" fill="currentColor"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="8" cy="12" r="2" fill="currentColor"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="16" cy="17" r="2" fill="currentColor"/>',
     play: '<path d="M7 5l12 7-12 7V5z" fill="currentColor"/>',
     pause: '<rect x="6" y="5" width="4" height="14" fill="currentColor"/><rect x="14" y="5" width="4" height="14" fill="currentColor"/>',
     search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>',
     copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 00-1-1H5a1 1 0 00-1 1v10a1 1 0 001 1h3"/>',
-    checkCircle: '<circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9"/>',
     circle: '<circle cx="12" cy="12" r="9"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5" stroke-width="2.2"/><circle cx="12" cy="7.8" r="1.1" fill="currentColor" stroke="none"/>',
     edit: '<path d="M4 20l1-4.2L15.8 5 19 8.2 8.2 19 4 20z"/><path d="M13.2 6.6L17.4 10.8"/>',
@@ -109,9 +124,13 @@
     storageSet('stream-viewer-blur', String(viewerBlur));
   }
   function applyEffects(mode) {
-    effectsMode = mode; storageSet('stream-effects', mode); document.documentElement.dataset.effects = mode;
-    if (bg) bg.setMode(mode);
-    if (mode !== 'full') entrance?.cancel();
+    var wasOff = document.documentElement.dataset.effects === 'off';
+    effectsMode = mode;
+    storageSet('stream-effects', mode);
+    syncEffects();
+    if (wasOff && bg && document.documentElement.dataset.effects !== 'off') {
+      grid.querySelectorAll('.tile[data-hydrated]').forEach(function (tile) { bg.watchTile(tile, tile._item.color); });
+    }
   }
 
   function applyTheme(theme) {
@@ -147,7 +166,6 @@
     loadToken: 0,
   };
 
-  var selection = { active: false, ids: new Set() };
   var foldersReady = Promise.resolve();
 
 
@@ -158,11 +176,8 @@
   main.appendChild(grid);
   var linksBottom = el('ul', { class: 'links-bottom' });
   var lightbox = buildLightbox();
-  if (bg) lightbox.root.classList.add('ambient');
   var toastEl = el('div', { class: 'toast' });
-  var selectionBar = buildSelectionBar();
   var librarySummary = buildLibrarySummary();
-  var filesModal = buildFilesModal();
   var dashboardModal = buildDashboardModal();
 
   appEl.appendChild(header);
@@ -170,24 +185,19 @@
   appEl.appendChild(librarySummary.root);
   appEl.appendChild(linksBottom);
   appEl.appendChild(lightbox.root);
-  appEl.appendChild(filesModal.root);
   appEl.appendChild(dashboardModal.root);
-  appEl.appendChild(selectionBar.root);
   appEl.appendChild(toastEl);
 
   renderHeader();
   renderBottomLinks();
   entrance?.shell(header);
-  if (window.StreamAmbient) {
-    window.StreamAmbient.bindHoverFx(header);
-    window.StreamAmbient.bindHoverFx(linksBottom);
-  }
+  window.StreamAmbient?.bindHoverFx(linksBottom);
 
 
   function buildMenu() {
     var wrap = el('div', { class: 'menu-wrap' });
-    var trigger = el('button', { class: 'icon-btn control-launcher', title: 'View options', 'aria-label': 'View options', 'aria-haspopup': 'dialog' }, icon('sliders') + '<span>View</span>');
-    var panel = el('div', { class: 'menu-panel view-panel', role: 'dialog', 'aria-label': 'View options' });
+    var trigger = el('button', { class: 'icon-btn control-launcher', title: 'View options', 'aria-label': 'View options', 'aria-haspopup': 'dialog', 'aria-controls': 'gallery-view-options' }, icon('sliders') + '<span>View</span>');
+    var panel = el('div', { id: 'gallery-view-options', class: 'menu-panel view-panel', role: 'dialog', 'aria-label': 'View options' });
     var afterClose = null;
     header._menuPanel = panel;
 
@@ -219,14 +229,15 @@
 
     var heading = el('header', { class: 'view-heading' });
     var title = el('div');
-    title.append(el('strong', {}, 'View options'), el('small', {}, 'Make the gallery your own'));
+    title.appendChild(el('strong', {}, 'View options'));
     var close = choice('×', { class: 'view-close', 'aria-label': 'Close View options' }, function () { window.StreamNavigation.back(); });
     heading.append(title, close);
-    panel.appendChild(heading);
+    var cards = el('div', { class: 'view-card-grid' });
+    panel.append(heading, cards);
 
-    var layout = section('Media size', 'view-size-section');
+    var layout = section('Layout');
     var sizeLabel = el('label', { class: 'view-size-label', for: 'view-media-size' });
-    sizeLabel.appendChild(el('span', {}, 'One size for the whole gallery'));
+    sizeLabel.appendChild(el('span', {}, 'Media size'));
     var preferredSize = tileSize || ({ small: 160, medium: 240, large: 380 }[currentDensity] || 240);
     var sizeValue = el('output', { for: 'view-media-size', class: 'view-size-value' }, preferredSize + ' px');
     sizeLabel.appendChild(sizeValue);
@@ -240,11 +251,9 @@
         sizeSlider._raf = 0; remeasureAndReflow();
       });
     });
-    var scale = el('div', { class: 'view-range-ends', 'aria-hidden': 'true' }, '<span>Compact</span><span>Large</span>');
-    layout.append(sizeLabel, sizeSlider, scale);
-    panel.appendChild(layout);
+    layout.append(sizeLabel, sizeSlider);
+    cards.appendChild(layout);
 
-    var framing = section('Framing');
     var fitChoices = el('div', { class: 'view-segmented', role: 'group', 'aria-label': 'Media framing' });
     [['contain', 'Whole frame'], ['cover', 'Fill tiles']].forEach(function (option) {
       var button = choice(option[1], { 'data-fit': option[0] }, function () {
@@ -253,7 +262,7 @@
       });
       paintChoice(button, document.documentElement.dataset.mediaFit === option[0]); fitChoices.appendChild(button);
     });
-    framing.appendChild(fitChoices);
+    layout.appendChild(fitChoices);
     var organicRow = el('div', { class: 'view-organic-row' });
     var randomButton = choice('Randomly enlarge videos', { 'data-random-size': 'on', 'aria-label': 'Randomly enlarge video previews' }, function () {
       if (randomEnabled) uniform(); else randomize();
@@ -261,8 +270,7 @@
     });
     var reshuffle = choice('Reshuffle', { class: 'view-text-action', 'aria-label': 'Reshuffle enlarged video previews' }, function () { randomize(); paintRandom(); });
     function paintRandom() { paintChoice(randomButton, randomEnabled); reshuffle.disabled = !randomEnabled; }
-    paintRandom(); organicRow.append(randomButton, reshuffle); framing.appendChild(organicRow);
-    panel.appendChild(framing);
+    paintRandom(); organicRow.append(randomButton, reshuffle); layout.appendChild(organicRow);
 
     var outlines = section('Artist outlines');
     var outlineChoices = el('div', { class: 'view-segmented', role: 'group', 'aria-label': 'Artist outlines' });
@@ -277,25 +285,19 @@
       storageSet('stream-artist-palette', window.StreamActivity.uuid());
       grid.querySelectorAll('.tile').forEach(function (tile) { tile.style.setProperty('--source-color', creatorColor(tile._item.creator)); }); artistOutlines.refresh();
     });
-    outlines.append(outlineChoices, recolor); panel.appendChild(outlines);
+    outlines.append(outlineChoices, recolor); cards.appendChild(outlines);
 
-    var sortSection = section('Sort');
+    var filters = section('Sorting and filters');
     var sortOptions = [['desc', 'Newest first'], ['asc', 'Oldest first'], ['name-asc', 'Name A–Z'], ['name-desc', 'Name Z–A'], ['random', 'Shuffle'], ['creator', 'All media · artist A–Z']];
     if (isAdmin) sortOptions.push(['recent', 'Recently opened'], ['continue', 'Continue watching'], ['less-seen', 'Less-seen shuffle']);
-    var primarySort = el('div', { class: 'view-segmented', role: 'group', 'aria-label': 'Quick sort' });
     function chooseSort(value) {
       if (value === 'random' || value === 'less-seen') state.seed = String(Date.now());
       if (value === 'continue') { state.type = 'video'; header.querySelector('[aria-label="Filter by type"]').value = 'video'; }
       if (value === 'creator') clearGalleryFilters();
       state.sort = value; markSortSelected(); resetAndLoad();
     }
-    [['desc', 'Newest'], ['random', 'Shuffle'], ['creator', 'Artist']].forEach(function (option) {
-      primarySort.appendChild(choice(option[1], { 'data-sort': option[0] }, function () { chooseSort(option[0]); }));
-    });
-    sortSection.appendChild(primarySort);
-    if (CONFIG.allowOrderSortChange) panel.appendChild(sortSection);
-
-    var contains = section('Show');
+    var order = selectControl('Sort order', sortOptions, state.sort, chooseSort);
+    if (CONFIG.allowOrderSortChange) filters.appendChild(order.field);
     var containsChoices = el('div', { class: 'view-filter-choices' });
     [['', 'All media'], ['favorite', '★ Favorites'], ['pinned', 'Pinned'], ['bookmarked', 'Bookmarks'], ['face', 'Faces'], ['cat', 'Pets'], ['text', 'Text']].forEach(function (option) {
       var button = choice(option[1], { 'data-has': option[0] }, function () {
@@ -303,10 +305,12 @@
       });
       paintChoice(button, (state.has || '') === option[0]); containsChoices.appendChild(button);
     });
-    contains.appendChild(containsChoices); panel.appendChild(contains);
+    containsChoices.setAttribute('role', 'group');
+    containsChoices.setAttribute('aria-label', 'Show only');
+    filters.appendChild(containsChoices);
     header._containsSection = containsChoices;
 
-    var previews = section('Video previews');
+    var previews = section('Video previews', 'view-preview-section');
     var pauseAll = choice('Autoplay previews', { 'data-preview-toggle': '1' }, function () {
       autoplayEnabled = !autoplayEnabled;
       if (!autoplayEnabled) Array.from(runningPreviews).forEach(pausePreview); else refillPreviews();
@@ -315,14 +319,25 @@
     var previewState = el('span', { class: 'view-value' });
     pauseAll.appendChild(previewState);
     function paintPreviews() { paintChoice(pauseAll, autoplayEnabled); previewState.textContent = autoplayEnabled ? 'Playing' : 'Paused'; }
-    paintPreviews(); previews.appendChild(pauseAll); panel.appendChild(previews);
-
-    var advanced = el('details', { class: 'view-advanced' });
-    advanced.appendChild(el('summary', {}, 'More controls'));
-    advanced.appendChild(el('p', { class: 'menu-help' }, 'Dates, playback limits and saved views.'));
-    var advancedBody = el('div', { class: 'view-advanced-body' }); advanced.appendChild(advancedBody);
-    var order = selectControl('Sort order', sortOptions, state.sort, chooseSort);
-    if (CONFIG.allowOrderSortChange) advancedBody.appendChild(order.field);
+    var lite = choice('Lightweight gallery', { 'aria-describedby': 'lightweight-gallery-help' }, function () {
+      lightweightGallery = !lightweightGallery;
+      storageSet('stream-lightweight', lightweightGallery ? '1' : '0');
+      syncEffects();
+      previewController.clear();
+      grid.querySelectorAll('.tile[data-hydrated]').forEach(function (tile) {
+        dehydrateTile(tile, true);
+        hydrateTile(tile);
+      });
+      paintLightweight();
+    });
+    function paintLightweight() {
+      paintChoice(lite, lightweightGallery);
+      source.control.disabled = lightweightGallery;
+      source.control.value = currentPreviewSource();
+    }
+    var liteHelp = el('p', { id: 'lightweight-gallery-help', class: 'menu-help' }, 'Smaller thumbnails and lighter effects. Autoplay stays available.');
+    var previewChoices = el('div', { class: 'view-action-row' });
+    paintPreviews(); previewChoices.append(pauseAll, lite); previews.append(previewChoices, liteHelp);
 
     var dates = section('Dates and resolution');
     var dateField = selectControl('Date filter field', [['created', 'Media created/taken'], ['imported', 'Imported into Stream']], state.dateField, function (value) { state.dateField = value; resetAndLoad(); });
@@ -335,36 +350,54 @@
     var toLabel = el('label', { class: 'view-field' }); toLabel.append(el('span', {}, 'To'), to);
     dateRange.append(fromLabel, toLabel);
     var resolution = selectControl('Minimum resolution', [['0', 'Any resolution'], ['720', '720p+'], ['1080', '1080p+'], ['2160', '4K+']], state.resolution, function (value) { state.resolution = Number(value); resetAndLoad(); });
-    dates.append(dateField.field, dateRange, resolution.field); advancedBody.appendChild(dates);
+    dates.append(dateField.field, dateRange, resolution.field);
+    cards.append(filters, dates, previews);
 
-    var playback = section('Playback');
-    var maxPreview = selectControl('Maximum simultaneous video previews', [[4, '4 previews'], [8, '8 previews'], [12, '12 previews'], [16, '16 previews'], [24, '24 previews'], [64, 'Up to 64 previews']], MAX_PREVIEWS || 8, function (value) {
+    var playback = previews;
+    var maxPreview = selectControl('Concurrent previews', [[4, '4 previews'], [8, '8 previews'], [12, '12 previews'], [16, '16 previews'], [24, '24 previews'], [64, 'Up to 64 previews']], MAX_PREVIEWS || 8, function (value) {
       MAX_PREVIEWS = Number(value); storageSet('stream-max-previews', String(MAX_PREVIEWS));
       if (runningPreviews.size > MAX_PREVIEWS) Array.from(runningPreviews).slice(MAX_PREVIEWS).forEach(pausePreview);
       previewController.trim();
       refillPreviews();
     });
     var source = selectControl('Preview source', [['preview', 'Optimized · native FPS up to 60'], ['original', 'Original · full quality']], previewSource, function (value) { previewSource = value; storageSet('stream-preview-source', value); resetAndLoad(); });
+    paintLightweight();
     var saver = choice('Data saver', { 'data-saver-toggle': '1', title: 'Reduces autoplay and loads images later. Reloads this page.' }, function () {
       dataSaverMode = !dataSaverMode; storageSet('stream-data-saver', dataSaverMode ? '1' : '0'); location.reload();
     });
     paintChoice(saver, dataSaverMode);
+    var memory = choice('Keep recent previews in memory', { 'aria-describedby': 'preview-memory-help' }, function () {
+      previewMemoryEnabled = !previewMemoryEnabled;
+      storageSet('stream-preview-memory', previewMemoryEnabled ? '1' : '0');
+      paintChoice(memory, previewMemoryEnabled);
+      if (!previewMemoryEnabled) previewMemory.clear();
+    });
+    paintChoice(memory, previewMemoryEnabled);
+    var memoryHelp = el('p', { id: 'preview-memory-help', class: 'menu-help' }, 'Keep up to 64 MiB of recent optimized clips in this tab. First play waits for the short clip to load.');
     var diagnose = choice('Check playback smoothness', {}, function () {
       window.StreamNavigation.leave('options');
-      window.StreamDiagnostics.open({ videos: function () { return Array.from(document.querySelectorAll('video')).filter(function (video) { return !video.paused; }).slice(0, 4); }, previewLimit: MAX_PREVIEWS, previewStats: function () { return previewController.stats(); }, effects: effectsMode });
+      window.StreamDiagnostics.open({
+        videos: function () { return Array.from(runningPreviews).map(function (tile) { return tile._video; }).filter(Boolean).slice(0, 4); },
+        previewLimit: MAX_PREVIEWS,
+        previewStats: function () {
+          return Object.assign(previewController.stats(), { tabMemory: Object.assign({ enabled: previewMemoryEnabled }, previewMemory.stats()) });
+        },
+        effects: document.documentElement.dataset.effects,
+        lightweight: lightweightGallery,
+        previewSource: currentPreviewSource()
+      });
     });
-    playback.append(maxPreview.field, source.field, saver, el('p', { class: 'menu-help' }, 'The limit applies to nearby videos. Optimized mode shows a poster while its preview is being made. Data saver reloads the page.'), diagnose);
+    var playbackControls = el('div', { class: 'view-date-range' });
+    playbackControls.append(source.field, maxPreview.field);
+    var playbackActions = el('div', { class: 'view-action-row' });
+    playbackActions.append(saver, memory, diagnose);
+    playback.append(playbackControls, playbackActions, memoryHelp);
     if (isAdmin) {
       var rebuild = choice('Refresh metadata & previews', {}, function () {
-        rebuild.disabled = true; showToast('Refreshing metadata and previews…');
-        fetch('/api/rescan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ force: true }) })
-          .then(function (response) { if (!response.ok) throw Error('Refresh failed'); return response.json(); })
-          .then(function (result) { showToast(result.skipped ? 'A scan or edit is already running' : 'Metadata and previews refreshed'); resetAndLoad(); fetchLibraryStatus(); })
-          .catch(function (error) { showToast(error.message); }).finally(function () { rebuild.disabled = false; });
+        queueLibraryScan(rebuild, true);
       });
-      playback.appendChild(rebuild);
+      playbackActions.appendChild(rebuild);
     }
-    advancedBody.appendChild(playback);
 
     var saved = section('Saved views');
     var viewName = el('input', { type: 'text', class: 'menu-date', maxlength: '50', placeholder: 'Name this view', 'aria-label': 'Saved view name' });
@@ -382,40 +415,52 @@
       from.value = state.dateFrom || ''; to.value = state.dateTo || ''; dateField.control.value = state.dateField || 'created'; resolution.control.value = String(state.resolution || 0);
       markSortSelected(); refreshContainsHighlight(); resetAndLoad(); showToast('Saved view applied');
     });
-    var saveView = choice('Save current view', {}, function () {
+    var saveView = choice('Save', {}, function () {
       var name = viewName.value.trim(); if (!name) { viewName.focus(); return; }
       var filters = {}; savedKeys.forEach(function (key) { filters[key] = state[key]; });
       savedViews = savedViews.filter(function (view) { return view.name !== name; }); savedViews.unshift({ name: name, filters: filters }); savedViews = savedViews.slice(0, 20);
       storageSet('stream-saved-filters', JSON.stringify(savedViews)); paintSaved(); showToast('View saved on this browser');
     });
-    var removeView = choice('Remove selected view', { 'aria-label': 'Remove selected saved view' }, function () {
+    var removeView = choice('Remove', { 'aria-label': 'Remove selected saved view' }, function () {
       if (savedSelect.value === '') return; savedViews.splice(Number(savedSelect.value), 1); storageSet('stream-saved-filters', JSON.stringify(savedViews)); paintSaved();
     });
-    saved.append(viewName, saveView, savedSelect, removeView); advancedBody.appendChild(saved); paintSaved();
+    var savedFields = el('div', { class: 'view-saved-fields' });
+    savedFields.append(viewName, saveView, savedSelect, removeView);
+    saved.appendChild(savedFields); cards.appendChild(saved); paintSaved();
 
     var quick = section('Pin to toolbar');
+    var pins = el('div', { class: 'view-action-row' });
+    quick.appendChild(pins);
     [['shuffle', 'Shuffle'], ['best', 'Favorites'], ['previews', 'Pause previews']].forEach(function (entry) {
       var button = choice(entry[1], { 'aria-label': 'Pin ' + entry[1] + ' to toolbar' }, function () {
         var index = pinnedActions.indexOf(entry[0]); if (index < 0) pinnedActions.push(entry[0]); else pinnedActions.splice(index, 1);
         storageSet('stream-pinned-actions', JSON.stringify(pinnedActions)); paintChoice(button, pinnedActions.includes(entry[0])); renderQuickActions();
       });
-      paintChoice(button, pinnedActions.includes(entry[0])); quick.appendChild(button);
+      paintChoice(button, pinnedActions.includes(entry[0])); pins.appendChild(button);
     });
-    advancedBody.appendChild(quick); panel.appendChild(advanced);
+    cards.appendChild(quick);
 
     function markSortSelected() {
-      primarySort.querySelectorAll('[data-sort]').forEach(function (button) { paintChoice(button, button.dataset.sort === state.sort); });
       order.control.value = state.sort;
     }
     markSortSelected(); refreshContainsHighlight();
 
+    function positionPanel() {
+      var anchor = trigger.getBoundingClientRect();
+      var width = Math.min(innerWidth <= 900 ? 670 : 880, innerWidth - 16);
+      var left = Math.max(8, Math.min(anchor.left + anchor.width / 2 - width / 2, innerWidth - width - 8));
+      panel.style.setProperty('--controls-top', Math.max(8, header.getBoundingClientRect().bottom + 8) + 'px');
+      panel.style.setProperty('--controls-left', left + 'px');
+    }
     function showMenu() {
-      panel.classList.add('open'); panel.style.setProperty('--menu-top', Math.max(8, header.getBoundingClientRect().bottom + 8) + 'px'); panel.inert = false;
+      panel.hidden = false; positionPanel(); panel.classList.add('open'); panel.inert = false;
       trigger.setAttribute('aria-expanded', 'true'); markSortSelected(); paintPreviews(); paintRandom();
       document.addEventListener('click', outsideClick, true);
+      window.addEventListener('resize', positionPanel);
     }
     function hideMenu() {
-      panel.classList.remove('open'); panel.inert = true; trigger.setAttribute('aria-expanded', 'false'); document.removeEventListener('click', outsideClick, true);
+      panel.classList.remove('open'); panel.hidden = true; panel.inert = true; trigger.setAttribute('aria-expanded', 'false'); document.removeEventListener('click', outsideClick, true);
+      window.removeEventListener('resize', positionPanel);
       trigger.focus({ preventScroll: true });
       if (afterClose) {
         var next = afterClose; afterClose = null;
@@ -428,7 +473,7 @@
     }
     function outsideClick(event) {
       if (!wrap.contains(event.target)) {
-        afterClose = event.target.closest('button[aria-label="Settings"], button.folder-trigger');
+        afterClose = event.target.closest('.header button');
         event.preventDefault(); event.stopImmediatePropagation(); window.StreamNavigation.back();
       }
     }
@@ -440,7 +485,7 @@
         event.preventDefault(); event.stopImmediatePropagation(); window.StreamNavigation.back();
       }
     }, true);
-    panel.inert = true; trigger.setAttribute('aria-expanded', 'false'); wrap.append(trigger, panel);
+    panel.hidden = true; panel.inert = true; trigger.setAttribute('aria-expanded', 'false'); wrap.append(trigger, panel);
     return wrap;
   }
 
@@ -501,7 +546,7 @@
 
   function renderHeader() {
     var title = el('div', { class: 'header-title' });
-    title.textContent = CONFIG.title;
+    title.textContent = 'Folders';
 
     var controls = el('div', { class: 'header-controls' });
     header._quickActions=el('div',{class:'quick-actions','aria-label':'Pinned quick actions'});controls.appendChild(header._quickActions);renderQuickActions();
@@ -532,35 +577,17 @@
 
     controls.appendChild(buildSearch());
 
-    var selectBtn = el('button', { class: 'icon-btn', title: 'Select', 'aria-label': 'Select photos and videos' }, icon('checkCircle'));
-    selectBtn.addEventListener('click', function () {
-      if (selection.active) exitSelectionMode(); else enterSelectionMode();
-    });
-    controls.appendChild(selectBtn);
-    header._selectBtn = selectBtn;
-
     controls.appendChild(buildMenu());
-    var settingsButton=el('button',{class:'icon-btn control-launcher',title:'Settings (/)', 'aria-label':'Settings'},icon('settings')+'<span>Settings</span>');settingsButton.onclick=window.StreamSettings.open;controls.appendChild(settingsButton);
+    var settingsButton=el('button',{class:'icon-btn control-launcher',title:'Settings (/)', 'aria-label':'Settings', 'aria-haspopup':'dialog', 'aria-controls':'stream-settings', 'aria-expanded':'false'},icon('settings')+'<span>Settings</span>');settingsButton.onclick=window.StreamSettings.open;controls.appendChild(settingsButton);
 
     var rescanBtn = el('button', { class: 'icon-btn', title: 'Rescan library', 'aria-label': 'Rescan library' }, icon('refresh'));
-    rescanBtn.addEventListener('click', function () {
-      rescanBtn.style.opacity = '0.4';
-      fetch('/api/rescan', { method: 'POST' })
-        .then(function (r) { if (!r.ok) throw new Error('rescan failed'); return r.json(); })
-        .then(function () { resetAndLoad(); fetchLibraryStatus(); showToast('Library rescanned'); })
-        .catch(function () { showToast('Rescan failed'); })
-        .finally(function () { rescanBtn.style.opacity = ''; });
-    });
+    rescanBtn.addEventListener('click', function () { queueLibraryScan(rescanBtn, false); });
     if (isAdmin) {
       controls.appendChild(rescanBtn);
-      var dashboardBtn = el('button', { class: 'icon-btn', title: 'Library dashboard', 'aria-label': 'Library dashboard' }, icon('chart'));
+      var dashboardBtn = el('button', { class: 'icon-btn header-dashboard', title: 'Library dashboard', 'aria-label': 'Library dashboard' }, icon('chart'));
+      dashboardBtn.appendChild(el('span', { class: 'dashboard-issue-badge', 'data-issue-count': '', hidden: '' }));
       dashboardBtn.addEventListener('click', function () { dashboardModal.open(); });
       controls.appendChild(dashboardBtn);
-    }
-
-    if (CONFIG.showRssFeed) {
-      var rssLink = el('a', { class: 'icon-btn', href: '/feed.xml', title: 'RSS feed', 'aria-label': 'RSS feed' }, icon('rss'));
-      controls.appendChild(rssLink);
     }
 
     header.appendChild(title);
@@ -591,36 +618,38 @@
     if (root.classList.contains('video-stats')) return;
     root.innerHTML = '';
     if (!s) return;
-    if (libraryStatus.scanning) {
-      var progress = libraryStatus.progress;
-      var scanText = 'Scanning…';
-      if (progress?.phase === 'discovering') scanText = 'Discovering media · ' + progress.discovered.toLocaleString() + ' found';
-      if (progress?.phase === 'checking') scanText = 'Checking files · ' + progress.examined.toLocaleString() + ' / ' + progress.discovered.toLocaleString();
-      if (progress?.phase === 'processing') scanText = 'Importing · ' + progress.processed.toLocaleString() + ' / ' + progress.discovered.toLocaleString() + ' checked';
-      root.appendChild(el('span', { class: 'scan-timing' }, scanText));
+    if (libraryStatus.scanning || libraryStatus.queued?.length) {
+      var scanButton = el('button', { type: 'button', class: 'scan-timing', title: 'Open live scan activity' }, scanDescription(libraryStatus));
+      scanButton.addEventListener('click', function () { dashboardModal.open('scan'); });
+      root.appendChild(scanButton);
     }
     root.appendChild(el('span', {}, plural(s.photoCount, 'photo')));
     root.appendChild(el('span', {}, plural(s.videoCount, 'video')));
     if (s.unsupportedCount > 0) {
       var u = el('button', { type: 'button', title: 'See which files were not imported' }, s.unsupportedCount.toLocaleString() + ' unsupported');
-      u.addEventListener('click', function () { filesModal.open(); });
+      u.addEventListener('click', function () { dashboardModal.open('issues'); });
       root.appendChild(u);
     }
     if (s.unreadableDirectoryCount > 0) {
       var dirButton = el('button', { type: 'button', title: 'Some folders could not be read' },
         s.unreadableDirectoryCount.toLocaleString() + ' offline folders');
-      dirButton.addEventListener('click', function () { filesModal.open(); });
+      dirButton.addEventListener('click', function () { dashboardModal.open('issues'); });
       root.appendChild(dirButton);
     }
     if (s.failedCount > 0) {
       var f = el('button', { type: 'button', title: 'See which files could not be read' }, s.failedCount.toLocaleString() + ' unreadable');
-      f.addEventListener('click', function () { filesModal.open(); });
+      f.addEventListener('click', function () { dashboardModal.open('issues'); });
       root.appendChild(f);
     }
     root.appendChild(el('span', { class: 'total' }, s.total.toLocaleString() + ' total'));
     if (libraryStatus && libraryStatus.lastScan && isAdmin) {
       root.appendChild(el('span', { class: 'scan-timing' },
         'Last scan ' + (libraryStatus.lastScan.durationMs / 1000).toFixed(1) + 's'));
+    }
+    if (galleryRefreshSuggested) {
+      var refresh = el('button', { type: 'button' }, 'Refresh gallery');
+      refresh.addEventListener('click', function () { resetAndLoad(); });
+      root.appendChild(refresh);
     }
     if (isAdmin) {
       var dashboardLink = el('button', { type: 'button', title: 'Open import statistics and scan history' }, 'Dashboard');
@@ -677,26 +706,67 @@
     if (videoStatsEnabled) startVideoStats(); else stopVideoStats();
   }
 
+  function scanDescription(data) {
+    var progress = data.progress;
+    if (!progress) return data.queued?.length ? 'Scan queued' : data.scanning ? 'Starting scan…' : 'No scan running';
+    var names = { discovering: 'Discovering', checking: 'Checking', processing: 'Importing', reconciling: 'Reconciling' };
+    var phase = names[progress.phase] || 'Scanning';
+    var count = function (n) { return Number(n || 0).toLocaleString(); };
+    if (progress.folder) phase += ' ' + progress.folder;
+    if (progress.phase === 'discovering') return phase + ' · ' + count(progress.discovered) + ' media found';
+    if (progress.phase === 'checking') return phase + ' · ' + count(progress.examined) + ' / ' + count(progress.discovered) + ' checked';
+    if (progress.phase === 'processing') return phase + ' · ' + count(progress.processed) + ' / ' + count(progress.discovered) + ' processed';
+    if (progress.phase === 'reconciling') return phase + ' · ' + count(progress.reconciled) + ' checked';
+    return phase;
+  }
+
+  var libraryStatusRequest;
   function fetchLibraryStatus() {
+    if (libraryStatusRequest || document.hidden) return libraryStatusRequest;
     var previous = libraryStatus;
-    return fetch('/api/library-status')
+    libraryStatusRequest = fetch('/api/library-status')
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
         if (!data) return;
         libraryStatus = data;
+        window.StreamFolders?.updateScanStatus(data);
+        var activePath = window.StreamFolders?.selectedPath() || '';
+        var scannedPath = data.lastScan?.folder;
+        var relevant = !activePath || !scannedPath || activePath === scannedPath ||
+          activePath.startsWith(scannedPath + '/') || scannedPath.startsWith(activePath + '/');
+        var finished = previous && data.lastScan?.at && previous.lastScan?.at !== data.lastScan.at && relevant;
+        var hasTiles = Boolean(grid.querySelector('.tile'));
+        var progress = data.progress;
+        var importingHere = !activePath || !progress?.folder || progress.folder === activePath ||
+          activePath.startsWith(progress.folder + '/') || progress.folder.startsWith(activePath + '/');
+        var firstItemsReady = data.scanning && importingHere && progress?.processed > 0 &&
+          progress.processed !== previous?.progress?.processed && state.loadedOnce && !state.loading && !hasTiles;
+        if (!lb.open && !document.hidden && (firstItemsReady || (finished && !hasTiles))) resetAndLoad();
+        if (finished && hasTiles && (data.lastScan.added || data.lastScan.updated || data.lastScan.removed)) galleryRefreshSuggested = true;
         renderLibrarySummary();
-        var before = previous && previous.lastScan && previous.lastScan.at;
-        var after = data.lastScan && data.lastScan.at;
-        var firstItemsReady = data.scanning && data.progress?.processed > 0 && state.loadedOnce &&
-          !state.loading && !grid.querySelector('.tile');
-        if (!lb.open && !document.hidden && (firstItemsReady ||
-          (previous && before !== after && after && window.scrollY < 200))) resetAndLoad();
       })
-      .catch(function () { });
+      .catch(function () { })
+      .finally(function () { libraryStatusRequest = null; });
+    return libraryStatusRequest;
+  }
+
+  async function queueLibraryScan(button, force, folder) {
+    button.disabled = true;
+    try {
+      var response = await fetch('/api/rescan', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ force: force, folder: folder || undefined })
+      });
+      var result = await response.json();
+      if (!response.ok) throw Error(result.error || result.reason || 'Scan could not start.');
+      showToast(result.queued ? 'Library scan queued' : 'Library scan started');
+      fetchLibraryStatus();
+      return true;
+    } catch (error) { showToast(error.message); }
+    finally { button.disabled = false; }
   }
 
   function refreshPendingPreviews() {
-    if (previewSource !== 'preview' || !autoplayEnabled || dataSaverMode || document.hidden || lb.open) return;
+    if (currentPreviewSource() !== 'preview' || !autoplayEnabled || dataSaverMode || document.hidden || lb.open) return;
     var pending = new Map(), params = new URLSearchParams();
     for (var tile of inViewVideoTiles) {
       var item = tile._item;
@@ -720,101 +790,44 @@
       .catch(function () {});
   }
 
-  function buildFilesModal() {
-    var scrim = el('div', { class: 'modal-scrim' });
-    var card = el('div', { class: 'modal-card wide', role: 'dialog', 'aria-modal': 'true' });
-    var title = el('h1');
-    title.textContent = 'Files not in the library';
-    var sub = el('p', { class: 'modal-sub' }, 'Grouped by folder, so you can go check them.');
-    var body = el('div', { class: 'files-body' });
-    var actions = el('div', { class: 'files-actions' });
-    var copyBtn = el('button', { type: 'button', class: 'modal-cancel' }, 'Copy list');
-    var closeBtn = el('button', { type: 'button', class: 'modal-cancel' }, 'Close');
-    actions.appendChild(copyBtn);
-    actions.appendChild(closeBtn);
-    card.appendChild(title);
-    card.appendChild(sub);
-    card.appendChild(body);
-    card.appendChild(actions);
-    scrim.appendChild(card);
-
-    var plainText = '';
-    function dirOf(p) { var i = p.lastIndexOf('/'); return i === -1 ? '(top level)' : p.slice(0, i); }
-    function baseOf(p) { var i = p.lastIndexOf('/'); return i === -1 ? p : p.slice(i + 1); }
-
-    function addSection(heading, note, entries, detailOf) {
-      if (!entries.length) return;
-      var sec = el('div', { class: 'files-section' });
-      var h = el('h2');
-      h.textContent = heading + ' (' + entries.length + ')';
-      sec.appendChild(h);
-      var n = el('p', { class: 'files-help' });
-      n.textContent = note;
-      sec.appendChild(n);
-      var byDir = {};
-      entries.forEach(function (e) {
-        var d = dirOf(e.relPath);
-        (byDir[d] = byDir[d] || []).push(e);
-      });
-      Object.keys(byDir).sort().forEach(function (dir) {
-        var d = el('div', { class: 'files-dir' });
-        d.textContent = dir;
-        sec.appendChild(d);
-        plainText += '\n[' + heading + '] ' + dir + '\n';
-        byDir[dir].forEach(function (e) {
-          var row = el('div', { class: 'files-row' });
-          var name = el('span', { class: 'files-name' });
-          name.textContent = baseOf(e.relPath);
-          var detail = el('span', { class: 'files-note' });
-          detail.textContent = detailOf(e);
-          row.appendChild(name);
-          row.appendChild(detail);
-          sec.appendChild(row);
-          plainText += '  ' + baseOf(e.relPath) + (detailOf(e) ? '  -- ' + detailOf(e) : '') + '\n';
-        });
-      });
-      body.appendChild(sec);
-    }
-
-    function open() {
-      var st = libraryStatus || {};
-      body.innerHTML = '';
-      plainText = '';
-      addSection('Unsupported format',
-        'Not an image or video type Stream imports. Convert them to a supported format and they appear on the next rescan.',
-        st.unsupported || [], function (e) { return e.ext; });
-      addSection('Unreadable',
-        'A supported type, but the file could not be read -- often a corrupt or truncated file, or a variant the decoder cannot handle.',
-        st.failed || [], function (e) { return e.error; });
-      addSection('Unavailable directories',
-        'An SMB/NAS folder could not be read. Existing records were preserved, not treated as deleted.',
-        st.walkErrors || [], function (e) { return e.error; });
-      if (!body.children.length) {
-        body.appendChild(el('p', { class: 'files-help' }, 'Nothing to report -- every file was imported.'));
-      }
-      scrim.classList.add('open');
-    }
-    function close() { scrim.classList.remove('open'); }
-    closeBtn.addEventListener('click', close);
-    scrim.addEventListener('click', function (e) { if (e.target === scrim) close(); });
-    copyBtn.addEventListener('click', function () {
-      if (navigator.clipboard) navigator.clipboard.writeText(plainText.trim()).then(function () { showToast('List copied'); });
-    });
-
-    return { root: scrim, open: open, close: close };
-  }
-
   function buildDashboardModal() {
     var scrim = el('div', { class: 'modal-scrim dashboard-scrim' });
     var card = el('section', { class: 'dashboard-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Library dashboard' });
     var head = el('div', { class: 'dashboard-head' });
-    head.appendChild(el('h2', {}, 'Library audit'));
+    head.appendChild(el('h2', {}, 'Dashboard'));
+    var notifications = window.StreamDashboardNotifications.mount(head, { openItem: openItem });
+    function openItem(itemId) {
+      dismiss();
+      fetch('/api/item/' + encodeURIComponent(itemId)).then(function (r) {
+        if (!r.ok) throw Error('Media unavailable');
+        return r.json();
+      }).then(function (data) { if (data.item) openLightbox(data.item, true); })
+        .catch(function (error) { showToast(error.message); });
+    }
     var close = el('button', { class: 'icon-btn', 'aria-label': 'Close dashboard' }, icon('close'));
     head.appendChild(close);
     var body = el('div', { class: 'dashboard-body' });
     card.appendChild(head); card.appendChild(body); scrim.appendChild(card);
-    close.addEventListener('click', function () { scrim.classList.remove('open'); });
-    scrim.addEventListener('click', function (e) { if (e.target === scrim) scrim.classList.remove('open'); });
+    var refreshTimer, openId = 0, returnFocus, benchmarkPanel;
+    function dismiss() {
+      if (!scrim.classList.contains('open')) return;
+      openId++;
+      clearTimeout(refreshTimer);
+      notifications.close();
+      benchmarkPanel?.dispose();
+      scrim.classList.remove('open');
+      returnFocus?.focus({ preventScroll: true });
+    }
+    close.addEventListener('click', dismiss);
+    scrim.addEventListener('click', function (e) { if (e.target === scrim) dismiss(); });
+    card.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      if (notifications.isOpen()) {
+        notifications.close();
+        head.querySelector('.dashboard-issues-toggle').focus({ preventScroll: true });
+      } else dismiss();
+    });
 
     function section(title) {
       var wrap = el('section', { class: 'dashboard-section' });
@@ -822,8 +835,9 @@
     }
     function barChart(title, rows, getLabel, getValue) {
       var wrap = section(title);
-      var max = Math.max(1, ...rows.map(getValue));
-      rows.slice(0, 25).forEach(function (row) {
+      var top = rows.slice(0, 25);
+      var max = Math.max(1, ...top.map(getValue));
+      top.forEach(function (row) {
         var line = el('div', { class: 'dashboard-bar-line' });
         var label = el('span', { class: 'dashboard-bar-label' }); label.textContent = getLabel(row);
         var track = el('div', { class: 'dashboard-bar-track' });
@@ -909,36 +923,114 @@
     function showFiles() {
       var wrap = section('Indexed files (paged)');
       var list = el('div', { class: 'dashboard-files' });
-      var next = el('button', { class: 'dashboard-next' }, 'Load next 100');
+      var next = el('button', { class: 'dashboard-next' }, 'Load indexed files');
       var offset = 0;
       function fetchPage() {
         next.disabled = true;
         fetch('/api/dashboard/files?offset=' + offset + '&limit=100')
           .then(function (r) { if (!r.ok) throw Error('Files unavailable'); return r.json(); })
           .then(function (data) {
+            if (!wrap.isConnected) return;
             data.items.forEach(function (i) {
               var line = el('div', { class: 'dashboard-file' });
               line.textContent = (i.displayCreator || i.creator) + ' / ' + i.filename + ' · ' + (i.width || '?') + '×' + (i.height || '?');
               list.appendChild(line);
             });
-            offset += data.items.length;
-            next.disabled = offset >= data.total;
-            next.textContent = offset >= data.total ? 'All ' + data.total.toLocaleString() + ' indexed files shown' : 'Load next 100 (' + offset.toLocaleString() + '/' + data.total.toLocaleString() + ')';
+            next.disabled = data.nextOffset === null;
+            next.textContent = next.disabled ? 'End of indexed files' : 'Load next 100';
+            if (!next.disabled) offset = data.nextOffset;
           }).catch(function () { next.textContent = 'Could not load files'; next.disabled = false; });
       }
       next.addEventListener('click', fetchPage);
-      wrap.appendChild(list); wrap.appendChild(next); fetchPage();
+      wrap.appendChild(list); wrap.appendChild(next);
     }
-    function open() {
-      body.innerHTML = '';
+    function showScanActivity(id, logSection) {
+      var pane = section('Scan activity');
+      var current = el('p', { class: 'dashboard-lead' }, 'Loading scan activity…');
+      var details = el('p', { class: 'modal-sub' });
+      var active = el('ul', { class: 'dashboard-scan-list' });
+      var logs = el('ol', { class: 'dashboard-scan-list dashboard-log' });
+      logs.setAttribute('aria-label', 'Recent scan log');
+      pane.append(current, details, active);
+      logSection.appendChild(logs);
+      var signature = '';
+      async function refresh() {
+        if (id !== openId) return;
+        try {
+          var response = await fetch('/api/library-status?details=1');
+          if (!response.ok) throw Error('Scan activity unavailable');
+          var data = await response.json();
+          if (id !== openId) return;
+          current.textContent = scanDescription(data);
+          if (!data.progress && data.lastScan?.status) current.textContent += ' · Last scan ' + data.lastScan.status;
+          var progress = data.progress;
+          var status = [];
+          if (progress?.startedAt) status.push('Started ' + new Date(progress.startedAt).toLocaleTimeString());
+          if (progress?.lastProgressAt) {
+            var seconds = Math.max(0, Math.round((Date.now() - new Date(progress.lastProgressAt).getTime()) / 1000));
+            status.push('Last progress ' + seconds + 's ago');
+          }
+          if (data.parallelism) {
+            status.push(data.parallelism.workers + ' media workers', data.parallelism.effectiveCores + ' logical CPUs visible');
+            if (data.parallelism.readers) status.push(data.parallelism.readers + ' source readers');
+            if (data.parallelism.metadataWorkers) status.push(data.parallelism.metadataWorkers + ' metadata workers');
+          }
+          if (data.queued?.length) status.push(data.queued.length + ' queued');
+          if (data.pendingStorageReads) status.push(data.pendingStorageReads + ' storage operations still awaiting the OS');
+          details.textContent = status.join(' · ');
+          active.replaceChildren(...(progress?.active || []).map(function (task) {
+            var seconds = Math.max(0, Math.round((Date.now() - new Date(task.startedAt).getTime()) / 1000));
+            var line = el('li', { class: 'dashboard-file' });
+            line.textContent = task.stage + ' · ' + (task.path || 'media root') + ' · ' + seconds + 's';
+            if (Number.isFinite(task.bytesRead) && Number.isFinite(task.size)) {
+              line.textContent += ' · ' + formatFileSize(task.bytesRead) + ' / ' + formatFileSize(task.size);
+            }
+            return line;
+          }));
+          var events = (data.logs || []).slice(-60).reverse();
+          var nextSignature = JSON.stringify(events);
+          if (nextSignature !== signature) {
+            signature = nextSignature;
+            logs.replaceChildren(...events.map(function (entry) {
+              var line = el('li', { class: 'dashboard-file' });
+              line.textContent = new Date(entry.at).toLocaleTimeString() + ' · ' + (entry.level || 'info') + ' · ' + entry.message;
+              return line;
+            }));
+          }
+        } catch (error) {
+          if (id === openId) current.textContent = error.message;
+        } finally {
+          if (id === openId) refreshTimer = setTimeout(refresh, 3000);
+        }
+      }
+      void refresh();
+      return pane;
+    }
+    function open(target) {
+      returnFocus = document.activeElement || returnFocus;
+      clearTimeout(refreshTimer);
+      var id = ++openId;
+      benchmarkPanel?.dispose();
+      body.replaceChildren();
       scrim.classList.add('open');
-      body.appendChild(el('p', { class: 'modal-sub' }, 'Loading audit data…'));
+      close.focus({ preventScroll: true });
+      var logSection = el('section', { class: 'dashboard-section' });
+      logSection.appendChild(el('h3', {}, 'Server logs'));
+      logSection.id = 'dashboard-server-logs';
+      showScanActivity(id, logSection);
+      benchmarkPanel = window.StreamBenchmark.mount(body, {
+        version: CONFIG.version,
+        videos: function () {
+          return Array.from(runningPreviews).map(function (tile) { return tile._video; }).filter(Boolean).slice(0, 8);
+        }
+      });
+      var loading = el('p', { class: 'modal-sub' }, 'Loading library statistics…');
+      body.append(loading, logSection);
+      if (target === 'notifications') notifications.open();
       fetch('/api/dashboard').then(function (r) { if (!r.ok) throw Error('Dashboard unavailable'); return r.json(); })
         .then(function (d) {
-          if (!scrim.classList.contains('open')) return;
-          body.innerHTML = '';
-          window.StreamLibraryMap.mount(body,{color:creatorColor,isOpen:function(){return scrim.classList.contains('open');},openArtist:function(name){scrim.classList.remove('open');clearGalleryFilters();state.creator=name;state.sort='creator';header.querySelectorAll('[data-sort]').forEach(function(b){b.classList.toggle('selected',b.dataset.sort===state.sort);});if(header._creatorSelect)header._creatorSelect.value=name;resetAndLoad();},openItem:function(id){scrim.classList.remove('open');clearGalleryFilters();resetAndLoad();fetch('/api/item/'+encodeURIComponent(id)).then(function(r){return r.json();}).then(function(d){if(d.item)openLightbox(d.item,true);});}});
-          window.StreamResources.mount(body,function(){return scrim.classList.contains('open');});
+          if (id !== openId) return;
+          loading.remove();
           var summary = section('Overview');
           summary.appendChild(el('p', { class: 'dashboard-lead' },
             d.totals.photos.toLocaleString() + ' photos · ' + d.totals.videos.toLocaleString() +
@@ -959,16 +1051,51 @@
           (d.history || []).slice().reverse().forEach(function (scan) {
             scans.appendChild(el('div', { class: 'dashboard-file' }, scan.at + ' · ' + (scan.durationMs / 1000).toFixed(1) + 's · +' + scan.added + ' / ~' + scan.updated + ' / −' + scan.removed + ' · ' + scan.failed + ' failed'));
           });
-          if (!d.history.length) scans.appendChild(el('p', {}, 'No scan history yet'));
+          if (!d.history?.length) scans.appendChild(el('p', {}, 'No scan history yet'));
           var errors = section('Not imported / errors');
-          [].concat((d.unsupported || []).map(function (x) { return x.relPath + ': unsupported ' + x.ext; }),
-            (d.failed || []).map(function (x) { return x.relPath + ': ' + x.error; }),
-            (d.walkErrors || []).map(function (x) { return x.relPath + ': inaccessible folder: ' + x.error; }))
-            .forEach(function (line) { errors.appendChild(el('div', { class: 'dashboard-file' }, line)); });
-          if (!errors.children.length || errors.children.length === 1) errors.appendChild(el('p', {}, 'No errors in the last scan'));
+          var issues = [].concat((d.failed || []).map(function (x) { return x.relPath + ': ' + x.error; }),
+            (d.walkErrors || []).map(function (x) { return x.relPath + ': unavailable folder · ' + x.error; }),
+            (d.unsupported || []).map(function (x) { return x.relPath + ': unsupported ' + x.ext; }));
+          var issueTable = el('div', { class: 'dashboard-files' });
+          issues.forEach(function (message) {
+            var line = el('div', { class: 'dashboard-file' });
+            line.textContent = message;
+            issueTable.appendChild(line);
+          });
+          errors.appendChild(issueTable);
+          if (!issues.length) errors.appendChild(el('p', {}, 'No issues reported in the latest scan.'));
+          if ((d.issueCount || 0) > issues.length) errors.appendChild(el('p', { class: 'modal-sub' }, 'Showing a sample of ' + d.issueCount.toLocaleString() + ' issues.'));
+          if (issues.length && navigator.clipboard) {
+            var copy = el('button', { type: 'button', class: 'dashboard-next' }, 'Copy listed issues');
+            copy.onclick = function () { navigator.clipboard.writeText(issues.join('\n')).then(function () { showToast('Issues copied'); }).catch(function () { showToast('Could not copy issues'); }); };
+            errors.appendChild(copy);
+          }
+          window.StreamResources.mount(body, function () { return id === openId; });
+          var mapPanel = el('details', { class: 'dashboard-section' });
+          mapPanel.appendChild(el('summary', {}, 'Library map'));
+          body.appendChild(mapPanel);
+          mapPanel.addEventListener('toggle', function mountMap() {
+            if (!mapPanel.open) return;
+            mapPanel.removeEventListener('toggle', mountMap);
+            window.StreamLibraryMap.mount(mapPanel, {
+              color: creatorColor, isOpen: function () { return id === openId; },
+              openArtist: function (name) {
+                dismiss(); clearGalleryFilters(); state.creator = name; state.sort = 'creator';
+                if (header._creatorSelect) header._creatorSelect.value = name;
+                resetAndLoad();
+              },
+              openItem: function (itemId) {
+                dismiss(); clearGalleryFilters(); resetAndLoad();
+                fetch('/api/item/' + encodeURIComponent(itemId)).then(function (r) { return r.json(); })
+                  .then(function (data) { if (data.item) openLightbox(data.item, true); });
+              }
+            });
+          });
           showFiles();
           showAiControls();
-        }).catch(function () { body.innerHTML = ''; body.appendChild(el('p', {}, 'Could not load dashboard.')); });
+          body.appendChild(logSection);
+          if (target === 'issues') notifications.open();
+        }).catch(function () { if (id === openId) loading.textContent = 'Could not load library statistics.'; });
     }
     return { root: scrim, open: open };
   }
@@ -982,9 +1109,7 @@
     if (isAdmin) {
       var logout = el('li');
       var btn = el('button', {}, 'Sign out');
-      btn.addEventListener('click', function () {
-        fetch('/api/logout', { method: 'POST' }).then(function () { location.href = '/'; });
-      });
+      btn.addEventListener('click', signOut);
       logout.appendChild(btn);
       linksBottom.appendChild(logout);
     }
@@ -996,102 +1121,6 @@
       linksBottom.appendChild(li);
     });
   }
-
-  function buildSelectionBar() {
-    var bar = el('div', { class: 'selection-bar' });
-    var countEl = el('div', { class: 'selection-count mono' }, '0 selected');
-    var actions = el('div', { class: 'selection-actions' });
-
-    var downloadBtn = el('button', { class: 'selection-btn' });
-    downloadBtn.innerHTML = icon('download');
-    downloadBtn.appendChild(el('span', {}, 'Download'));
-    downloadBtn.addEventListener('click', downloadSelected);
-    actions.appendChild(downloadBtn);
-
-    var cancelBtn = el('button', { class: 'selection-btn selection-cancel' }, 'Cancel');
-    cancelBtn.addEventListener('click', exitSelectionMode);
-    actions.appendChild(cancelBtn);
-
-    bar.appendChild(countEl);
-    bar.appendChild(actions);
-    return { root: bar, countEl: countEl };
-  }
-
-  function enterSelectionMode() {
-    selection.active = true;
-    selection.ids.clear();
-    grid.classList.add('selecting');
-    header._selectBtn.classList.add('active');
-    updateSelectionUI();
-  }
-
-  function exitSelectionMode() {
-    selection.active = false;
-    selection.ids.clear();
-    grid.classList.remove('selecting');
-    header._selectBtn.classList.remove('active');
-    Array.prototype.forEach.call(grid.querySelectorAll('.tile.selected'), function (t) {
-      t.classList.remove('selected');
-    });
-    updateSelectionUI();
-  }
-
-  function updateSelectionUI() {
-    selectionBar.root.classList.toggle('open', selection.active);
-    var n = selection.ids.size;
-    selectionBar.countEl.textContent = n === 1 ? '1 selected' : n + ' selected';
-  }
-
-  function toggleTileSelection(item, tile) {
-    if (selection.ids.has(item.id)) {
-      selection.ids.delete(item.id);
-      tile.classList.remove('selected');
-    } else {
-      selection.ids.add(item.id);
-      tile.classList.add('selected');
-    }
-    updateSelectionUI();
-  }
-
-  function downloadSelected() {
-    var ids = Array.from(selection.ids);
-    if (ids.length === 0) return;
-    if (ids.length === 1) {
-      var item = grid.querySelector('[data-item-id="' + ids[0] + '"]');
-      var url = item && item._item && item._item.urls.download;
-      if (url) {
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = '';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }
-      return;
-    }
-    showToast('Preparing download…');
-    fetch('/api/download-zip', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: ids }),
-    })
-      .then(function (r) {
-        if (!r.ok) throw new Error('download failed');
-        return r.blob();
-      })
-      .then(function (blob) {
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = 'stream-' + ids.length + '-items.zip';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
-      })
-      .catch(function () { showToast('Download failed'); });
-  }
-
 
   var artistOutlines=window.StreamArtistOutlines.install(grid,{mode:storageGet('stream-artist-outlines','off'),color:creatorColor});
   artistOutlines.setMode(storageGet('stream-artist-outlines','off'));
@@ -1145,7 +1174,8 @@
     if (state.q) params.set('q', state.q);
     params.set('sort', state.sort);
     if (state.sort === 'random' || state.sort === 'less-seen') params.set('seed', state.seed);
-    if (cursor) params.set('cursor', cursor);
+    params.set('total', '0');
+    if (cursor) { params.set('cursor', cursor); params.set('metadata', '0'); }
     return '/api/items?' + params.toString();
   }
 
@@ -1165,8 +1195,8 @@
       .then(function (data) {
         if (myToken !== state.loadToken) return;
         state.loadedOnce = true;
-        updateAlbumOptions(data.albums);
-        updateCreatorOptions(data.creators);
+        if (!state.cursor) updateAlbumOptions(data.albums);
+        if (!state.cursor) updateCreatorOptions(data.creators);
         updateObjectClassOptions(data.objectClasses);
         if (data.items.length === 0 && !state.cursor) {
           showEmptyState();
@@ -1203,6 +1233,7 @@
   }
 
   function resetAndLoad() {
+    if (galleryRefreshSuggested) { galleryRefreshSuggested = false; renderLibrarySummary(); }
     state.loadToken = (state.loadToken || 0) + 1;
     state.loading = false;
     grid.classList.add('refreshing');
@@ -1251,7 +1282,6 @@
       header._creatorSelect.style.display = 'none';
     }
     if (!event.detail.initial) {
-      if (selection.active) exitSelectionMode();
       window.scrollTo({ top: 0, behavior: 'instant' });
       resetAndLoad();
     }
@@ -1285,7 +1315,17 @@
 
   function showEmptyState() {
     var empty = el('div', { class: 'empty', id: 'empty-state' },
-      '<div class="empty-mark"></div><h2>Nothing here yet</h2><p>Drop photos or videos into your media folder — they\'ll show up here automatically.</p>');
+      '<div class="empty-mark"></div><h2>Nothing here yet</h2>');
+    var detail = el('p', { role: 'status' }, 'Scan your media folder to import local files.');
+    empty.appendChild(detail);
+    var scan = el('button', { type: 'button', class: 'dashboard-next empty-scan-btn' }, 'Scan library now');
+    scan.onclick = async function () {
+      if (await queueLibraryScan(scan, false, state.folder)) {
+        detail.textContent = 'Scan requested. Open Dashboard to follow its progress.';
+        scan.disabled = true;
+      }
+    };
+    empty.appendChild(scan);
     main.appendChild(empty);
   }
   function hideEmptyState() {
@@ -1328,8 +1368,9 @@
     return true;
   }
 
-  function dehydrateTile(tile) {
-    if (!tile._hydrated || tile._nearViewport || tile.contains(document.activeElement) || tile.matches(':hover')) return;
+  function dehydrateTile(tile, force) {
+    if (!tile._hydrated || (!force && (tile._nearViewport || tile.contains(document.activeElement) || tile.matches(':hover')))) return;
+    bg?.unwatchTile(tile);
     if (tile._item.type === 'video') {
       autoplayObserver.unobserve(tile);
       previewController.setVisible(tile, false);
@@ -1367,10 +1408,15 @@
     if (bg) bg.setBusy(busy);
   }
 
-  function previewUrl(item) {
-    return previewSource === 'original' ? item.urls.original : item.urls.preview;
+  function currentPreviewSource() {
+    return lightweightGallery ? 'preview' : previewSource;
   }
 
+  function previewUrl(item) {
+    return currentPreviewSource() === 'original' ? item.urls.original : item.urls.preview;
+  }
+
+  var previewMemory = window.StreamPreviewMemory.create();
   var previewController = window.StreamPreviewController.create({enabled:function () { return autoplayEnabled && !dataSaverMode; },
     blocked:function () { return document.hidden || document.body.classList.contains('lb-open'); },limit:function () { return MAX_PREVIEWS; },
     attach:attachVideoPreview,source:previewUrl,onChange:updateBackgroundBusy});
@@ -1400,11 +1446,27 @@
     video.loop = true;
     video.playsInline = true;
     video.preload = 'metadata';
-    video.src = source;
     video._streamItem = item;
+    if (previewMemoryEnabled && source === item.urls.preview) {
+      video._previewDownload = previewMemory.acquire(source).then(function (lease) {
+        if (tile._video !== video) { lease?.release(); return; }
+        video._previewMemoryLease = lease;
+        video._previewMemoryKey = lease ? source : null;
+        video.src = lease?.url || source;
+      });
+    } else video.src = source;
     video.addEventListener('error', function () {
       video.classList.remove('has-frame');
-      if (previewSource === 'original' && item.urls.preview && video.getAttribute('src') === item.urls.original) {
+      if (video._previewMemoryLease) {
+        previewMemory.discard(source);
+        video._previewMemoryLease.release();
+        video._previewMemoryLease = null;
+        video._previewMemoryKey = null;
+        video.src = source;
+        if (!document.hidden && runningPreviews.has(tile)) video.play().catch(function () {});
+        return;
+      }
+      if (currentPreviewSource() === 'original' && item.urls.preview && video.getAttribute('src') === item.urls.original) {
         video.src = item.urls.preview;
         if (!document.hidden && runningPreviews.has(tile)) video.play().catch(function () {});
         showToast('Original format unsupported here; using preview');
@@ -1440,6 +1502,33 @@
     }
   });
 
+  function clearPreviewMemory() {
+    previewController.clear();
+    previewMemory.clear();
+  }
+  async function signOut() {
+    var response = await fetch('/api/logout', { method: 'POST' });
+    if (!response.ok) throw Error('Could not sign out.');
+    try { localStorage.setItem('stream-signed-out', String(Date.now())); } catch (_) {}
+    clearPreviewMemory();
+    location.replace('/');
+  }
+  window.StreamSignOut = signOut;
+  window.addEventListener('storage', function (event) {
+    if (event.key !== 'stream-signed-out') return;
+    clearPreviewMemory();
+    location.replace('/');
+  });
+
+  var revalidatePreviewTab = false;
+  window.addEventListener('pagehide', function () {
+    revalidatePreviewTab = previewMemoryEnabled || previewMemory.stats().bytes > 0;
+    if (revalidatePreviewTab) clearPreviewMemory();
+  });
+  window.addEventListener('pageshow', function (event) {
+    if (event.persisted && revalidatePreviewTab) location.reload();
+  });
+
   function creatorColor(name) {return window.StreamLayout.color(name,storageGet('stream-artist-palette','default'));}
 
   function addTile(item, parent) {
@@ -1466,21 +1555,17 @@
       tile.classList.add('video-tile');
       if (randomEnabled ? randomLarge(item.id) : videoScale === '2') tile.classList.add('tile-expanded');
     }
-    if (selection.active && selection.ids.has(item.id)) tile.classList.add('selected');
 
     tile.addEventListener('click', function () {
-      if (selection.active) toggleTileSelection(item, tile);
-      else openLightbox(item, true);
+      openLightbox(item, true);
     });
     tile.addEventListener('keydown', function (e) {
       if (e.target !== tile) return;
       if (e.key !== 'Enter' && e.key !== ' ') return;
       e.preventDefault();
-      if (selection.active) toggleTileSelection(item, tile);
-      else openLightbox(item, true);
+      openLightbox(item, true);
     });
 
-    if (bg) bg.watchTile(tile, item.color);
     (parent || grid).appendChild(tile);
     applySpan(tile, item);
     tileViewportObserver.observe(tile);
@@ -1491,6 +1576,7 @@
     tile._hydrated = true;
     tile.dataset.hydrated = 'true';
     var item = tile._item;
+    bg?.watchTile(tile, item.color);
     var creator = item.creator || '(Unsorted)';
     var sourceLabel = el('span', { class: 'tile-source', title: item.album || creator });
     var originName = el('strong'); originName.textContent = item.displayCreator || creator;
@@ -1499,12 +1585,14 @@
     sourceLabel.appendChild(originSub);
     tile.appendChild(sourceLabel);
 
-    var retained = takeWarmImage(item.urls.thumb);
+    var smallest = lightweightGallery ? item.urls.thumbSrcset?.match(/^(\S+) \d+w(?:,|$)/)?.[1] : null;
+    var thumbnail = smallest || item.urls.thumb;
+    var retained = takeWarmImage(thumbnail);
     var img = retained || el('img', { class: 'tile-media', alt: '' });
     if (!retained) {
-      img.dataset.src = item.urls.thumb;
+      img.dataset.src = thumbnail;
       if (item.isAnimated) img.dataset.animated = 'true';
-      if (item.urls.thumbSrcset) img.dataset.srcset = item.urls.thumbSrcset;
+      if (!lightweightGallery && item.urls.thumbSrcset) img.dataset.srcset = item.urls.thumbSrcset;
       img.addEventListener('load', function () { img.classList.add('loaded'); window.StreamDiagnostics?.thumbnailLoaded(img); });
     }
     tile.appendChild(img);
@@ -1527,15 +1615,6 @@
       if (!dataSaverMode) autoplayObserver.observe(tile);
     }
 
-    if (isAdmin) {
-      var best = el('button', { class: 'tile-best', title: 'Mark as best', 'aria-label': 'Mark as best', 'aria-pressed': String(item.favorite === true) }, icon('star'));
-      best.classList.toggle('active', item.favorite === true);
-      best.addEventListener('click', function (e) { e.stopPropagation(); setPreference(item, 'favorite'); });
-      tile.appendChild(best);
-    }
-
-    var selectMark = el('span', { class: 'tile-select-mark' }, icon('checkCircle'));
-    tile.appendChild(selectMark);
     applySpan(tile, item);
   }
 
@@ -1651,14 +1730,22 @@
     bar.appendChild(closeBtn);
 
     var stage = el('div', { class: 'lightbox-stage' });
-    var prevBtn = el('button', { class: 'lightbox-nav prev', 'aria-label': 'Previous' }, icon('chevronLeft'));
-    var nextBtn = el('button', { class: 'lightbox-nav next', 'aria-label': 'Next' }, icon('chevronRight'));
+    var prevBtn = el('button', { class: 'lightbox-nav prev', 'aria-label': 'Previous', title: 'Previous item' }, icon('chevronLeft'));
+    var nextBtn = el('button', { class: 'lightbox-nav next', 'aria-label': 'Next', title: 'Next item' }, icon('chevronRight'));
     var mediaWrap = el('div', { class: 'lightbox-media-wrap' });
     stage.appendChild(prevBtn);
     stage.appendChild(mediaWrap);
     stage.appendChild(nextBtn);
 
-    var caption = el('div', { class: 'lightbox-caption mono' }, '');
+    var captionBar = el('div', { class: 'lightbox-caption-bar' });
+    var caption = el('div', { class: 'lightbox-caption mono' });
+    var seeks = el('div', { class: 'player-seek', 'aria-label': 'Seek video', role: 'group', hidden: '' });
+    var backTen = el('button', { type: 'button', 'aria-label': 'Back 10 seconds', title: 'Back 10 seconds (←)' }, '−10s');
+    var forwardTen = el('button', { type: 'button', 'aria-label': 'Forward 10 seconds', title: 'Forward 10 seconds (→)' }, '+10s');
+    backTen.addEventListener('click', function () { seekVideo(-10); });
+    forwardTen.addEventListener('click', function () { seekVideo(10); });
+    seeks.append(backTen, forwardTen);
+    captionBar.append(caption, seeks);
 
     var editPanel = el('div', { class: 'edit-panel' });
     editPanel.inert = true;
@@ -1689,7 +1776,7 @@
 
     card.appendChild(bar);
     card.appendChild(stage);
-    card.appendChild(caption);
+    card.appendChild(captionBar);
     root.appendChild(focusStart);
     root.appendChild(card);
     root.appendChild(focusEnd);
@@ -1751,7 +1838,7 @@
     return {
       preferenceButtons: preferenceButtons, savedEditor: savedEditor,
       root: root, card: card, speed: speed, closeBtn: closeBtn, counter: counter, mediaWrap: mediaWrap, prevBtn: prevBtn, nextBtn: nextBtn,
-      caption: caption, downloadLink: downloadLink, slideshowBtn: slideshowBtn,
+      caption: caption, seeks: seeks, downloadLink: downloadLink, slideshowBtn: slideshowBtn,
       editBtn: editBtn, infoBtn: infoBtn, statsBtn: statsBtn, editPanel: editPanel, infoPanel: infoPanel, infoList: infoList,
       rotateBtn: rotateBtn, brightnessSlider: brightnessSlider, volumeGroup: volumeGroup, volumeSlider: volumeSlider,
     };
@@ -1929,11 +2016,19 @@
       media.defaultPlaybackRate = Number(lightbox.speed.value);
       media.playbackRate = Number(lightbox.speed.value);
       media.poster = item.urls.thumb;
-      if(state.sort==='continue' && item.activity?.position>0)media.addEventListener('loadedmetadata',function(){media.currentTime=Math.min(item.activity.position,Math.max(0,media.duration-.1));},{once:true});
+      media.addEventListener('loadedmetadata', function () {
+        if (slideshow.active) return;
+        var position = window.StreamActivity.position?.(item) ?? item.resumePosition;
+        var duration = media.duration;
+        if (!Number.isFinite(position) || position <= 0 || !Number.isFinite(duration) ||
+            position >= duration - Math.min(2, duration * .05)) return;
+        media.currentTime = position;
+      });
       if (slideshow.active) bindSlideshowEnded(media);
     }
     lightbox.mediaWrap.appendChild(media);
     lightbox.root.classList.toggle('showing-video', item.type === 'video');
+    lightbox.seeks.hidden = item.type !== 'video';
     lightbox.statsBtn.style.display = item.type === 'video' ? '' : 'none';
     lightbox.speed.style.display = item.type === 'video' ? '' : 'none';
     if (videoStatsEnabled && item.type === 'video') startVideoStats(); else stopVideoStats();
@@ -2065,15 +2160,27 @@
     }
   });
 
+  function seekVideo(seconds) {
+    var video = lightbox.mediaWrap.querySelector('video');
+    if (!video) return false;
+    if (video.readyState > 0) {
+      var start = video.seekable.length ? video.seekable.start(0) : 0;
+      var end = Number.isFinite(video.duration) ? video.duration : Infinity;
+      video.currentTime = Math.max(start, Math.min(end, video.currentTime + seconds));
+    }
+    return true;
+  }
+
   document.addEventListener('keydown', function (e) {
     if (!lb.open || document.querySelector('dialog[open]')) return;
     if (e.key === 'Tab') return;
     if (e.key === 'Escape') { e.preventDefault(); stopSlideshow(); closeLightbox(); return; }
-    if (e.target.closest('input,textarea,select,[contenteditable]')) return;
-    if (e.target.closest('video')) return;
-    if (e.key === 'ArrowLeft') { stopSlideshow(); navigate(-1); }
-    else if (e.key === 'ArrowRight') { stopSlideshow(); navigate(1); }
-    else if (e.key === ' ' && !e.target.closest('button,a,video')) {
+    if (e.target.closest('input,textarea,select,[contenteditable]') || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      var direction = e.key === 'ArrowLeft' ? -1 : 1;
+      e.preventDefault();
+      if (!seekVideo(direction * 10)) { stopSlideshow(); navigate(direction); }
+    } else if (e.key === ' ' && !e.target.closest('button,a,video')) {
       var v = lightbox.mediaWrap.querySelector('video');
       if (v) { e.preventDefault(); v.paused ? v.play() : v.pause(); }
     }
@@ -2108,9 +2215,8 @@
     var sub = el('p', { class: 'modal-sub' }, 'This stream is private. Sign in to continue.');
     sub.setAttribute('role', 'status');
     card.appendChild(sub);
-    var userInput = el('input', { type: 'text', name: 'username', placeholder: 'Username', autocomplete: 'username', autocapitalize: 'none', spellcheck: 'false' });
-    userInput.setAttribute('aria-label','Username');if(setup)userInput.value='owner';
-    card.appendChild(userInput);
+    var userInput = CONFIG.loginNeedsUsername && !setup ? el('input', { type: 'text', name: 'username', placeholder: 'Username', autocomplete: 'username', autocapitalize: 'none', spellcheck: 'false', 'aria-label': 'Username', required: '' }) : null;
+    if (userInput) card.appendChild(userInput);
     var setupCode=null;if(setup){sub.textContent='Create your owner passphrase. Find the one-time setup code in the server logs (docker compose logs stream).';setupCode=el('input',{type:'password',placeholder:'Owner setup code','aria-label':'Owner setup code',autocomplete:'off'});card.appendChild(setupCode);}
     var input = el('input', { type: 'password', name: 'password', placeholder: 'Password', autocomplete: 'current-password' });
     input.setAttribute('aria-label','Password');if(setup){input.autocomplete='new-password';input.minLength=10;input.placeholder='New passphrase (10+ characters)';}
@@ -2124,7 +2230,7 @@
       scrim.setAttribute('aria-hidden', 'false');
       scrim.classList.add('open');
       entrance?.signIn(card);
-      setTimeout(function () { userInput.focus(); }, 50);
+      setTimeout(function () { (userInput || setupCode || input).focus(); }, 50);
     }
     card.addEventListener('keydown', function (event) {
       if (event.key === 'Tab') {
@@ -2141,7 +2247,7 @@
       fetch(setup?'/api/setup':'/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: userInput.value.trim(), password: input.value, code:setupCode?setupCode.value.trim():undefined }),
+        body: JSON.stringify({ username: userInput?.value.trim(), password: input.value, code:setupCode?setupCode.value.trim():undefined }),
       })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
         .then(function (res) {
@@ -2149,7 +2255,7 @@
           submit.disabled = false;
           submit.textContent = setup ? 'Create owner account' : 'Sign in';
           card.classList.add('modal-shake');
-          sub.textContent = res.data.error || 'Incorrect username or password.';
+          sub.textContent = res.data.error || 'Sign-in failed.';
           input.value = '';
           input.focus();
           setTimeout(function () { card.classList.remove('modal-shake'); }, 400);
@@ -2168,10 +2274,13 @@
     history.replaceState({ streamItem: INITIAL_ITEM.id }, '', '/' + INITIAL_ITEM.id);
   }
   foldersReady.finally(function () { loadMore(); });
+  window.addEventListener('stream:scan-requested', fetchLibraryStatus);
   fetchLibraryStatus();
+  window.StreamDashboardNotifications.poll();
   setInterval(function () {
     if (document.hidden) return;
     fetchLibraryStatus();
+    window.StreamDashboardNotifications.poll();
     refreshPendingPreviews();
-  }, 20000);
+  }, 10000);
 })();

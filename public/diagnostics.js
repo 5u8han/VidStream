@@ -189,7 +189,9 @@
           devicePixelRatio: window.devicePixelRatio,
           viewport: [innerWidth, innerHeight],
           previewLimit: options.previewLimit,
-          effects: options.effects
+          effects: options.effects,
+          lightweight: options.lightweight,
+          previewSource: options.previewSource
         },
         summarize(intervals, performance.now() - start)
       );

@@ -1,0 +1,19 @@
+services:
+  stream:
+    stop_grace_period: ${STREAM_CACHE_STOP_GRACE:-5m}
+    volumes:
+      - type: tmpfs
+        target: /app/.cache
+        tmpfs:
+          size: ${STREAM_RAM_CACHE_SIZE:-1073741824}
+          mode: 448
+      - type: bind
+        source: ./vidstream-local/cache
+        target: /app/cache-snapshot
+        bind:
+          create_host_path: false
+    environment:
+      CACHE_SNAPSHOT_DIR: /app/cache-snapshot/.ram-cache
+      CACHE_COLD_START: ${STREAM_CACHE_COLD_START:-0}
+    mem_limit: ${STREAM_MEM_LIMIT:-4g}
+    memswap_limit: ${STREAM_MEM_LIMIT:-4g}

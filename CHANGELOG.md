@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.0.0 — Portable libraries and deployment benchmark
+
+- Measure real filesystem block size for cache limits, snapshots and disk alerts, including Docker Desktop host-backed mounts.
+- Add an owner-only Dashboard benchmark for available processor and memory resources, host cache capacity and I/O, and the current browser connection. Show preview and storage suggestions alongside an exportable JSON report.
+- Release portable Start-Here storage and migration, durable preview and playback caches, and independent library nodes with verified identities.
+- Release parallel scan improvements, the consolidated Dashboard with notifications, anchored View and Settings controls, HTTP on port 80 for new installs, and optional certificate-backed HTTPS on port 443.
+
+## 2.3.0-dev.2 — Large-library performance and operations
+
+- Keep scan workers busy through a continuous bounded pipeline, reuse SQLite statements and load per-item history on demand. Show allocated disk use for cache sizing.
+- Add an empty-gallery scan action, persistent Dashboard notifications with media paths and issue IDs, and a log at the bottom of Dashboard.
+- Anchor View and Settings below their menu controls. Improve peer reconnection and address verification, use HTTP port 80 on fresh installs, and add optional certificate-based HTTPS on port 443.
+
+## 2.3.0-dev.1 — Portable host cache
+
+- New Start-Here installations keep persistent state and generated previews in private host directories. The launcher can stop, reopen or prepare a standard guided installation for a move.
+- Cache viewed original-file ranges on the host for repeat playback. Keep an optional bounded set of optimized previews in browser tab memory.
+- Add Compose overlays for portable disk storage and optional RAM snapshots.
+
 ## 2.2.0 — Owner access, archived originals and Intel Quick Sync
 
 - Require owner sign-in for library pages, media, feeds, and downloads. Remove the guest sharing controls and ignore old guest settings during upgrades.

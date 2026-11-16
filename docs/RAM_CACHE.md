@@ -1,5 +1,7 @@
 # Optional RAM runtime cache
 
+New Start-Here installations use direct SSD writes in `vidstream-local/cache/`. See the [portable cache guide](PORTABLE_CACHE.md) for the portable RAM snapshot overlay.
+
 The normal configuration continues to use the persistent `stream-cache` Docker volume. RAM mode is opt-in. It changes where rebuildable previews, posters, resized photos, compatible-playback copies and optional recognition weights live while VidStream runs. It does not put original media, the SQLite catalog, accounts, preferences or viewing history into RAM.
 
 The RAM cache is a bounded Linux `tmpfs` mount inside Docker. On a graceful stop, VidStream stops accepting requests, closes media connections, stops queued work, waits for active work, then saves a checked snapshot to `stream-cache`. At startup it restores the last committed snapshot before opening the gallery. When first enabling RAM mode, an existing ordinary cache volume is imported without moving or deleting its old files. Saved identity and history remain in `stream-data`.

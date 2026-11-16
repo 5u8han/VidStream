@@ -6,7 +6,7 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
       /usr/local/bin/yarn /usr/local/bin/yarnpkg
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg imagemagick libimage-exiftool-perl tzdata zip ldap-utils ca-certificates \
+    ffmpeg imagemagick libimage-exiftool-perl tzdata ldap-utils ca-certificates \
     python3 python3-opencv python3-numpy \
     tesseract-ocr tesseract-ocr-eng \
     libheif1 libmagickcore-6.q16-6-extra \
@@ -46,7 +46,6 @@ ENV CACHE_DIR=/app/.cache
 ENV PORT=4000
 ENV HOST=0.0.0.0
 ENV VIDSTREAM_DOCKER=1
-ENV NODE_OPTIONS=--max-old-space-size=512
 
 EXPOSE 4000
 

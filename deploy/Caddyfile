@@ -1,0 +1,13 @@
+{
+	admin off
+	auto_https off
+}
+
+http://{$STREAM_TLS_HOST} {
+	redir https://{$STREAM_TLS_HOST}{uri} 308
+}
+
+https://{$STREAM_TLS_HOST} {
+	tls /run/vidstream-tls/fullchain.pem /run/vidstream-tls/privkey.pem
+	reverse_proxy stream:4000
+}

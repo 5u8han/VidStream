@@ -18,7 +18,7 @@
           }
     );
     var j = await r.json();
-    if (!r.ok) throw Error(j.error || 'Request failed');
+    if (!r.ok) throw Error(j.error || j.reason || 'Request failed');
     return j;
   }
   function button(label, parent, action) {
@@ -110,18 +110,35 @@
     button('Refresh status', pane, refresh);
     button('Retry / reconcile library', pane, async function () {
       await api('/api/rescan', {});
+      window.dispatchEvent(new Event('stream:scan-requested'));
       await refresh();
     });
     node('h3', 'Storage and backups', pane);
     var storage = node('pre', '', pane);
     button('Measure storage', pane, async function () {
       var r = await api('/api/maintenance/storage');
+      var cache = r.allocation?.cache;
+      var categories = cache?.categories || {};
+      var sizes = { thumb: 'Thumbnails', large: 'Viewing-size photos', poster: 'Video posters', preview: 'Optimized video previews', playback: 'Compatibility copies', 'viewed-source': 'Cached original playback' };
+      var allocation = Object.entries(categories).map(function (entry) {
+        return (sizes[entry[0]] || entry[0]) + ': ' + amount(entry[1].allocatedBytes) + ' on disk · ' + entry[1].files.toLocaleString() + ' files';
+      });
+      if (r.allocation?.cacheBacking) {
+        allocation.push('Disk backing and snapshots: ' + amount(r.allocation.cacheBacking.allocatedBytes));
+        var viewed = r.allocation.cacheBacking.categories?.['viewed-source'];
+        if (viewed) allocation.push('Cached original playback on disk: ' + amount(viewed.allocatedBytes));
+      }
+      if (r.media?.photo) allocation.push('Measured gallery bytes per indexed photo: ' + amount(((categories.thumb?.allocatedBytes || 0) + (categories.large?.allocatedBytes || 0)) / r.media.photo));
+      if (r.media?.video) allocation.push('Measured gallery bytes per indexed video: ' + amount(((categories.poster?.allocatedBytes || 0) + (categories.preview?.allocatedBytes || 0)) / r.media.video));
       storage.textContent = [
         'Original media: ' + amount(r.originalMediaBytes),
-        'Preview cache: ' + amount(r.cacheBytes),
-        'Application data: ' + amount(r.dataBytes),
-        'Original archive: ' + amount(r.archiveBytes),
+        'Preview cache: ' + amount(cache?.allocatedBytes ?? r.cacheBytes),
+        'Application data: ' + amount(r.allocation?.data?.allocatedBytes ?? r.dataBytes),
+        'Original archive: ' + amount(r.allocation?.archive?.allocatedBytes ?? r.archiveBytes),
+        ...allocation,
         'Free on data disk: ' + amount(r.freeBytes),
+        'Free on cache disk: ' + amount(r.cacheFreeBytes),
+        r.cacheRetention?.limitBytes ? 'Managed video cache: ' + amount(r.cacheRetention.bytes) + ' / ' + amount(r.cacheRetention.limitBytes) : 'Managed video cache: no eviction budget',
         r.note,
         'Folders: ' + JSON.stringify(r.paths, null, 2)
       ].join('\n');

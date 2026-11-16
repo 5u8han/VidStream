@@ -1,0 +1,19 @@
+services:
+  stream:
+    stop_grace_period: 5m
+    volumes:
+      - type: bind
+        source: ./vidstream-local/data
+        target: /app/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./vidstream-local/cache
+        target: /app/.cache
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./vidstream-local/originals
+        target: /app/originals
+        bind:
+          create_host_path: false

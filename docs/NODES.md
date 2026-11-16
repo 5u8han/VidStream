@@ -37,11 +37,11 @@ These are organizational examples, not a requirement to move any files. Kubernet
 
 ## Start with two machines
 
-1. Install/run this branch on each machine using its own media folder and its own persistent data/cache volumes. Complete owner setup or use that instance's configured sign-in.
+1. Install VidStream on each machine using its own source media and persistent data and cache directories. Complete owner setup or use that instance's configured sign-in.
 2. Open each machine's address from the browser/device you will actually use. For example, a NAS at `http://192.168.1.50/` and a Legion at `http://192.168.1.60/`. These are examples; use your real addresses. A DHCP reservation or stable local DNS name helps keep them consistent.
 3. On each instance, open **Settings → Nodes**. Set **Library name** and **This library address** to the address other devices can open. Save it. A Docker container's private bridge address, `host.docker.internal`, or `localhost` is not a general LAN address for your phone.
 4. On your starting instance, enter the other machine under **Other library address** → **Check library**. Review its name/address/identity, then **Add to switcher**.
-5. Use **Switch library** in the top center. Sign in on the destination when requested. Signing in to one instance does not grant access to another. The browser can remember each destination's ordinary session.
+5. Use **Node** in the top center. Sign in on the destination when requested. Signing in to one instance does not grant access to another. The browser can remember each destination's ordinary session.
 
 The saved directory and node management require owner sign-in. Each destination authenticates you when you open its gallery. A switcher entry stores the destination address and identity.
 
@@ -55,7 +55,7 @@ Removing a connection removes only a directory entry. It does not delete media, 
 
 Use [Start-Here](STARTER.md) or the [manual Docker and native commands](COMMANDS.md)
 on each server. Set up its own media mounts and account. On an existing
-server, keep its private Compose configuration and reuse its named volumes.
+server, keep its private Compose configuration and reuse its portable storage or named volumes.
 If it was installed before the explicit media and archive mounts, follow the
 [storage migration steps](BRANCHES.md#retain-existing-storage-before-rebuilding)
 before recreating the container.
@@ -69,7 +69,7 @@ can require a fresh sign-in on that server.
 
 **Find nearby libraries** is off by default. Enable it in **Settings → Nodes** on the participating instances after saving a reachable address. When supported by the network, nearby instances appear as **unverified** suggestions; check one before saving it. This avoids silently trusting a machine just because it broadcasts a familiar name.
 
-VidStream LAN discovery is a small application-specific IPv4 multicast protocol, not Synology's proprietary finder protocol or mDNS. It uses group `239.255.86.83`, UDP `45873`, multicast TTL 1, a small initial query/announcement, and announcements every 30 seconds. Packets contain only protocol/kind, node ID, display name, HTTP/HTTPS scheme and port. No filenames, counts, paths, credentials or complete configuration are broadcast. Nearby hints expire after 90 seconds; saved connections remain.
+VidStream LAN discovery is a small application-specific IPv4 multicast protocol, not Synology's proprietary finder protocol or mDNS. It uses group `239.255.86.83`, UDP `45873`, multicast TTL 1, a small initial query/announcement, and announcements every 30 seconds. Packets contain only protocol/kind, node ID, display name, HTTP/HTTPS scheme and port. No filenames, counts, paths, credentials or complete configuration are broadcast. Nearby hints expire after 90 seconds. Saved connections remain. If a configured address is a hostname, discovery sends from each eligible joined interface so Ethernet and Wi-Fi peers can receive an announcement.
 
 Listening does not require scanning the whole network or polling every possible IP address. Normal saved-peer checks read a small fixed identity endpoint, at most three in flight, about once per minute. Each check has a three-second timeout and an 8 KB response limit. The directory supports up to 64 saved peers. It does not run work across the media catalog.
 
@@ -79,7 +79,7 @@ Automatic candidates use the packet source IPv4 address plus declared scheme/por
 
 ## Docker, NAS and native networking
 
-The standard Compose setup publishes host HTTP port **80** to fixed container port **4000**. `STREAM_HTTP_PORT` selects another host port when needed. The public address can omit `:80`; it must still resolve on the viewer's network. `http://submac.local/` may work where the short name `submac` does not. A real TLS proxy is required for HTTPS/443. Update saved self/peer URLs if the public port changes. This published-port setup is the portable baseline for NAS, Linux and Docker Desktop. Manual connections work independently of multicast. Docker Desktop's internal bridge/container IPs are generally not reachable directly from a LAN browser. [Docker Desktop networking](https://docs.docker.com/desktop/features/networking/networking-how-tos/)
+Fresh standard Compose and Start-Here setups publish host HTTP port **80** to fixed container port **4000**. Use `STREAM_HTTP_PORT` for manual Compose or `VIDSTREAM_PORT` for a new guided setup to select another available port. Existing guided setups keep their configured port. The public address can omit `:80`; it must still resolve on the viewer's network. `http://submac.local/` may work where the short name `submac` does not. The [optional local TLS proxy](#optional-https-on-port-443) adds HTTPS on port 443. Update saved self/peer URLs if the public port changes. This published-port setup is the portable baseline for NAS, Linux and Docker Desktop. Manual connections work independently of multicast. Docker Desktop's internal bridge/container IPs are generally not reachable directly from a LAN browser. [Docker Desktop networking](https://docs.docker.com/desktop/features/networking/networking-how-tos/)
 
 For a **Linux Docker Engine** host where you want LAN multicast, an optional overlay uses host networking. Use a recent Compose version that understands `!reset`. First inspect the configuration:
 
@@ -92,11 +92,45 @@ docker compose -f docker-compose.yml -f docker-compose.nodes-host.yml up -d --bu
 
 On Docker Desktop, host networking is an opt-in feature from version 4.34 with platform limitations. Multicast behavior still needs testing there; the Linux overlay is not a promise of automatic discovery on macOS/Windows. On Synology, availability depends on its container tooling/network mode; start with published HTTP and manual connections. Native VidStream can use the host network directly; its launcher must have **Allow devices on the local network to connect** enabled. The app cannot grant OS/VM/router permissions from its web menu. [Docker host networking](https://docs.docker.com/engine/network/drivers/host/), [Compose merge/reset behavior](https://docs.docker.com/reference/compose-file/merge/)
 
+## Optional HTTPS on port 443
+
+Use the HTTP default while no certificate is installed. When a certificate is
+ready, add `docker-compose.https.yml` as the final overlay. The app's own
+container port becomes private to the Compose network. Caddy binds HTTP port 80
+for redirects and HTTPS port 443 for playback and owner sign-in. There is no
+automatic certificate request, domain verification or public tunnel.
+
+1. Put `fullchain.pem` and `privkey.pem` in a private host directory, preferably outside the checkout and media mounts. Ensure the certificate matches the hostname, and make the certificate trust chain available to browsers and to other VidStream nodes that will check this address.
+2. Set `STREAM_TLS_HOST` to that hostname, without a scheme or port, and `STREAM_TLS_CERT_DIR` to the absolute directory containing the PEM files. Set `STREAM_TLS_BIND` only when other machines should connect. Use the host's intended LAN interface address. Both ports bind to loopback by default.
+3. Keep the same Compose project and the same storage/media overlays. Run the example from the folder containing the generated `compose.yaml`, the HTTPS overlay and `deploy/Caddyfile`. If your saved file lives elsewhere, use the same project and explicit file list you used before, and set `STREAM_TLS_CONFIG` to the absolute path of the shipped `deploy/Caddyfile`. For manual Compose, substitute `docker-compose.yml` for `compose.yaml`. A current Compose plugin with support for the `!reset` tag is required.
+
+```sh
+docker compose -f compose.yaml -f docker-compose.https.yml config --quiet
+docker compose -f compose.yaml -f docker-compose.https.yml up -d --wait
+```
+
+- `config --quiet` checks the merged settings without starting or changing any containers.
+- `up -d --wait` starts the HTTPS proxy and recreates the app to remove its direct host port. It briefly interrupts access and reuses the configured media, data, cache and archives. It does not delete media or Docker data.
+
+Use that same file list for later start, stop and update operations. Start-Here
+continues to manage the ordinary single-file setup. It leaves multi-file
+configurations to Compose so it cannot accidentally drop the proxy or another
+overlay. Keep both published ports free on the chosen interface. The TLS
+overlay is for bridge networking. For multicast with Linux host networking,
+use an existing reverse proxy and keep the upstream app port private.
+
+Update **Settings → Nodes → This library address** and peer addresses after
+moving to HTTPS. A saved node address takes precedence over the Compose URL.
+IPv4 multicast announcements advertise an address by IP. If your certificate
+is for a hostname, add that hostname manually from the switcher. A browser
+can open an HTTPS peer after it validates the certificate, and the server
+performing the identity check needs its trust chain as well. [Caddy certificate settings](https://caddyserver.com/docs/caddyfile/directives/tls) · [Docker Compose file merge](https://docs.docker.com/reference/compose-file/merge/)
+
 ## Access, persistence and failure behavior
 
 - Each instance retains independent sign-in. New session cookies and tokens are scoped to the persistent node identity so two instances on one hostname with different ports can coexist. Older sessions can migrate until sign-out; logout clears that instance's new cookie and the legacy cookie. Cookies are not generally isolated by port, so this application scoping matters. [HTTP cookie isolation](https://www.rfc-editor.org/rfc/rfc6265.html#section-8.5)
 - The public identity endpoint intentionally reveals only product/protocol, random node ID and chosen name; no directory or media is exposed through it. Choose a generic name if even the collection theme is private. Unconfigured instances do not advertise and refuse identity checks until owner setup.
-- Saved identity is pinned. If an address later presents another node ID, it is marked **Identity changed** and the switcher blocks navigation pending review. An address/name/UUID is not cryptographic proof against an attacker on unencrypted HTTP; use your trusted LAN or valid HTTPS/VPN for remote access. No certificate validation is bypassed.
+- Saved identity is pinned. If an address later presents another node ID, it is marked **Identity changed** and the switcher blocks navigation pending review. This block persists across outages and restarts until its saved identity is verified again. If the same library moved addresses, check the new address and choose **Update saved address**. Use valid HTTPS or a trusted private network to authenticate the connection itself. No certificate validation is bypassed.
 - Discovery never imports secrets or grants access. Manual identity checks accept root HTTP(S) origins only, reject embedded credentials/paths/query/fragment and reserved metadata destinations, pin DNS resolution for the socket, do not follow redirects, and do not forward cookies or authorization.
 - Saved settings/peers live in this instance's durable data store. Browser return addresses are separate: navigation fragments remain temporary/unverified, and persistence requires an explicit remember action. Sleep/outage retains saved entries; removing one never removes media. Replacing an address deliberately requires removing/rechecking the old connection.
 - For shared viewing away from home, every selected instance needs a browser-reachable route. A VPN or your existing per-node HTTPS reverse proxy may provide that; automatic discovery remains local. There is no added central tunnel/relay service.

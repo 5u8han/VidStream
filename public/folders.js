@@ -3,6 +3,8 @@
   var config = JSON.parse(document.getElementById('app').dataset.config || '{}');
   var folders = [], selected = '', trigger, panel, label, host, pendingAction, tabbing = false;
   var managedByMounts = false;
+  var scanStatus = {}, scanRows = new Map(), expandedInfo = '';
+  var statusLabels = { success: 'Successful', partial: 'Completed with issues', failed: 'Failed', interrupted: 'Interrupted' };
   var mountHelp = 'The folder list comes from Docker mounts. Edit Compose and recreate the container to change it.';
   var storageKey = 'stream-folder-' + (config.node?.id || 'local');
   try { selected = localStorage.getItem(storageKey) || ''; } catch (_) {}
@@ -31,19 +33,51 @@
   function paint() {
     if (!trigger) return;
     var current = folders.find(function (folder) { return folder.id === selected; });
-    label.textContent = current ? current.name : config.title || 'Stream';
+    label.textContent = 'Folders';
+    trigger.title = current?.name || 'All media';
     trigger.setAttribute('aria-label', 'Choose media folder: ' + (current ? current.name : 'All media'));
     panel.replaceChildren();
     element('p', 'YOUR FOLDERS', panel, 'folder-menu-eyebrow');
     var list = element('div', undefined, panel, 'folder-menu-list');
     list.setAttribute('role', 'group'); list.setAttribute('aria-label', 'Media folders');
-    function option(id, name) {
-      var button = element('button', name, list, 'folder-option'); button.type = 'button';
+    scanRows.clear();
+    function option(id, name, folder) {
+      var row = element('div', undefined, list, 'folder-scan-row');
+      var button = element('button', name, row, 'folder-option');
+      button.type = 'button';
       button.setAttribute('aria-pressed', String(selected === id));
       button.onclick = function () { close(function () { select(id); }); };
+      if (!folder) return;
+      var scan = element('button', 'Scan', row, 'folder-scan-action');
+      scan.type = 'button';
+      scan.setAttribute('aria-label', 'Scan ' + folder.name);
+      var info = element('button', 'ⓘ', row, 'folder-scan-action');
+      info.type = 'button';
+      info.setAttribute('aria-label', 'Last scan for ' + folder.name);
+      info.setAttribute('aria-controls', 'folder-scan-' + id);
+      var details = element('p', undefined, row, 'folder-scan-details');
+      details.id = 'folder-scan-' + id;
+      details.setAttribute('role', 'status');
+      scanRows.set(id, { folder: folder, scan: scan, info: info, details: details });
+      scan.onclick = async function () {
+        scan.disabled = true;
+        expandedInfo = id;
+        try {
+          var response = await fetch('/api/rescan', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folder: id })
+          });
+          var result = await response.json();
+          if (!response.ok) throw Error(result.error || result.reason || 'Scan could not start.');
+          rowNotice(id, result.queued ? 'Scan queued.' : 'Scan started.');
+          window.dispatchEvent(new Event('stream:scan-requested'));
+        } catch (error) { rowNotice(id, error.message); }
+        finally { scan.disabled = false; renderScanRows(); }
+      };
+      info.onclick = function () { expandedInfo = expandedInfo === id ? '' : id; renderScanRows(); };
     }
     if (!managedByMounts) option('', 'All media');
-    folders.forEach(function (folder) { option(folder.id, folder.name); });
+    folders.forEach(function (folder) { option(folder.id, folder.name, folder); });
+    renderScanRows();
     if (managedByMounts) {
       option('', 'All media');
       if (!folders.length) element('p', 'No media folders are mounted.', panel, 'folder-menu-note');
@@ -53,6 +87,45 @@
       var manage = element('button', 'Choose folders…', panel, 'folder-manage'); manage.type = 'button';
       manage.onclick = function () { close(function () { window.StreamSettings?.open('folders'); }); };
     }
+  }
+  function rowNotice(id, message) {
+    var row = scanRows.get(id);
+    if (row) row.notice = message;
+  }
+  function renderScanRows() {
+    scanRows.forEach(function (row, id) {
+      var path = row.folder.path;
+      var active = scanStatus.scanning && scanStatus.progress?.folder === path;
+      var queued = scanStatus.queued?.some(function (job) { return job.folder === path; });
+      row.scan.textContent = active ? 'Scanning' : queued ? 'Queued' : 'Scan';
+      row.scan.disabled = Boolean(active || queued);
+      row.details.hidden = expandedInfo !== id;
+      row.info.setAttribute('aria-expanded', String(!row.details.hidden));
+      if (row.details.hidden) return;
+      var saved = scanStatus.folders?.find(function (entry) { return entry.path === path; })?.lastScan;
+      var text = row.notice || '';
+      if (row.notice && (active || queued || saved?.at !== row.oldScanAt)) row.notice = '';
+      row.oldScanAt = saved?.at;
+      if (active) text = 'Scanning ' + (scanStatus.progress.phase || 'media') + '.';
+      else if (queued) text = 'Queued for scan.';
+      if (saved) {
+        var count = function (value) { return Number(value || 0).toLocaleString(); };
+        var media = Number(saved.photos || 0) + Number(saved.videos || 0);
+        text += (text ? ' ' : '') + (statusLabels[saved.status] || saved.status || 'Completed') +
+          ' · ' + new Date(saved.at).toLocaleString() + ' · ' + count(saved.files) + ' files · ' +
+          count(saved.directories) + ' folders checked · ' + count(media) + ' media (' +
+          count(saved.photos) + ' photos, ' + count(saved.videos) + ' videos).';
+        var issues = Number(saved.failed || 0) + Number(saved.unreadableDirectories || 0);
+        if (issues) text += ' ' + count(issues) + ' errors.';
+      } else if (!active && !queued) {
+        text += (text ? ' ' : '') + 'No saved scan yet.';
+      }
+      row.details.textContent = text;
+    });
+  }
+  function updateScanStatus(data) {
+    scanStatus = data || {};
+    if (panel && !panel.hidden) renderScanRows();
   }
   function update(data, initial, changed) {
     managedByMounts = data.managedByMounts === true;
@@ -108,7 +181,7 @@
     host = title; host.classList.add('folder-switcher'); host.replaceChildren();
     trigger = element('button', undefined, host, 'folder-trigger'); trigger.type = 'button';
     trigger.setAttribute('aria-expanded', 'false'); trigger.setAttribute('aria-controls', 'folder-menu');
-    label = element('span', config.title || 'Stream', trigger, 'folder-trigger-label');
+    label = element('span', 'Folders', trigger, 'folder-trigger-label');
     element('span', '⌄', trigger, 'folder-trigger-arrow').setAttribute('aria-hidden', 'true');
     panel = element('section', undefined, host, 'folder-menu'); panel.id = 'folder-menu'; panel.hidden = true;
     panel.setAttribute('aria-label', 'Choose media folder');
@@ -198,5 +271,5 @@
     };
     element('p', 'Removing a shortcut does not delete any files. Use the row order to set the menu order; new folders are added at the end.', pane, 'settings-footnote');
   }
-  window.StreamFolders = { mount: mount, settings: settings, selected: function () { return selected; }, configured: configured };
+  window.StreamFolders = { mount: mount, settings: settings, updateScanStatus: updateScanStatus, selected: function () { return selected; }, selectedPath: function () { return folders.find(function (folder) { return folder.id === selected; })?.path || ''; }, configured: configured };
 })();

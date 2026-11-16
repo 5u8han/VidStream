@@ -203,11 +203,11 @@ function Start-FirstTimeSetup {
         }
     }
 
-    $port = 8080
+    $port = 80
     if ($env:VIDSTREAM_PORT -and (-not [int]::TryParse($env:VIDSTREAM_PORT, [ref]$port) -or $port -lt 1 -or $port -gt 65535)) {
         throw 'VIDSTREAM_PORT must be a number from 1 to 65535.'
     }
-    $url = "http://127.0.0.1:$port/"
+    $url = if ($port -eq 80) { "http://127.0.0.1/" } else { "http://127.0.0.1:$port/" }
     $script:docker = Find-DockerCli
     if (-not $script:docker) {
         Install-DockerDesktop
@@ -223,20 +223,23 @@ function Start-FirstTimeSetup {
     $existingVolumes = & $script:docker volume ls -q --filter $projectFilter
     if ($LASTEXITCODE -ne 0) { throw 'Could not check for existing VidStream starter data.' }
     if ($existingVolumes) { throw 'VidStream starter volumes already exist. Locate their Compose file before running setup again.' }
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+    try { $listener.Start() }
+    catch { throw "Port $port is unavailable. Set VIDSTREAM_PORT to an unused port and reopen Start-Here." }
+    finally { $listener.Stop() }
 
     $image = $defaultImage
     if ($env:VIDSTREAM_IMAGE) { $image = $env:VIDSTREAM_IMAGE }
     if ($image -notmatch '^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$') { throw 'VIDSTREAM_IMAGE must be a Docker image reference.' }
-    Write-Host "Fetching $image..."
-    & $script:docker pull $image
-    if ($LASTEXITCODE -ne 0) {
-        if ($env:VIDSTREAM_IMAGE -or -not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'Dockerfile') -PathType Leaf)) {
-            throw "Could not pull $image. Check the image name, registry access and network connection."
-        }
+    if (-not $env:VIDSTREAM_IMAGE -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'Dockerfile') -PathType Leaf)) {
         $image = 'vidstream-starter:local'
-        Write-Host 'The Docker Hub image is unavailable. Building VidStream from this checkout.'
-        & $script:docker build --tag $image $PSScriptRoot
+        Write-Host 'Building VidStream from this checkout.'
+        & $script:docker build --pull --tag $image $PSScriptRoot
         if ($LASTEXITCODE -ne 0) { throw 'The VidStream image build failed.' }
+    } else {
+        Write-Host "Fetching $image..."
+        & $script:docker pull $image
+        if ($LASTEXITCODE -ne 0) { throw "Could not pull $image. Check the image name, registry access and network connection." }
     }
 
     Initialize-FolderPicker
@@ -257,17 +260,19 @@ function Start-FirstTimeSetup {
     if ($choice -match '^(3|system)$') { $theme = 'system' }
 
     Assert-LocalDockerContext
-    $render = @('run', '--rm', '--network', 'none', $image, 'node', 'scripts/setup-compose.js', $image, "$port", $theme, '--') + $folders
-    $previousEncoding = [Console]::OutputEncoding
+    $editor = Join-Path $PSScriptRoot 'scripts\setup-compose.js'
+    $yaml = Invoke-ComposeEditor $image $editor (@('--storage-dir', $portableDirectory, $image, "$port", $theme, '--') + $folders) ([byte[]]@())
+    if ([IO.Directory]::Exists($portableDirectory) -or [IO.File]::Exists($portableDirectory)) {
+        throw "Storage already exists at $portableDirectory. Use its saved Compose file to reuse it."
+    }
+    foreach ($name in @('data', 'cache', 'originals')) {
+        [IO.Directory]::CreateDirectory((Join-Path $portableDirectory $name)) | Out-Null
+    }
+    Write-Host "VidStream data and generated cache will be saved in $portableDirectory."
+    $draft = Write-ValidatedDraft $yaml
     try {
-        [Console]::OutputEncoding = $utf8
-        $yaml = & $script:docker @render
-        if ($LASTEXITCODE -ne 0 -or -not $yaml) { throw 'Could not generate the VidStream Compose file.' }
-    } finally { [Console]::OutputEncoding = $previousEncoding }
-
-    $draft = Write-ValidatedDraft (($yaml -join "`n") + "`n")
-    try {
-        [IO.File]::Move($draft, $composeFile)
+        try { [IO.File]::Move($draft, $composeFile) }
+        catch { throw "Could not create $composeFile. If this setup left only empty storage, move $portableDirectory aside before retrying." }
     } finally { Remove-Item -LiteralPath $draft -Force -ErrorAction SilentlyContinue }
 
     Assert-LocalDockerContext
@@ -296,10 +301,7 @@ function ConvertTo-NativeArgument([string]$value) {
     return '"' + [regex]::Replace($escaped, '(\\+)$', '$1$1') + '"'
 }
 
-function Invoke-FolderEditor([string]$image, [string]$editor, [string]$folder, [byte[]]$original) {
-    $mount = 'type=bind,"source=' + $editor + '",target=/tmp/vidstream-setup-compose.js,readonly'
-    $arguments = @('run', '--rm', '-i', '--pull', 'never', '--network', 'none', '--mount', $mount,
-        '--entrypoint', 'node', $image, '/tmp/vidstream-setup-compose.js', '--add-folder', $folder)
+function Invoke-StorageDocker([string[]]$arguments, [byte[]]$inputBytes, [int]$timeoutMilliseconds = 30000) {
     $argumentString = ($arguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' '
     $info = [Diagnostics.ProcessStartInfo]::new($script:docker, $argumentString)
     $info.UseShellExecute = $false
@@ -314,19 +316,30 @@ function Invoke-FolderEditor([string]$image, [string]$editor, [string]$folder, [
         $output = $process.StandardOutput.ReadToEndAsync()
         $errors = $process.StandardError.ReadToEndAsync()
         $stdin = $process.StandardInput.BaseStream
-        try { $stdin.Write($original, 0, $original.Length) } finally { $stdin.Dispose() }
-        if (-not $process.WaitForExit(30000)) {
+        try {
+            if ($inputBytes.Length) { $stdin.Write($inputBytes, 0, $inputBytes.Length) }
+        } finally { $stdin.Dispose() }
+        if (-not $process.WaitForExit($timeoutMilliseconds)) {
             if (-not $process.HasExited) { $process.Kill() }
-            throw 'The folder editor timed out.'
+            throw 'The Docker helper timed out.'
         }
         if ($process.ExitCode -ne 0) {
             $message = $errors.Result.Trim()
             if ($message) { throw $message }
-            throw 'The folder editor could not run in the existing local VidStream image.'
+            throw 'The Docker helper could not run with the existing local VidStream image.'
         }
-        if (-not $output.Result) { throw 'The folder editor returned an empty configuration.' }
         return $output.Result
     } finally { $process.Dispose() }
+}
+
+function Invoke-ComposeEditor([string]$image, [string]$editor, [string[]]$editorArgs, [byte[]]$original) {
+    if (-not (Test-Path -LiteralPath $editor -PathType Leaf)) { throw 'Keep Start-Here.bat with the VidStream source files.' }
+    $mount = 'type=bind,"source=' + $editor + '",target=/tmp/vidstream-setup-compose.js,readonly'
+    $arguments = @('run', '--rm', '-i', '--pull', 'never', '--network', 'none', '--mount', $mount,
+        '--entrypoint', 'node', $image, '/tmp/vidstream-setup-compose.js') + $editorArgs
+    $result = Invoke-StorageDocker $arguments $original
+    if (-not $result) { throw 'The Compose editor returned no content.' }
+    return $result
 }
 
 function Add-MediaFolder {
@@ -362,7 +375,7 @@ function Add-MediaFolder {
             throw 'Could not identify the existing VidStream stream image.'
         }
         Assert-LocalDockerContext
-        $yaml = Invoke-FolderEditor $images[0] $editor $folder $original
+        $yaml = Invoke-ComposeEditor $images[0] $editor @('--add-folder', $folder, $portableDirectory) $original
         $draft = Write-ValidatedDraft $yaml
         try {
             Assert-PlainComposeFile
@@ -397,6 +410,146 @@ function Assert-PlainComposeFile {
     }
 }
 
+function Invoke-LockedLifecycle([scriptblock]$action) {
+    Assert-PlainComposeFile
+    $lockPath = Join-Path $setupDirectory '.vidstream-edit.lock'
+    $lock = [IO.File]::Open($lockPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try { & $action } finally {
+        $lock.Dispose()
+        Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Initialize-ExistingProject([switch]$RequireRunning) {
+    Assert-PlainComposeFile
+    $script:docker = Find-DockerCli
+    if (-not $script:docker) { throw "Docker Desktop is required. See $dockerHelp" }
+    Assert-LocalDockerContext
+    Start-LocalDocker -RequireRunning:$RequireRunning
+    $containers = @(& $script:docker ps -aq --filter 'label=com.docker.compose.project=vidstream-starter' --filter 'label=com.docker.compose.service=stream' --filter 'label=com.docker.compose.oneoff=False')
+    if ($LASTEXITCODE -ne 0) { throw 'Could not verify the current VidStream project.' }
+    foreach ($container in $containers) {
+        $configuration = & $script:docker inspect --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' $container
+        if ($LASTEXITCODE -ne 0 -or $configuration -ne $composeFile) {
+            throw "The existing project used a different Compose path or added overrides ($configuration). Use that exact configuration."
+        }
+    }
+}
+
+function Stop-ExistingVidStream {
+    $timeout = 300
+    $running = @(Invoke-StarterCompose $composeFile @('ps', '-q', '--status', 'running', 'stream'))
+    if ($LASTEXITCODE -ne 0) { throw 'Could not check whether the VidStream service is running.' }
+    foreach ($container in $running) {
+        $configured = & $script:docker inspect --format '{{.Config.StopTimeout}}' $container
+        if ($LASTEXITCODE -ne 0) { throw 'Could not read the configured stop timeout.' }
+        $seconds = 0
+        if ([int]::TryParse($configured, [ref]$seconds)) { $timeout = [Math]::Max($timeout, $seconds) }
+    }
+    Invoke-StarterCompose $composeFile @('stop', '--timeout', "$timeout", 'stream') | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw 'VidStream could not be stopped.' }
+    foreach ($container in $running) {
+        $exitCode = & $script:docker inspect --format '{{.State.ExitCode}}' $container
+        if ($LASTEXITCODE -ne 0 -or "$exitCode" -ne '0') {
+            throw "VidStream exited with status $exitCode. Review its logs and verify the cache before copying."
+        }
+    }
+    $running = @(Invoke-StarterCompose $composeFile @('ps', '-q', '--status', 'running', 'stream'))
+    if ($LASTEXITCODE -ne 0 -or $running) { throw 'The VidStream service is still running or could not be checked.' }
+}
+
+function Start-ExistingVidStream {
+    Initialize-ExistingProject
+    $images = @(Invoke-StarterCompose $composeFile @('config', '--images', 'stream'))
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read the saved image from Docker Compose.' }
+    if ($images.Count -eq 1 -and $images[0] -eq 'vidstream-starter:local') {
+        & $script:docker image inspect $images[0] 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'Dockerfile') -PathType Leaf)) {
+                throw 'Build or load the VidStream image before starting the saved project.'
+            }
+            Write-Host 'Building the missing local image from this checkout.'
+            & $script:docker build --pull --tag $images[0] $PSScriptRoot
+            if ($LASTEXITCODE -ne 0) { throw 'The VidStream image build failed.' }
+        }
+    }
+    Invoke-StarterCompose $composeFile @('up', '-d', '--pull', 'never', '--wait', 'stream') | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw 'Could not start the saved project. Make sure its image and media mount paths are available.' }
+    Write-Host "Started VidStream with its saved settings at $composeFile."
+}
+
+function Prepare-PortableMove {
+    Initialize-ExistingProject -RequireRunning
+    $editor = Join-Path $PSScriptRoot 'scripts\setup-compose.js'
+    $images = @(Invoke-StarterCompose $composeFile @('config', '--images', 'stream'))
+    if ($LASTEXITCODE -ne 0 -or $images.Count -ne 1 -or $images[0] -notmatch '^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$') {
+        throw 'Could not identify the local VidStream stream image.'
+    }
+    $original = [IO.File]::ReadAllBytes($composeFile)
+    $layout = (Invoke-ComposeEditor $images[0] $editor @('--storage-status') $original).Trim()
+    if ($layout -eq 'portable') {
+        foreach ($name in @('data', 'cache', 'originals')) {
+            if (-not [IO.Directory]::Exists((Join-Path $portableDirectory $name))) { throw 'Restore the portable storage before preparing a move.' }
+        }
+        Stop-ExistingVidStream
+        Write-Host "Copy $portableDirectory and $composeFile together. Copy or remap the source media separately."
+        return
+    }
+
+    if ([IO.Directory]::Exists($portableDirectory) -or [IO.File]::Exists($portableDirectory)) {
+        throw "Storage already exists at $portableDirectory. Move it out of the way before migrating."
+    }
+    if ((Read-Host 'Stop VidStream and copy its Docker volumes to the local disk? The old volumes will be kept [y/N]') -notmatch '^(y|yes)$') { return }
+    $draft = $null
+    $stage = $null
+    try {
+        $original = [IO.File]::ReadAllBytes($composeFile)
+        $fingerprint = (Get-FileHash -LiteralPath $composeFile -Algorithm SHA256).Hash
+        $spec = @(Invoke-StarterCompose $composeFile @('config', '--format', 'json'))
+        if ($LASTEXITCODE -ne 0 -or -not $spec) { throw 'Docker Compose could not read the saved storage configuration.' }
+        $volumes = (Invoke-ComposeEditor $images[0] $editor @('--legacy-volume-names', $portableDirectory) ($utf8.GetBytes($spec -join "`n"))).Trim() -split '\r?\n'
+        if ($volumes.Count -ne 3) { throw 'The existing storage could not be identified.' }
+        foreach ($volume in $volumes) {
+            & $script:docker volume inspect $volume | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "The existing volume $volume is missing." }
+        }
+        $draft = Write-ValidatedDraft (Invoke-ComposeEditor $images[0] $editor @('--portable') $original)
+        Stop-ExistingVidStream
+        foreach ($volume in $volumes) {
+            $active = @(& $script:docker ps -q --filter "volume=$volume")
+            if ($LASTEXITCODE -ne 0 -or $active) { throw "Stop any running containers that use $volume before copying." }
+        }
+        $stage = Join-Path $setupDirectory ('.vidstream-portable.' + [guid]::NewGuid().ToString('N'))
+        [IO.Directory]::CreateDirectory($stage) | Out-Null
+        $arguments = @('run', '--rm', '--pull', 'never', '--network', 'none', '--user', '0:0')
+        $parts = @('data', 'cache', 'originals')
+        for ($i = 0; $i -lt 3; $i++) {
+            $arguments += @('--mount', ('type=volume,source=' + $volumes[$i] + ',target=/vidstream-source/' + $parts[$i] + ',readonly,volume-nocopy'))
+        }
+        $copy = 'for name in data cache originals; do mkdir -m 700 "/vidstream-portable/$name"; cp -a --no-preserve=ownership "/vidstream-source/$name/." "/vidstream-portable/$name/"; done; sync -f /vidstream-portable'
+        $arguments += @('--mount', ('type=bind,"source=' + $stage + '",target=/vidstream-portable'), '--entrypoint', 'sh', $images[0], '-eu', '-c', $copy)
+        $null = Invoke-StorageDocker $arguments ([byte[]]@()) -1
+        foreach ($volume in $volumes) {
+            $active = @(& $script:docker ps -q --filter "volume=$volume")
+            if ($LASTEXITCODE -ne 0 -or $active) { throw "A running container used $volume during the copy. Stop it and retry." }
+        }
+        [IO.File]::WriteAllBytes((Join-Path $stage 'compose.before-portable.yaml'), $original)
+        Assert-PlainComposeFile
+        if ((Get-FileHash -LiteralPath $composeFile -Algorithm SHA256).Hash -ne $fingerprint) {
+            throw 'The Compose file changed during migration. The old volumes remain available.'
+        }
+        [IO.Directory]::Move($stage, $portableDirectory)
+        $stage = $null
+        try { [IO.File]::Replace($draft, $composeFile, [NullString]::Value) }
+        catch { throw "Could not activate the portable Compose file. Keep the copy at $portableDirectory, move it aside before retrying, and retain the old Compose file and volumes." }
+        $draft = $null
+        Write-Host "VidStream is stopped. Copy $portableDirectory and $composeFile together. The previous named volumes remain available."
+    } finally {
+        if ($draft) { Remove-Item -LiteralPath $draft -Force -ErrorAction SilentlyContinue }
+        if ($stage) { Write-Host "A partial copy is retained for inspection at $stage. The previous volumes are still available." }
+    }
+}
+
 try {
     if ($env:OS -ne 'Windows_NT') { throw 'Run Start-Here.sh on macOS or Linux.' }
     $setupDirectory = $PSScriptRoot
@@ -411,13 +564,20 @@ try {
         $setupDirectory = $legacyDirectory
     }
     $composeFile = Join-Path $setupDirectory 'compose.yaml'
+    $portableDirectory = Join-Path $setupDirectory 'vidstream-local'
     Write-Host 'VidStream'
     Write-Host '  1. First-time setup'
     Write-Host '  2. Add a media folder'
+    Write-Host '  3. Start existing VidStream'
+    Write-Host '  4. Stop VidStream'
+    Write-Host '  5. Prepare storage to move'
     Write-Host '  Q. Quit'
-    do { $action = Read-Host 'Choose an option [1/2/Q]' } until ($action -match '^(1|2|q)$')
+    do { $action = Read-Host 'Choose an option [1-5/Q]' } until ($action -match '^[1-5q]$')
     if ($action -eq '1') { Start-FirstTimeSetup }
     if ($action -eq '2') { Add-MediaFolder }
+    if ($action -eq '3') { Invoke-LockedLifecycle { Start-ExistingVidStream } }
+    if ($action -eq '4') { Invoke-LockedLifecycle { Initialize-ExistingProject -RequireRunning; Stop-ExistingVidStream } }
+    if ($action -eq '5') { Invoke-LockedLifecycle { Prepare-PortableMove } }
 } catch {
     [Console]::Error.WriteLine($_.Exception.Message)
     exit 1

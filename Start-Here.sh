@@ -11,7 +11,7 @@ if [[ -z "${VIDSTREAM_INSTALL_DIR:-}" && ! -e "$source_dir/compose.yaml" && ! -L
       ( -e "$legacy_dir/compose.yaml" || -L "$legacy_dir/compose.yaml" ) ]]; then
   install_dir=$legacy_dir
 fi
-port=${VIDSTREAM_PORT:-8080}
+port=${VIDSTREAM_PORT:-80}
 image=${VIDSTREAM_IMAGE:-$default_image}
 terminal_only=false
 using_sudo=false
@@ -20,6 +20,7 @@ disk_mount=
 draft=
 snapshot=
 edit_lock=
+portable_stage=
 
 fail() { printf 'VidStream setup: %s\n' "$*" >&2; exit 1; }
 
@@ -27,6 +28,9 @@ cleanup() {
   if [[ -n "$draft" ]]; then rm -f -- "$draft"; fi
   if [[ -n "$snapshot" ]]; then rm -f -- "$snapshot"; fi
   if [[ -n "$edit_lock" ]]; then rmdir -- "$edit_lock" || true; fi
+  if [[ -n "$portable_stage" ]]; then
+    printf 'A partial copy is retained for inspection at %s. Your existing storage is still available.\n' "$portable_stage" >&2
+  fi
   if [[ -n "$disk_mount" ]] && ! hdiutil detach "$disk_mount" >/dev/null 2>&1; then
     printf 'The Docker installer disk is still mounted at %s. Eject it from Finder.\n' "$disk_mount" >&2
     return
@@ -53,7 +57,7 @@ check_new_install() {
   for filename in compose.yaml compose.yml docker-compose.yaml docker-compose.yml; do
     if [[ "$filename" == docker-compose.yml && "$install_dir" == "$source_dir" ]]; then continue; fi
     if [[ -e "$install_dir/$filename" || -L "$install_dir/$filename" ]]; then
-      fail "A Compose file already exists at $install_dir/$filename. Use Add a media folder for an existing starter setup."
+      fail "A Compose file already exists at $install_dir/$filename. Use Start existing VidStream instead."
     fi
   done
 }
@@ -392,7 +396,7 @@ prepare_docker() {
   select_local_engine
   enable_docker_access
   if ! engine_ready; then
-    [[ "$mode" == setup ]] || fail 'Start your local Docker engine, then choose Add a media folder again.'
+    [[ "$mode" != edit ]] || fail 'Start your local Docker engine, then reopen Start-Here.'
     start_engine || fail 'Could not start Docker. Open Docker and rerun Start-Here once the engine is ready.'
     enable_docker_access
     wait_for_engine
@@ -435,28 +439,32 @@ first_setup() {
   choose_folders
   choose_theme
 
-  if ! "${docker[@]}" pull "$image"; then
-    [[ -z "${VIDSTREAM_IMAGE:-}" && -f "$source_dir/Dockerfile" && -f "$source_dir/scripts/setup-compose.js" ]] || \
-      fail 'The VidStream image could not be downloaded. Check the image name and your registry access.'
+  if [[ -z "${VIDSTREAM_IMAGE:-}" && -f "$source_dir/Dockerfile" ]]; then
     image=vidstream-starter:local
-    printf 'Building VidStream from this checkout because the Docker Hub image is unavailable.\n'
+    printf 'Building VidStream from this checkout.\n'
     "${docker[@]}" build --pull --tag "$image" "$source_dir"
+  else
+    "${docker[@]}" pull "$image" || fail 'The VidStream image could not be downloaded. Check the image name and your registry access.'
   fi
 
   mkdir -p -- "$install_dir"
   check_new_install
   draft=$(mktemp "$install_dir/.compose.yaml.XXXXXXXX")
-  "${docker[@]}" run --rm --network none "$image" node scripts/setup-compose.js "$image" "$port" "$theme" -- "${folders[@]}" > "$draft"
-  [[ -s "$draft" ]] || fail 'The image returned an empty Compose file.'
+  compose_editor "$image" --storage-dir "$portable_dir" "$image" "$port" "$theme" -- "${folders[@]}" > "$draft"
+  [[ -s "$draft" ]] || fail 'The editor returned an empty Compose file.'
   "${compose[@]}" --file "$draft" config --quiet
-  ln -n -- "$draft" "$compose_file" || fail "Could not create $compose_file."
+  mkdir -- "$portable_dir" || fail "Storage already exists at $portable_dir. Use the saved Compose file to reuse it."
+  mkdir -- "$portable_dir/data" "$portable_dir/cache" "$portable_dir/originals"
+  printf 'VidStream data and generated cache will be saved in %s.\n' "$portable_dir"
+  ln -n -- "$draft" "$compose_file" || fail "Could not create $compose_file. If this setup left only empty storage, move $portable_dir aside before retrying."
   rm -- "$draft"
   draft=
   printf 'Saved your settings to %s.\n' "$compose_file"
   compose+=(--file "$compose_file")
   "${compose[@]}" up -d --pull never || fail "Could not start VidStream. Your configuration is saved at $compose_file."
 
-  url=http://127.0.0.1:$port
+  url=http://127.0.0.1
+  if [[ "$port" != 80 ]]; then url+=:$port; fi
   printf '\nOpen %s to create your owner account.\n' "$url"
   setup_code=
   for ((attempt = 0; attempt < 10; attempt++)); do
@@ -472,8 +480,8 @@ first_setup() {
     printf '\n'
   fi
   if [[ -n "${SSH_CONNECTION:-}" ]]; then
-    printf '\nFrom a separate terminal on the computer with your browser, run:\n  ssh -N -L 127.0.0.1:%s:127.0.0.1:%s user@server\n' "$port" "$port"
-    printf 'Replace user@server with your SSH login. This forwards your computer’s port %s to VidStream without publishing it to the network. Leave SSH open and visit %s in your browser.\n' "$port" "$url"
+    printf '\nFrom a separate terminal on the computer with your browser, run:\n  ssh -N -L 127.0.0.1:8080:127.0.0.1:%s user@server\n' "$port"
+    printf 'Replace user@server with your SSH login. This forwards your computer’s port 8080 to VidStream without publishing it to the network. Leave SSH open and visit http://127.0.0.1:8080 in your browser.\n'
   elif gui_session; then
     if [[ "$platform" == Darwin ]]; then
       open "$url" || true
@@ -484,27 +492,20 @@ first_setup() {
 }
 
 edit_existing() {
-  local existing_image editor editor_source mount_spec lock
+  local existing_image
   [[ -f "$compose_file" && ! -L "$compose_file" ]] || fail "No starter Compose file found at $compose_file. Check VIDSTREAM_INSTALL_DIR or choose first-time setup."
-  editor=$source_dir/scripts/setup-compose.js
-  [[ -f "$editor" ]] || fail 'Keep Start-Here.sh in the VidStream checkout so it can find the Compose editor.'
   choose_folder add || exit 0
   prepare_docker edit
 
-  lock=$install_dir/.vidstream-edit.lock
-  mkdir -- "$lock" 2>/dev/null || fail 'Another Start-Here edit is in progress. Try again when it finishes.'
-  edit_lock=$lock
+  lock_existing
   snapshot=$(mktemp "$install_dir/.compose-original.XXXXXXXX")
   [[ -f "$compose_file" && ! -L "$compose_file" ]] || fail 'The starter Compose file moved during the edit.'
   cp -- "$compose_file" "$snapshot"
   existing_image=$("${compose[@]}" --file "$snapshot" config --images stream)
   [[ "$existing_image" =~ ^[A-Za-z0-9][A-Za-z0-9._:/@-]*$ ]] || fail 'Could not identify the existing VidStream image.'
 
-  editor_source=${editor//\"/\"\"}
-  mount_spec="type=bind,\"source=$editor_source\",target=/tmp/vidstream-setup-compose.js,readonly"
   draft=$(mktemp "$install_dir/.compose.yaml.XXXXXXXX")
-  "${docker[@]}" run --rm -i --pull never --network none --mount "$mount_spec" --entrypoint node "$existing_image" \
-    /tmp/vidstream-setup-compose.js --add-folder "${folders[0]}" < "$snapshot" > "$draft" || \
+  compose_editor "$existing_image" --add-folder "${folders[0]}" "$portable_dir" < "$snapshot" > "$draft" || \
     fail 'Could not add the folder. Check the editor message and whether your existing VidStream image is available locally.'
   [[ -s "$draft" ]] || fail 'The editor returned an empty Compose file.'
   "${compose[@]}" --file "$draft" config --quiet
@@ -516,6 +517,133 @@ edit_existing() {
   printf '\nWhen you are ready, run the command below. It briefly stops and recreates the VidStream container with the updated read-only mounts and reuses its existing volumes.\n  COMPOSE_REMOVE_ORPHANS=0 '
   printf '%q ' "${compose[@]}" --file "$compose_file" up -d --pull never --force-recreate stream
   printf '\n'
+}
+
+mount_spec() {
+  local source=${1//\"/\"\"} target=$2 mode=${3:-}
+  printf 'type=bind,"source=%s",target=%s%s' "$source" "$target" "$mode"
+}
+
+compose_editor() {
+  local editor=$source_dir/scripts/setup-compose.js editor_image=$1
+  shift
+  [[ -f "$editor" ]] || fail 'Keep Start-Here.sh with the VidStream source files.'
+  "${docker[@]}" run --rm -i --pull never --network none \
+    --mount "$(mount_spec "$editor" /tmp/vidstream-setup-compose.js ,readonly)" \
+    --entrypoint node "$editor_image" /tmp/vidstream-setup-compose.js "$@"
+}
+
+lock_existing() {
+  local lock=$install_dir/.vidstream-edit.lock
+  mkdir -- "$lock" 2>/dev/null || fail 'Another Start-Here operation is in progress.'
+  edit_lock=$lock
+}
+
+prepare_existing() {
+  [[ -f "$compose_file" && ! -L "$compose_file" ]] || fail "No regular starter Compose file found at $compose_file."
+  lock_existing
+  prepare_docker "$1"
+  compose+=(--file "$compose_file")
+  local running_config container_ids container
+  container_ids=$("${docker[@]}" ps -aq --filter "label=com.docker.compose.project=$project" --filter 'label=com.docker.compose.service=stream' --filter 'label=com.docker.compose.oneoff=False')
+  for container in $container_ids; do
+    running_config=$("${docker[@]}" inspect --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$container")
+    [[ "$running_config" == "$compose_file" ]] || fail "The existing project used a different Compose path or added overrides ($running_config). Use that exact configuration."
+  done
+}
+
+start_existing() {
+  prepare_existing start
+  local existing_image
+  existing_image=$("${compose[@]}" config --images stream)
+  if [[ "$existing_image" == vidstream-starter:local ]] && ! "${docker[@]}" image inspect "$existing_image" >/dev/null 2>&1; then
+    [[ -f "$source_dir/Dockerfile" ]] || fail 'Build or load the VidStream image before starting the saved project.'
+    printf 'Building the missing local image from this checkout.\n'
+    "${docker[@]}" build --pull --tag "$existing_image" "$source_dir"
+  fi
+  "${compose[@]}" up -d --pull never --wait stream || fail 'Could not start the saved project. Make sure its image and media mount paths are available.'
+  printf 'Started VidStream with its saved settings at %s.\n' "$compose_file"
+}
+
+stop_existing() {
+  local timeout=300 configured running container exit_code
+  running=$("${compose[@]}" ps -q --status running stream)
+  for container in $running; do
+    configured=$("${docker[@]}" inspect --format '{{.Config.StopTimeout}}' "$container")
+    if [[ "$configured" =~ ^[0-9]+$ && "$configured" -gt "$timeout" ]]; then timeout=$configured; fi
+  done
+  "${compose[@]}" stop --timeout "$timeout" stream
+  for container in $running; do
+    exit_code=$("${docker[@]}" inspect --format '{{.State.ExitCode}}' "$container")
+    [[ "$exit_code" == 0 ]] || fail "VidStream exited with status $exit_code. Review its logs and verify the cache before copying."
+  done
+  running=$("${compose[@]}" ps -q --status running stream)
+  [[ -z "$running" ]] || fail 'The VidStream service is still running.'
+}
+
+prepare_move() {
+  prepare_existing edit
+  local existing_image layout name active names i
+  existing_image=$("${compose[@]}" config --images stream)
+  [[ "$existing_image" =~ ^[A-Za-z0-9][A-Za-z0-9._:/@-]*$ ]] || fail 'Could not identify the local VidStream image.'
+  layout=$(compose_editor "$existing_image" --storage-status < "$compose_file")
+  if [[ "$layout" == portable ]]; then
+    [[ -d "$portable_dir/data" && -d "$portable_dir/cache" && -d "$portable_dir/originals" ]] || fail 'The portable storage folder is missing. Restore it before preparing a move.'
+    printf 'This stops VidStream for a consistent copy.\n'
+    stop_existing
+    printf 'Copy %s and %s together to the next installation. Copy or remap the source media separately.\n' "$portable_dir" "$compose_file"
+    return
+  fi
+
+  [[ ! -e "$portable_dir" && ! -L "$portable_dir" ]] || fail "A directory already exists at $portable_dir. Move it out of the way before migrating; it will not be merged."
+  ask_yes 'Stop VidStream and copy its Docker volumes to the local disk? This can take time, and keeps the old volumes.' || return 0
+  snapshot=$(mktemp "$install_dir/.compose-original.XXXXXXXX")
+  cp -- "$compose_file" "$snapshot"
+  local plan_compose=()
+  plan_compose=("${compose[@]:0:${#compose[@]}-2}" --file "$snapshot")
+  names=$("${plan_compose[@]}" config --format json | compose_editor "$existing_image" --legacy-volume-names "$portable_dir")
+  local volumes=()
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    "${docker[@]}" volume inspect "$name" >/dev/null || fail "The existing volume $name is missing."
+    volumes+=("$name")
+  done <<< "$names"
+  [[ "${#volumes[@]}" == 3 ]] || fail 'The existing storage could not be identified.'
+
+  draft=$(mktemp "$install_dir/.compose.yaml.XXXXXXXX")
+  compose_editor "$existing_image" --portable < "$snapshot" > "$draft"
+  "${plan_compose[@]:0:${#plan_compose[@]}-2}" --file "$draft" config --quiet
+  stop_existing
+  for name in "${volumes[@]}"; do
+    active=$("${docker[@]}" ps -q --filter "volume=$name")
+    [[ -z "$active" ]] || fail "Another running container uses $name. Stop it before copying."
+  done
+  portable_stage=$(mktemp -d "$install_dir/.vidstream-portable.XXXXXXXX")
+  local copy_args=() parts=(data cache originals)
+  for i in 0 1 2; do
+    copy_args+=(--mount "type=volume,source=${volumes[$i]},target=/vidstream-source/${parts[$i]},readonly,volume-nocopy")
+  done
+  "${docker[@]}" run --rm --pull never --network none --user 0:0 "${copy_args[@]}" \
+    --mount "$(mount_spec "$portable_stage" /vidstream-portable)" --entrypoint sh "$existing_image" -eu -c '
+      for name in data cache originals; do
+        mkdir -m 700 "/vidstream-portable/$name"
+        cp -a "/vidstream-source/$name/." "/vidstream-portable/$name/"
+      done
+      sync -f /vidstream-portable
+    '
+  for name in "${volumes[@]}"; do
+    active=$("${docker[@]}" ps -q --filter "volume=$name")
+    [[ -z "$active" ]] || fail "A running container used $name during the copy. Stop it and retry."
+  done
+  cp -- "$snapshot" "$portable_stage/compose.before-portable.yaml"
+  [[ -f "$compose_file" && ! -L "$compose_file" ]] && cmp -s -- "$snapshot" "$compose_file" || \
+    fail 'The Compose file changed during migration. The old configuration and volumes are still available.'
+  [[ ! -e "$portable_dir" && ! -L "$portable_dir" ]] || fail "Storage now exists at $portable_dir. The copy was kept separate."
+  mv -- "$portable_stage" "$portable_dir"
+  portable_stage=
+  mv -f -- "$draft" "$compose_file" || fail "Could not activate the portable Compose file. Keep the copy at $portable_dir, move it aside before retrying, and retain the old Compose file and volumes."
+  draft=
+  printf 'VidStream is stopped. Copy %s and %s to your new installation. Your old Docker volumes are preserved for rollback.\n' "$portable_dir" "$compose_file"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -532,15 +660,19 @@ done
 
 case "$install_dir" in /*) ;; *) fail 'VIDSTREAM_INSTALL_DIR must be an absolute path.' ;; esac
 compose_file=$install_dir/compose.yaml
+portable_dir=$install_dir/vidstream-local
 platform=$(uname -s)
 case "$platform" in Darwin|Linux) ;; *) fail 'Use Start-Here.bat on Windows.' ;; esac
 folders=()
 while :; do
-  printf '\nVidStream\n  1. First-time setup\n  2. Add a media folder\n  3. Exit\nChoose 1, 2 or 3. ' >&2
+  printf '\nVidStream\n  1. First-time setup\n  2. Add a media folder\n  3. Start existing VidStream\n  4. Stop VidStream\n  5. Prepare storage to move\n  Q. Exit\nChoose an option. ' >&2
   IFS= read -r action || exit 0
   case "$action" in
     1) first_setup; break ;;
     2) edit_existing; break ;;
-    3|q|Q) exit 0 ;;
+    3) start_existing; break ;;
+    4) prepare_existing edit; stop_existing; break ;;
+    5) prepare_move; break ;;
+    q|Q) exit 0 ;;
   esac
 done

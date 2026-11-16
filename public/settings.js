@@ -3,7 +3,7 @@
   var config = JSON.parse(document.getElementById('app').dataset.config || '{}');
   var dialog, returnFocus, adapter = {}, pendingUI = {}, saveTimer;
   try { pendingUI = JSON.parse(localStorage.getItem('stream-ui-pending') || '{}'); } catch (_) {}
-  var deviceKeys = ['stream-data-saver', 'stream-max-previews', 'stream-preview-source', 'stream-viewer-blur', 'stream-video-stats', 'stream-effects', 'stream-saved-filters', 'stream-pinned-actions'];
+  var deviceKeys = ['stream-data-saver', 'stream-lightweight', 'stream-max-previews', 'stream-preview-source', 'stream-preview-memory', 'stream-viewer-blur', 'stream-video-stats', 'stream-effects', 'stream-saved-filters', 'stream-pinned-actions'];
   deviceKeys.forEach(function (key) { delete pendingUI[key]; });
   Object.entries(Object.assign({}, config.savedUI || {}, pendingUI)).filter(function (entry) {
     return !deviceKeys.includes(entry[0]);
@@ -67,68 +67,89 @@
       return result;
     } finally { if (owner) owner.removeEventListener('close', closed); }
   }
+  function settingsTrigger() {
+    return document.querySelector('.header button[aria-label="Settings"]');
+  }
   function closeSettings(current) {
     if (window.StreamNavigation?.has('settings')) window.StreamNavigation.leave('settings');
     else current.close();
   }
-  function stepBack() {
-    if (window.StreamNavigation?.has('settings')) window.StreamNavigation.back();
-    else if (dialog?._back) dialog._back();
-  }
-  function shell() {
+  function shell(anchor) {
     if (dialog) dialog.remove();
-    returnFocus = document.activeElement;
+    returnFocus = anchor || settingsTrigger() || document.activeElement;
     var current = node('dialog', undefined, document.body, 'stream-settings settings-flat');
     dialog = current;
+    current.id = 'stream-settings';
     current.setAttribute('aria-labelledby', 'settings-title');
     var header = node('header', undefined, current, 'settings-header');
-    var titleGroup = node('div', undefined, header);
-    node('p', 'MAKE YOURSELF AT HOME', titleGroup, 'settings-eyebrow');
-    var title = node('h2', 'Settings', titleGroup); title.id = 'settings-title';
-    var close = button('Close', header, function () { closeSettings(current); }, 'settings-close');
+    var title = node('h2', 'Settings', header);
+    title.id = 'settings-title';
+    title.tabIndex = -1;
+    var close = button('×', header, function () { closeSettings(current); }, 'settings-close');
     close.setAttribute('aria-label', 'Close settings');
     var content = node('div', undefined, current, 'settings-content');
     var footer = node('footer', undefined, current, 'settings-footer');
     current._status = node('p', '', footer, 'settings-status');
     current._status.setAttribute('role', 'status');
-    current._status.setAttribute('aria-live', 'polite');
     var build = node('section', undefined, footer, 'settings-build-info');
     build.setAttribute('aria-label', 'Running application');
     node('strong', 'VidStream ' + (config.version || 'unknown version'), build);
-    node('span', 'Signed in as owner', build);
-    node('small', location.origin + ' · ' + (config.features?.nodes ? 'Nodes included' : 'Single-library build'), build);
-    current._back = function () {
-      var expanded = Array.from(current.querySelectorAll('details[open]')).pop();
-      if (expanded) expanded.open = false;
-      else current.close();
-    };
-    current.addEventListener('cancel', function (event) { event.preventDefault(); stepBack(); });
+    node('small', location.origin, build);
+
+    var afterClose;
+    function outside(event) {
+      if (current.contains(event.target)) return;
+      var target = event.target.closest('.header button, .lightbox-bar button');
+      if (target && target !== returnFocus) afterClose = target;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeSettings(current);
+    }
+    function positionPanel() {
+      var activeAnchor = returnFocus?.isConnected ? returnFocus : settingsTrigger();
+      var toolbar = activeAnchor?.closest('.lightbox-bar, .header');
+      var bottom = toolbar?.getBoundingClientRect().bottom || 0;
+      var anchor = activeAnchor?.getBoundingClientRect();
+      var center = anchor ? anchor.left + anchor.width / 2 : innerWidth / 2;
+      var width = Math.min(innerWidth <= 900 ? 690 : 798, innerWidth - 16);
+      var left = Math.max(8, Math.min(center - width / 2, innerWidth - width - 8));
+      current.style.setProperty('--controls-top', Math.max(8, bottom + 8) + 'px');
+      current.style.setProperty('--controls-left', left + 'px');
+    }
+    function show() {
+      if (!current.isConnected) return false;
+      dialog = current;
+      positionPanel();
+      if (!current.open) current.show();
+      returnFocus?.setAttribute('aria-expanded', 'true');
+      window.addEventListener('resize', positionPanel);
+      document.addEventListener('click', outside, true);
+      title.focus({ preventScroll: true });
+      current._resume?.();
+    }
+    current.addEventListener('cancel', function (event) { event.preventDefault(); closeSettings(current); });
     current.addEventListener('keydown', function (event) { event.stopPropagation(); });
     current.addEventListener('close', function () {
       if (current.open || current !== dialog) return;
-      if (window.StreamNavigation?.has('settings')) window.StreamNavigation.leave('settings');
+      window.removeEventListener('resize', positionPanel);
+      document.removeEventListener('click', outside, true);
+      returnFocus?.setAttribute('aria-expanded', 'false');
       returnFocus?.focus({ preventScroll: true });
-    });
-    current.addEventListener('click', function (event) {
-      var bounds = current.getBoundingClientRect();
-      if (event.target === current && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)) stepBack();
+      if (afterClose) {
+        var next = afterClose; afterClose = null;
+        queueMicrotask(function () { if (next.isConnected) next.click(); });
+      }
     });
     if (window.StreamNavigation && !window.StreamNavigation.enter('settings', {
       back: function () { if (current.open) current.close(); },
-      forward: function () {
-        if (!current.isConnected) return false;
-        dialog = current;
-        if (!current.open) current.showModal();
-        current._resume?.();
-      }
+      forward: show
     })) { current.remove(); return null; }
-    current.showModal();
+    show();
     return content;
   }
-  function card(parent, title, description, className) {
-    var section = node('section', undefined, parent, 'settings-card ' + (className || ''));
+  function card(parent, title) {
+    var section = node('section', undefined, parent, 'settings-card');
     node('h3', title, section);
-    if (description) node('p', description, section, 'settings-caption');
     return section;
   }
   function choices(parent, label, values, selected, apply, className) {
@@ -169,82 +190,99 @@
     });
     return input;
   }
-  function advanced(parent, name, description, initialize) {
-    var current = dialog, id = name === 'Library tools' ? 'settings-maintenance' : 'settings-' + name.toLowerCase().replace(/\W+/g, '-');
-    var details = node('details', undefined, parent, 'settings-detail');
-    details.id = id;
-    var summary = node('summary', undefined, details);
-    var text = node('span', undefined, summary);
-    node('strong', name, text); node('small', description, text);
-    node('span', '+', summary, 'settings-detail-mark').setAttribute('aria-hidden', 'true');
-    var pane = node('section', undefined, details, 'settings-detail-content settings-pane');
-    pane.setAttribute('aria-label', name); pane.hidden = true;
-    var initialized = false;
-    current.addEventListener('close', function () {
-      if (current.open || current !== dialog) return;
-      initialized = false;
-      pane.remove();
-      pane = node('section', undefined, details, 'settings-detail-content settings-pane');
-      pane.setAttribute('aria-label', name); pane.hidden = !details.open;
-    });
-    function load() {
-      if (initialized) return;
-      initialized = true;
-      Promise.resolve().then(function () { return initialize(pane); }).catch(function (error) {
-        initialized = false;
-        message(error.message, true, current);
-      });
-    }
-    details._restore = function () {
-      current._activeDetail = details; current._lastDetail = details;
-      details.open = true; pane.hidden = false; load();
-    };
-    details._hide = function () { details.open = false; pane.hidden = true; };
-    details.addEventListener('toggle', function () {
-      pane.hidden = !details.open;
-      if (!current.open) return;
-      if (details.open) {
-        if (window.StreamNavigation && !window.StreamNavigation.has('settings-detail')) {
-          var entered = window.StreamNavigation.enter('settings-detail', {
-            back: function () {
-              var active = current._activeDetail || current._lastDetail;
-              current._activeDetail = null;
-              if (active) { active._hide(); active.querySelector('summary').focus({ preventScroll: true }); }
-            },
-            forward: function () {
-              if (!current._lastDetail?.isConnected) return false;
-              current._lastDetail._restore();
-            }
-          });
-          if (!entered) { details.open = false; return; }
-        }
-        current._activeDetail = details; current._lastDetail = details;
-        parent.querySelectorAll('.settings-detail[open]').forEach(function (other) {
-          if (other !== details) other._hide();
-        });
-        load();
-      } else if (current._activeDetail === details) {
-        if (window.StreamNavigation?.has('settings-detail')) window.StreamNavigation.leave('settings-detail');
-        else current._activeDetail = null;
+  function tabs(parent) {
+    var current = dialog;
+    var bar = node('div', undefined, parent, 'settings-tabs');
+    bar.setAttribute('role', 'tablist');
+    bar.setAttribute('aria-label', 'Settings sections');
+    var sections = new Map(), active;
+    function select(name, focus) {
+      var section = sections.get(name) || sections.get('preferences');
+      if (!section) return;
+      if (active === section) return;
+      if (active?.initialize) {
+        active.pane.replaceChildren();
+        active.loaded = false;
       }
+      active = section;
+      sections.forEach(function (entry) {
+        var selected = entry === active;
+        entry.pane.hidden = !selected;
+        entry.tab.tabIndex = selected ? 0 : -1;
+        entry.tab.setAttribute('aria-selected', String(selected));
+      });
+      if (focus) section.tab.focus();
+      if (!section.loaded && section.initialize) {
+        section.loaded = true;
+        var pane = node('div', undefined, section.pane, 'settings-tool-body');
+        Promise.resolve().then(function () { return section.initialize(pane); }).catch(function (error) {
+          if (pane.isConnected) {
+            section.loaded = false;
+            pane.remove();
+            message(error.message, true, current);
+          }
+        });
+      }
+    }
+    function add(id, label, initialize) {
+      var tab = button(label, bar, function () { select(id, true); });
+      tab.id = 'settings-tab-' + id;
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-controls', 'settings-' + id);
+      tab.setAttribute('aria-selected', 'false');
+      tab.tabIndex = -1;
+      var pane = node('section', undefined, parent, initialize ? 'settings-tool-pane' : 'settings-preferences');
+      pane.id = 'settings-' + id;
+      pane.setAttribute('role', 'tabpanel');
+      pane.setAttribute('aria-labelledby', tab.id);
+      pane.hidden = true;
+      sections.set(id, { tab: tab, pane: pane, initialize: initialize });
+      return pane;
+    }
+    bar.addEventListener('keydown', function (event) {
+      if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+      var names = Array.from(sections.keys());
+      var index = names.findIndex(function (id) { return sections.get(id) === active; });
+      if (event.key === 'Home') index = 0;
+      else if (event.key === 'End') index = names.length - 1;
+      else index = (index + (event.key === 'ArrowRight' ? 1 : -1) + names.length) % names.length;
+      event.preventDefault();
+      select(names[index], true);
     });
-    return details;
+    function refresh() {
+      if (!active?.initialize) return;
+      var name = Array.from(sections.keys()).find(function (id) { return sections.get(id) === active; });
+      active.pane.replaceChildren();
+      active.loaded = false;
+      active = null;
+      select(name);
+    }
+    return { add: add, select: select, refresh: refresh };
   }
   async function open(section) {
-    if (!config.isAdmin || dialog?.open) return;
-    var body = shell();
+    if (!config.isAdmin) return;
+    var event = typeof section === 'object' ? section : null;
+    var anchor = event?.currentTarget?.closest('button') || settingsTrigger();
+    var requested = typeof section === 'string' ? section : 'preferences';
+    if (dialog?.open) {
+      if (typeof section === 'string') dialog._tabs.select(requested, true);
+      else closeSettings(dialog);
+      return;
+    }
+    var body = shell(anchor);
     if (!body) return;
     var current = dialog;
-    node('p', 'Your everyday controls, all in one place. Changes apply immediately.', body, 'settings-intro');
-    var grid = node('div', undefined, body, 'settings-card-grid');
-    var appearance = card(grid, 'Appearance', 'A look that feels right on this screen.');
+    var tabsMenu = current._tabs = tabs(body);
+    var preferences = tabsMenu.add('preferences', 'Preferences');
+    var grid = node('div', undefined, preferences, 'settings-card-grid');
+    var appearance = card(grid, 'Appearance');
     choices(appearance, 'Theme', [
       ['system', 'System'], ['light-table', 'Light', '#a83831'], ['darkroom', 'Dark', '#c1443c'],
       ['golden-hour', 'Warm', '#d68c33'], ['contact-sheet', 'Cool', '#2f4c6b']
     ], read('stream-theme', config.defaultTheme || 'system'), function (value) { adapter.theme?.(value); }, 'settings-theme-choices');
-    choices(appearance, 'Visual effects', [['off', 'Off'], ['subtle', 'Subtle'], ['full', 'Full']], read('stream-effects', document.documentElement.dataset.effects || 'full'), function (value) { adapter.effects?.(value); });
-    node('p', 'Effects stay on this browser. Reduced motion is always respected.', appearance, 'settings-footnote');
-    var player = card(grid, 'Video player', 'Keep the gallery visible around your video.');
+    choices(appearance, 'Animations and effects', [['off', 'Off'], ['subtle', 'Subtle'], ['full', 'Full']], read('stream-effects', document.documentElement.dataset.effects || 'full'), function (value) { adapter.effects?.(value); });
+    node('p', 'Choose Off to disable interface animations and visual effects on this browser.', appearance, 'settings-footnote');
+    var player = card(grid, 'Video player');
     var blurLabel = node('label', undefined, player, 'settings-slider-label');
     node('span', 'Viewer background blur', blurLabel);
     var blurValue = node('output', '', blurLabel);
@@ -257,8 +295,8 @@
     blur.oninput = function () { paintBlur(); adapter.viewerBlur?.(blur.value); };
     toggle(player, 'Show Stats for nerds in video player', 'Resolution, frame rate and playback details.', read('stream-video-stats', '0') === '1', function (value) { adapter.videoStats?.(value); });
 
-    var library = card(grid, 'Library', 'Keep your place across this library.');
-    var tracking = toggle(library, 'Record media activity', 'Save intentional hovers, opens and viewing progress.', config.tracking !== false, async function (value) {
+    var library = card(grid, 'Library');
+    var tracking = toggle(library, 'Record media activity', 'Save intentional hovers, opens, and viewing activity. Playback position is saved separately.', config.tracking !== false, async function (value) {
       await api('/api/settings', { tracking: value }, current);
       window.StreamActivity?.setEnabled(value);
       message(value ? 'Viewing history is on.' : 'Viewing history is off.', false, current);
@@ -268,25 +306,24 @@
     var loadNote = node('p', 'Loading library settings…', library, 'settings-footnote');
     if (pending) node('p', pending + ' activity records waiting to sync from this browser.', library, 'settings-footnote');
     var retry = button('Retry library settings', library, function () { return hydrate(); }, 'settings-small-button'); retry.hidden = true;
-    var access = card(grid, 'Account', 'This library requires owner sign-in.');
+    var access = card(grid, 'Account');
     var account = node('p', 'Loading account…', access, 'settings-footnote');
-    button('Sign out', access, async function () { await api('/api/logout', {}, current); location.href = '/'; }, 'settings-signout');
-    var tools = node('div', undefined, body, 'settings-details');
-    advanced(tools, 'Folders', 'View or manage the folders in the top-left menu.', function (pane) {
+    button('Sign out', access, function () { return window.StreamSignOut(); }, 'settings-signout');
+    tabsMenu.add('folders', 'Folders', function (pane) {
       if (window.StreamFolders) return window.StreamFolders.settings(pane);
       node('p', 'Folder controls could not load. Reload the page to try again.', pane);
     });
     if (config.features?.nodes || window.StreamNodes) {
-      advanced(tools, 'Nodes', 'Connect another machine or manage saved libraries.', function (pane) {
+      tabsMenu.add('nodes', 'Nodes', function (pane) {
         if (window.StreamNodes) return window.StreamNodes.settings(pane);
         node('p', 'Library connections could not load. Reload the page to try again.', pane);
       });
     }
-    advanced(tools, 'Library tools', 'Storage, background work, backups and moved files.', function (pane) {
+    tabsMenu.add('maintenance', 'Library tools', function (pane) {
       if (window.StreamLibraryTools?.maintenance) return window.StreamLibraryTools.maintenance(pane);
       node('p', 'Library tools could not load. Reload the page to try again.', pane);
     });
-    advanced(tools, 'History', 'Review recently recorded viewing activity.', function (pane) {
+    tabsMenu.add('history', 'History', function (pane) {
       var list = node('div', undefined, pane, 'settings-activity-list'), cursor = null, loaded = false;
       var more = button('Load more activity', pane, async function () {
         var page = await api('/api/activity' + (cursor ? '?before=' + encodeURIComponent(cursor) : ''), undefined, current);
@@ -311,7 +348,7 @@
         loaded = true;
         tracking.checked = data.tracking !== false; tracking.disabled = false;
         window.StreamActivity?.setEnabled(data.tracking !== false);
-        account.textContent = data.security?.username ? 'Signed in as ' + data.security.username : data.security?.mode || 'Owner account';
+        account.textContent = data.security?.mode || 'Passphrase sign-in';
         loadNote.textContent = 'History stays with this server, across devices and updates.';
       } catch (error) {
         if (error.name !== 'AbortError') {
@@ -322,11 +359,11 @@
         }
       } finally { loading = false; }
     }
-    current._resume = function () { void hydrate(); };
-    if (section === 'folders') {
-      var folderDetail = tools.querySelector('#settings-folders');
-      if (folderDetail) { folderDetail.open = true; folderDetail.scrollIntoView({ block: 'nearest' }); }
-    }
+    current._resume = function () {
+      void hydrate();
+      tabsMenu.refresh();
+    };
+    tabsMenu.select(requested, requested !== 'preferences');
     await hydrate();
   }
   function savePending() { try { localStorage.setItem('stream-ui-pending', JSON.stringify(pendingUI)); } catch (_) {} }
@@ -348,12 +385,17 @@
   document.addEventListener('keydown', function (event) {
     if (!config.isAdmin) return;
     if (dialog?.open) {
-      if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); stepBack(); }
+      if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); closeSettings(dialog); }
       return;
     }
     if (event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.target.closest('input,textarea,select,[contenteditable="true"]')) {
-      event.preventDefault(); event.stopImmediatePropagation(); void open();
+      event.preventDefault(); event.stopImmediatePropagation();
+      settingsTrigger()?.click();
     }
   }, true);
-  window.StreamSettings = { open: function (section) { void open(section).catch(function (error) { message(error.message, true); }); }, preference: preference, init: function (value) { adapter = value; } };
+  window.StreamSettings = {
+    open: function (section) { void open(section).catch(function (error) { message(error.message, true); }); },
+    preference: preference,
+    init: function (value) { adapter = value; }
+  };
 })();

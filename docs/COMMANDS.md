@@ -6,7 +6,7 @@
 | --- | --- |
 | Docker on macOS or Windows | A current Docker Desktop installation running Linux containers, plus a checkout or extracted source archive. The host must give Docker access to the selected folders. Windows Start-Here uses PowerShell. [Docker Desktop](https://docs.docker.com/desktop/) |
 | Docker on Linux or a NAS | Docker Engine, the Compose plugin and a host that can read the media. Use an amd64 or arm64 Linux container. Start-Here offers an automatic Docker Engine installation on supported Debian and Ubuntu systems with systemd. [Docker Engine](https://docs.docker.com/engine/install/) · [Compose installation](https://docs.docker.com/compose/install/) |
-| Run natively | A supported Node.js LTS version that meets the `engines` entry in [package.json](../package.json), plus FFmpeg, FFprobe, ImageMagick 7 (`magick`) and ExifTool on the executable path. Node.js 24 LTS is recommended. ImageMagick 6 (`convert`) is also supported. Install `zip` for batch downloads and `ldapwhoami` if configuring LDAP. For optional detection, install Python 3 with OpenCV and NumPy, and Tesseract with the desired language data for OCR. [Node.js release schedule](https://nodejs.org/en/about/previous-releases) |
+| Run natively | A supported Node.js LTS version that meets the `engines` entry in [package.json](../package.json), plus FFmpeg, FFprobe, ImageMagick 7 (`magick`) and ExifTool on the executable path. Node.js 24 LTS is recommended. ImageMagick 6 (`convert`) is also supported. Install `ldapwhoami` if configuring LDAP. For optional detection, install Python 3 with OpenCV and NumPy, and Tesseract with the desired language data for OCR. [Node.js release schedule](https://nodejs.org/en/about/previous-releases) |
 
 Use a current browser. Video codec support varies by browser and device. Basic hosting needs no GPU. Allow space for the media and a local, writable disk for SQLite and generated previews. Import load and derivative size depend on the collection and enabled recognition. See [hardware and resource settings](HARDWARE.md).
 
@@ -30,7 +30,7 @@ On macOS or Linux, run the launcher in that checkout. On Windows, double-click `
 bash ./Start-Here.sh
 ```
 
-This opens the guided menu. **First-time setup** writes a Git-ignored `compose.yaml`, creates the starter project's volumes and starts the service with read-only media mounts. **Add a media folder** writes one additional mount and prints the command to apply it. Supply `--terminal` to enter folder paths without a picker. Supply `--help` to list the Bash launcher's options. [Start-Here guide](STARTER.md)
+This opens the guided menu. **First-time setup** writes a Git-ignored `compose.yaml`, creates the starter project's private host directories and starts the service with read-only media mounts. **Add a media folder** writes one additional mount and prints the command to apply it. Supply `--terminal` to enter folder paths without a picker. Supply `--help` to list the Bash launcher's options. [Start-Here guide](STARTER.md)
 
 For manual Docker setup, copy `.env.example` to a new `.env` and set `URL` to the browser-facing address. `STREAM_HTTP_PORT` selects the host port, which defaults to 80. Compose publishes to `127.0.0.1` by default. Set `STREAM_HTTP_BIND` to the host's intended LAN interface address if clients should connect directly. Follow [mounted folders](MOUNTED_FOLDERS.md) to give Docker access to the selected media. Existing manual installs that relied on an all-interface listener must explicitly choose their bind address when upgrading. [Headless and NAS setup](STARTER.md#headless-linux-over-ssh)
 
@@ -52,8 +52,9 @@ When using the manual setup, include `-f docker-compose.yml` and every existing 
 
 | Storage | Contents |
 | --- | --- |
+| `vidstream-local/{data,cache,originals}` | Default private host storage for new guided setups. [Portable storage and migration](PORTABLE_CACHE.md) |
 | Host media bind or mounted share | Source photos and videos. Default example binds are read-only. |
-| `stream-data` at `/app/data` | SQLite catalog, owner settings, account state, preferences and history. |
+| `stream-data` at `/app/data` | SQLite catalog, owner settings, account state, preferences, scan reports, playback positions and history. |
 | `stream-cache` at `/app/.cache` | Rebuildable derivatives, compatibility copies and optional recognition weights. With the RAM overlay, this volume holds snapshots. |
 | `stream-originals` at `/app/originals` | Retained archive volume. Preserve any existing override for this mount. Saved Quick edits keep their original beside the source in `.vidstream-originals`. |
 

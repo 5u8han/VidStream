@@ -5,13 +5,90 @@ read-only mount. The server's catalog and generated derivatives live on
 persistent storage. The browser keeps a bounded working set of gallery
 media for the current page.
 
+## Scan a large library
+
+Use **Folders → Scan** beside a mounted folder or collection. This scans that
+folder and its descendants. **ⓘ** shows the saved scan time, outcome, file and
+directory counts, supported media, and errors. The full-library scan discovers
+mounted folders in parallel and interleaves their media during import.
+If a scan is active, a manual folder request enters the queue. The current
+operation, active paths, and time since the last progress appear in
+**Dashboard → Scan activity**. Counts in the gallery summarize indexed items.
+They are not a measurement of disk activity or remaining files.
+
+There is no configured item limit at 100,000. Directory and file counters use
+JavaScript safe integers. Practical limits include memory needed by the
+catalog, cache disk space, file-system latency, and the time it takes to read
+and encode source files. Metadata operations that do not return and source hashes with no read
+progress time out after 45 seconds. A blocked system call may still need
+the device or mount recovered on the host. Container block I/O alone may miss bind-mount reads.
+
+`PROCESSING_CONCURRENCY=auto` budgets workers using the CPUs and memory
+available to the server. An explicit positive number caps that budget.
+**Settings → Library tools → Background work → Process faster** allows the
+full budget. With 12 visible logical CPUs and 2 GiB of container
+memory, automatic sizing allows four media workers. The Balanced preset
+runs two background tasks, while Process faster can use all four. A host
+with 64 visible logical CPUs and ample container RAM can schedule up to
+64 processing jobs in Process faster. A processing job can start several
+child processes and each job's memory consumption depends on its input.
+The worker budget is a scheduling estimate, with room reserved for the
+server and browser requests.
+
+The preparation and media-processing queues refill as jobs finish. One
+slow file can occupy one worker without making the rest of its batch wait.
+`SCAN_READ_CONCURRENCY=auto` limits simultaneous source file preparation
+to four readers or fewer on smaller hosts. Raise it by small steps when a
+local SSD or multiple storage devices can sustain it. Too many readers
+can slow one hard disk or NAS. Discovery and metadata operations also
+run concurrently. Node's asynchronous filesystem calls share the
+`UV_THREADPOOL_SIZE` pool, configured when the server starts.
+
+### Performance configuration for a larger host
+
+For a 128 GiB server, this Compose example gives the container up to
+96 GiB, reserves memory on the host for other services, and starts with
+eight source readers. Merge these keys into the existing `stream` service
+and retain its current storage mounts.
+
+```yaml
+services:
+  stream:
+    mem_limit: 96g
+    memswap_limit: 96g
+    environment:
+      PROCESSING_CONCURRENCY: "auto"
+      SCAN_READ_CONCURRENCY: "8"
+      UV_THREADPOOL_SIZE: "16"
+```
+
+Choose **Process faster** for bulk import. Compare scan times and server
+CPU, disk, and memory graphs before raising read concurrency again. For
+manual Compose, the existing `STREAM_MEM_LIMIT` setting controls the
+memory ceiling. Parent mounts, VM or Docker Desktop resources, and
+container CPU quotas can impose other limits. [Docker resource constraints](https://docs.docker.com/engine/containers/resource_constraints/)
+
+### Estimate the SSD size
+
+Use **Measure storage** after scanning a representative set of photos and
+videos. The server returns cache and cache backing disk usage independently,
+with logical and allocated bytes per cache directory. It also returns the
+media counts and free bytes. For an initial estimate, scale photo thumbnail
+and large-image storage by the expected photo count. Scale posters and
+optimized video previews by the expected video count. Separately allow for
+watched originals, compatibility copies, backups, the SQLite database and
+free space during imports and upgrades. If you use the RAM snapshot cache,
+allow room for two snapshot generations while it writes a new one. File
+sizes vary with content and settings, so measure a sample that includes the
+types and resolutions you actually collect.
+
 ## Find the slow stage
 
 | What you see | What to check |
 | --- | --- |
 | The gallery takes a while to list items, even with previews paused | In **Check playback smoothness**, compare the catalog response time with the first visible thumbnail time. A slow catalog response points to server work such as SQLite queries or an import competing for resources. |
 | Tiles appear quickly but preview clips wait | Check whether the files are still importing. If the clips are ready, inspect the browser Network timing for `/preview` or `/poster`. Those paths use generated assets. A slow response there can come from the cache disk, server load, or the connection. |
-| Clips start promptly but scrolling drops frames | Compare **4** or **8** simultaneous previews with **64**, leaving the same page and network in use. Simultaneous decoders and compositing run on the viewing device. |
+| Clips start promptly but scrolling drops frames | Compare **4** or **8** simultaneous previews with **64** on the same folder. Try **View → Video previews → Lightweight gallery**, which uses smaller existing posters and thumbnails and reduces effects while keeping previews active. Simultaneous decoders and compositing run on the viewing device. |
 | Full playback is slow, but optimized previews are quick | Inspect **Stats for nerds** for buffering and playback source. The original may be waiting on the DAS, or the host may be preparing a compatible copy. |
 
 Netflix describes a pipeline that prepares multiple encodes ahead of playback
@@ -33,7 +110,7 @@ mount targets across updates. A regular restart or recreation reuses these
 volumes. Deleting the volumes forces a fresh import and removes saved state.
 Place the live SQLite file on local storage. [Docker volumes](https://docs.docker.com/engine/storage/volumes/) · [SQLite WAL](https://sqlite.org/wal.html)
 
-Choose **Optimized** under **View → More controls → Playback**. A video stays
+Choose **Optimized** under **View → Video previews**. A video stays
 on its poster while its optimized preview is pending. Visible videos pick up
 newly ready previews during an import. **Original** previews
 read the source file over the media mount. The simultaneous preview setting
@@ -49,9 +126,9 @@ before importing new folders. The CPU can then spend more time on previews.
 
 Startup normally checks the mounted library for changes. Completed items
 reuse their catalog records and derivatives. New or changed files can still
-require a full read to establish content identity. After discovery and basic
-file checks, import processes small batches across selected mounts. Previews
-finish as each batch is processed.
+require a full read to establish content identity. After discovery and file checks, import interleaves selected mounts. Image
+sizes within one stage come from a single decode, and background jobs free
+their processing slots as soon as that stage completes.
 
 After the initial import is complete, set `SCAN_ON_START: "0"` under
 `services → stream → environment` in the generated `compose.yaml` if you
@@ -121,3 +198,40 @@ bitrate on a fluctuating network becomes a specific requirement.
 Use the [standalone media audit](MEDIA_AUDIT.md) to check for decode errors
 in source files outside the app. Start with a sample folder before committing
 to a full-library read.
+
+## Persistent cache and playback resume
+
+Docker's `stream-cache` volume holds generated thumbnails, posters, short
+preview clips, and compatible playback copies on the machine running
+VidStream. Give it SSD space and keep the same named volume on upgrades.
+Ordinary startup and container recreation can reuse those files. The app
+serves cached previews from this volume even though full playback can read
+from the attached storage. If a browser drops a tile, it can fetch the
+generated file again without another source read or encode.
+
+`CACHE_MAX_BYTES` defaults to `0`, which keeps all generated files until the
+cache is explicitly removed. If space is limited, set a byte limit for
+**short video previews and compatible playback copies**. For example,
+`107374182400` is 100 GiB. Use the existing `.env` with manual Compose, or
+add `CACHE_MAX_BYTES: "107374182400"` under
+`services → stream → environment` in your guided `compose.yaml`. Apply it
+with the usual service recreation. [Update commands](COMMANDS.md#update-and-verify-the-existing-installation)
+
+Once a minute, the app checks that budget and removes the oldest unused
+eligible files. It leaves active media streams, recently used files,
+thumbnails, posters, images, and recognition weights intact. Disk usage can
+briefly exceed the budget while files are being used or generated. A
+requested missing preview can be rebuilt from its original. The scanner
+does not rebuild intentionally evictable previews on every regular scan.
+The limit is inactive when the optional RAM snapshot cache is configured.
+**Storage** shows the entire cache volume usage and the separate video
+retention budget.
+
+The `stream-data` volume holds accounts, catalog entries, preferences, and
+the most recent playback position for each video. Positions are saved
+during playback and on pause, seek, and close, independently of whether
+optional viewing history is enabled. Reopening the same source resumes in
+the player. Finishing a video resets its position. This data persists
+across container recreation and travels with the library database backup.
+The browser temporarily queues an unsent timestamp during a disconnect.
+It removes that pending timestamp when the server acknowledges it.

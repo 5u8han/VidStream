@@ -7,7 +7,7 @@ const { URL } = require('url');
 const { loadConfig } = require('./lib/config');
 const { Db } = require('./lib/db');
 const { AiManager } = require('./lib/ai-manager');
-const { Scanner } = require('./lib/scanner');
+const { Scanner, scannerWorkerCount } = require('./lib/scanner');
 const { Router } = require('./lib/router');
 const { serveFile } = require('./lib/serve-file');
 const { isAdmin, hasSameOrigin } = require('./lib/auth');
@@ -17,11 +17,9 @@ const { pageHandler } = require('./lib/handlers/page');
 const { mediaHandler } = require('./lib/handlers/media');
 const {
   itemsHandler, itemHandler, rescanHandler, healthHandler, libraryStatusHandler, readyPreviewsHandler,
-  duplicatesHandler, dashboardHandler, dashboardFilesHandler, aiStatusHandler, aiUpdateHandler, aiInstallHandler,
+  duplicatesHandler, dashboardHandler, dashboardFilesHandler, diagnosticsHandlers, aiStatusHandler, aiUpdateHandler, aiInstallHandler,
 } = require('./lib/handlers/api');
-const { feedHandler } = require('./lib/feed');
 const { loginHandler, logoutHandler, setupHandler } = require('./lib/handlers/auth');
-const { downloadZipHandler } = require('./lib/handlers/download');
 
 async function boot() {
 const ROOT = __dirname;
@@ -32,20 +30,37 @@ require('./lib/security').initializeSecurity(cfg);
 const ai = new AiManager(cfg);
 
 const db = new Db(path.join(cfg.cacheDir, 'index.json'), cfg.dataDir, { mediaFolders: cfg.mediaFolders });
-const nodes = new (require('./lib/node-manager').NodeManager)(cfg, db.store);
+const diagnostics = new (require('./lib/diagnostics').Diagnostics)(db.store);
+const onIssue = issue => diagnostics.record(issue);
+const nodes = new (require('./lib/node-manager').NodeManager)(cfg, db.store, { onIssue });
 cfg.sessionCookieName = 'stream_session_' + nodes.id.replace(/-/g, '');
 Object.defineProperty(cfg, 'node', { get: () => ({ id: nodes.id, name: nodes.descriptor().name }) });
 const nodeHandlers = require('./lib/handlers/nodes').nodesHandlers(cfg, nodes);
-const coordinator = new (require('./lib/work-coordinator').WorkCoordinator)(db.store);
+const coordinator = new (require('./lib/work-coordinator').WorkCoordinator)(db.store, { scanWorkers: scannerWorkerCount(cfg), onIssue });
+const derivativeCache = cfg.derivativeCache = new (require('./lib/derivative-cache').DerivativeCache)(cfg, db, coordinator, {
+  log: message => {
+    console.log('[stream] ' + message);
+    if (/failed|could not|disabled/i.test(message))
+      onIssue({ code: 'DERIVATIVE_CACHE_WARNING', message });
+  },
+});
+await derivativeCache.validate();
+const sourceReadCache = cfg.sourceReadCache = new (require('./lib/source-read-cache').SourceReadCache)(cfg, {
+  log: message => {
+    console.log('[stream] ' + message);
+    onIssue({ code: 'SOURCE_CACHE_UNAVAILABLE', message });
+  },
+});
+await sourceReadCache.initialize();
 const scanner = new Scanner(cfg, db, {
-  coordinator,
+  coordinator, onIssue,
   onLog: (msg) => console.log(`[stream] ${msg}`),
 });
 
 const { MediaEditor } = require('./lib/media-editor');
 const { libraryHandlers } = require('./lib/handlers/library');
 const editor = new MediaEditor(cfg, db, scanner);
-const library = libraryHandlers(cfg, db, {edit:(item,body)=>coordinator.run('edit',item.filename,()=>editor.edit(item,body),{heavy:true,priority:20})});
+const library = libraryHandlers(cfg, db, {edit:(item,body)=>coordinator.run('edit',item.filename,()=>editor.edit(item,body),{heavy:true,priority:20,path:item.relPath})});
 const { settingsHandlers } = require('./lib/handlers/settings');
 const resources = new (require('./lib/resource-monitor').ResourceMonitor)(cfg,db.store);
 const settings = settingsHandlers(cfg, db);
@@ -78,10 +93,10 @@ router.get('/api/resources', async(req,res)=>{if(!isAdmin(req,cfg)){res.writeHea
 router.post('/api/settings', settings.update);
 router.post('/api/activity', settings.events);
 router.get('/api/activity', settings.activity);
+router.post('/api/items/:id/resume', settings.resume);
 router.post('/api/items/:id/preferences', library.preferences);
 router.post('/api/items/:id/edit', library.edit);
 router.get('/health', healthHandler(cfg, db));
-router.get('/feed.xml', feedHandler(cfg, db));
 router.post('/api/setup', setupHandler(cfg, { onSetup: () => nodes.restartDiscovery() }));
 router.post('/api/login', loginHandler(cfg));
 router.post('/api/logout', logoutHandler(cfg));
@@ -90,18 +105,23 @@ router.get('/api/ready-previews', readyPreviewsHandler(cfg, db));
 router.get('/api/item/:id', itemHandler(cfg, db));
 router.get('/api/library-status', libraryStatusHandler(cfg, scanner));
 router.get('/api/dashboard', dashboardHandler(cfg, db, scanner));
+const benchmark = require('./lib/benchmark').benchmarkHandlers(cfg, db, scanner);
+router.post('/api/benchmark/host', benchmark.host);
+router.get('/api/benchmark/network', benchmark.network);
+const notifications = diagnosticsHandlers(cfg, db, diagnostics);
+router.get('/api/notifications', notifications.get);
+router.post('/api/notifications/read', notifications.read);
 router.get('/api/dashboard/files', dashboardFilesHandler(cfg, db));
 router.get('/api/ai', aiStatusHandler(cfg, ai));
 router.post('/api/ai', aiUpdateHandler(cfg, ai));
 router.post('/api/ai/install', aiInstallHandler(cfg, ai));
 router.get('/api/duplicates', duplicatesHandler(cfg, db));
-router.post('/api/download-zip', downloadZipHandler(cfg, db));
 router.post('/api/rescan', rescanHandler(cfg, db, scanner));
 router.get('/media/:id/:variant', mediaHandler(cfg, db));
 router.get('/', pageHandler(cfg, db));
 router.get('/:id', pageHandler(cfg, db));
 
-const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/design.css', '/entrance.js', '/nodes.js', '/nodes.css', '/folders.js', '/folders.css', '/social-preview.png', '/settings.js', '/activity.js', '/resources.js', '/library-layout.js', '/artist-outlines.js', '/library-map.js', '/player-stats.js', '/navigation.js', '/preview-controller.js', '/diagnostics.js', '/library-tools.js', '/controls.css', '/options.css']);
+const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/design.css', '/entrance.js', '/nodes.js', '/nodes.css', '/folders.js', '/folders.css', '/social-preview.png', '/settings.js', '/activity.js', '/resources.js', '/library-layout.js', '/artist-outlines.js', '/library-map.js', '/player-stats.js', '/navigation.js', '/preview-controller.js', '/preview-memory.js', '/diagnostics.js', '/benchmark.js', '/benchmark.css', '/dashboard-notifications.js', '/dashboard-notifications.css', '/library-tools.js', '/controls.css', '/options.css']);
 const PUBLIC_DIR = path.join(ROOT, 'public');
 
 const requests = new Set();
@@ -139,7 +159,7 @@ async function handleRequest(req, res) {
   const publicRead = req.method === 'GET' && (pathname === '/health' || pathname === '/api/node-info');
   const publicAuth = req.method === 'POST' && ['/api/login', '/api/setup', '/api/logout'].includes(pathname);
   if (!publicRead && !publicAuth && !isAdmin(req, cfg)) {
-    if (req.method !== 'GET' || pathname.startsWith('/api/') || pathname.startsWith('/media/') || pathname === '/feed.xml') {
+    if (req.method !== 'GET' || pathname.startsWith('/api/') || pathname.startsWith('/media/')) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Sign-in required' }));
       return;
@@ -160,6 +180,11 @@ async function handleRequest(req, res) {
     await match.handler(req, res, match.params);
   } catch (err) {
     console.error(`[stream] Error handling ${req.method} ${pathname}:`, err);
+    if (isAdmin(req, cfg) && !pathname.startsWith('/api/notifications')) {
+      const item = match.params?.id ? db.get(match.params.id) : null;
+      diagnostics.record({ level: 'error', code: 'REQUEST_FAILED', path: item?.relPath,
+        message: (err.code || 'Unexpected error') + ' while processing ' + req.method + ' request.' });
+    }
     if (!res.headersSent) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Internal server error' }));
@@ -176,6 +201,8 @@ async function main() {
     console.log('[stream] Owner setup code: ' + cfg.setupCode + ' (enter this once in the web setup screen)');
   }
   resources.start();
+  diagnostics.start(scanner, coordinator, cfg);
+  derivativeCache.start();
   console.log(`[stream] Media folder: ${cfg.mediaDir}`);
 
   server.listen(cfg.port, cfg.host, async () => {
@@ -207,14 +234,17 @@ let shuttingDown=false;
 async function shutdown() {
   if(shuttingDown)return;shuttingDown=true;
   resources.stop();scanner.stopWatching();clearInterval(rescanTimer);
+  await derivativeCache.stop();
   ai.stop();
   await nodes.stop();
   const stopped=coordinator.stop();
   const closed=new Promise(resolve=>server.close(resolve));
   server.closeAllConnections();
   await Promise.allSettled([...requests]);
+  await sourceReadCache.stop();
   await scanner.waitForIdle();await stopped;await closed;
   require('./lib/vision-objects').shutdown();
+  diagnostics.stop();
   db.close ? db.close() : db.store.close();
   await cacheRuntime.save();
   process.exit(0);

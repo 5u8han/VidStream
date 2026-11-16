@@ -27,6 +27,7 @@
         video.removeAttribute('src');
         video.load();
         video.remove();
+        video._previewMemoryLease?.release();
         tile._video = null;
       }
       if (wasRunning) notify();
@@ -55,7 +56,7 @@
         video._previewAttempt = null;
         video.pause();
         if (!inView.has(tile)) {
-          if (tile.isConnected && video.readyState >= 2 && video.getAttribute('src') === tile._item.urls.preview) {
+          if (tile.isConnected && video.readyState >= 2 && (video._previewMemoryKey || video.getAttribute('src')) === tile._item.urls.preview) {
             warm.delete(tile);
             warm.add(tile);
             trimWarm();
@@ -107,13 +108,18 @@
       notify();
       var attempt = Symbol();
       video._previewAttempt = attempt;
-      var promise = video.play();
-      if (promise && promise.catch)
-        promise.catch(function () {
-          if (tile._video !== video || video._previewAttempt !== attempt) return;
-          running.delete(tile);
-          notify();
-        });
+      function start() {
+        if (tile._video !== video || video._previewAttempt !== attempt) return;
+        var promise = video.play();
+        if (promise && promise.catch)
+          promise.catch(function () {
+            if (tile._video !== video || video._previewAttempt !== attempt) return;
+            running.delete(tile);
+            notify();
+          });
+      }
+      if (video._previewDownload) void video._previewDownload.then(start);
+      else start();
     }
     function refill() {
       if (options.blocked() || !options.enabled()) return;
@@ -160,9 +166,15 @@
       trim: trimTracked,
       clear: clear,
       stats: function () {
+        var ready = 0;
+        for (var tile of inView) if (options.source(tile._item)) ready++;
         return {
+          enabled: options.enabled(),
+          blocked: options.blocked(),
           running: running.size,
           visible: inView.size,
+          sourcesReady: ready,
+          waitingForSource: inView.size - ready,
           retained: tracked.size,
           warm: warm.size
         };

@@ -48,7 +48,6 @@
     canvas.className = 'ambient-bg';
     canvas.setAttribute('aria-hidden', 'true');
     document.body.insertBefore(canvas, document.body.firstChild);
-    document.body.classList.add('has-ambient');
 
     var W = 2, H = 2;
     var mode = opts.mode || 'full', busy = false, scrolling = false, scrollTimer = null, raf = null, lastPaint = 0;
@@ -76,8 +75,8 @@
     var audioLevel = 0, audioAvg = 0, spawnedTotal = 0;
 
     function spawn(x, y, rgb, r, vx, vy, life, depth, friction) {
-      spawnedTotal++;
       if (blocked()) return;
+      spawnedTotal++;
       if (blobs.length >= (mode === 'subtle' ? 8 : MAX_BLOBS)) blobs.shift();
       blobs.push({
         x: x, y: y, vx: vx, vy: vy, r: r, c: rgb, life: life, depth: depth,
@@ -88,7 +87,7 @@
     var tileObserver = typeof IntersectionObserver === 'function'
       ? new IntersectionObserver(function (entries) {
           entries.forEach(function (e) {
-            if (e.isIntersecting && e.target.isConnected !== false) visibleTiles.add(e.target);
+            if (e.isIntersecting && e.target.isConnected !== false && e.target._hydrated) visibleTiles.add(e.target);
             else {
               visibleTiles.delete(e.target);
               if (e.target.isConnected === false) tileObserver.unobserve(e.target);
@@ -197,6 +196,7 @@
 
     window.addEventListener('scroll', function () {
       var y = window.scrollY || 0;
+      if (mode === 'off') { lastScrollY = y; return; }
       scrollVel += y - lastScrollY;
       lastScrollY = y;
       scrolling = true; suspend(); clearTimeout(scrollTimer);
@@ -204,6 +204,7 @@
     }, { passive: true });
 
     window.addEventListener('pointermove', function (e) {
+      if (mode === 'off') return;
       mouse.x = e.clientX * SCALE;
       mouse.y = e.clientY * SCALE;
       if (blocked()) return;
@@ -218,7 +219,7 @@
     }, { passive: true });
 
     window.addEventListener('pointerdown', function(e) {
-      if (e.target.closest('button, a, input, select')) return;
+      if (mode === 'off' || e.target.closest('button, a, input, select')) return;
       spawn(e.clientX*SCALE,e.clientY*SCALE,vivid(parseColor(hoverColor||accentStr)),60*SCALE,0,0,.65,.3);
     }, {passive:true});
     document.addEventListener('visibilitychange', function () { if (document.hidden) suspend(); else wake(); });
@@ -227,14 +228,27 @@
     api = {
       watchTile: function (tile, color) {
         tile._bgColor = color;
-        if (tileObserver) tileObserver.observe(tile);
+        if (mode !== 'off' && tileObserver) tileObserver.observe(tile);
       },
+      unwatchTile: function (tile) { tileObserver?.unobserve(tile); visibleTiles.delete(tile); },
       clearTiles: function () { if (tileObserver) tileObserver.disconnect(); visibleTiles.clear(); },
       setBusy: function (value) { busy = Boolean(value); if (busy) suspend(); else wake(); },
-      setMode: function (value) { mode = ['off','subtle','full'].includes(value) ? value : 'full'; canvas.hidden = mode === 'off'; if (mode === 'off') suspend(); else wake(); },
+      setMode: function (value) {
+        mode = ['off', 'subtle', 'full'].includes(value) ? value : 'full';
+        canvas.hidden = mode === 'off';
+        if (mode === 'off') {
+          suspend();
+          clearTimeout(scrollTimer);
+          scrolling = false;
+          tileObserver?.disconnect();
+          visibleTiles.clear();
+          blobs.length = 0;
+        } else wake();
+      },
       setHoverColor: function (color) { hoverColor = color; lastColor = color || lastColor; },
 
       attachAudio: function (media) {
+        if (mode === 'off') return;
         try {
           var AC = window.AudioContext || window.webkitAudioContext;
           if (!AC) return;
@@ -279,6 +293,7 @@
     }
     function step() {
       raf = 0;
+      if (document.documentElement.dataset.effects !== 'full') return;
       cx += (tx - cx) * 0.2;  cy += (ty - cy) * 0.2;
       hx += (tx - hx) * 0.055; hy += (ty - hy) * 0.055;
       apply();
@@ -295,6 +310,7 @@
       kick();
     });
     host.addEventListener('pointerleave', function () {
+      if (!active) return;
       active = false;
       host.classList.remove('fx-on');
       tx = w() / 2; ty = h() / 2;

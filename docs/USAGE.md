@@ -4,7 +4,7 @@ VidStream serves the photos and videos you choose from a machine you control. Us
 
 ## First sign-in
 
-1. Open the server address. A fresh Start-Here install normally uses `http://127.0.0.1:8080` on the server machine. A manually configured Docker install defaults to HTTP port 80.
+1. Open the server address. Fresh Start-Here and manual Docker installs default to HTTP port 80, usually `http://127.0.0.1/` on the server machine. Existing installations keep their configured address.
 2. Enter the one-time owner setup code from Start-Here or the server log. Choose a username and passphrase between 10 and 256 characters. Keep the code and logs private.
 3. Sign in and check the first library. The server imports media in the background. Recently added items appear as scanning and preview generation finish.
 
@@ -14,7 +14,7 @@ An existing owner account stays with its persistent data. An installation that u
 
 | To do this | Where to go |
 | --- | --- |
-| Switch folders on one server | Open the top-left library title and pick a folder or **All media**. Start-Here adds a menu entry for each mounted folder. Its first selection opens by default. |
+| Switch folders on one server | Open **Folders** at the top left and pick a folder or **All media**. Start-Here adds a menu entry for each mounted folder. Its first selection opens by default. |
 | Add another directory on the host | Reopen Start-Here and choose **Add a media folder**. The printed Compose command applies the new read-only mount and briefly restarts the service. [Start-Here guide](STARTER.md#add-a-folder-to-an-existing-setup) |
 | Manage mounts by hand | Bind each chosen host folder as a direct child of `/media/collections` and set the primary mount. [Mounted folders](MOUNTED_FOLDERS.md) |
 | Create navigation shortcuts within a single media root | As owner, open **Settings → Folders** or **Choose folders…** in the title menu. Name a shortcut and give it a path relative to the mounted root. [Folder shortcuts](FOLDERS.md) |
@@ -28,26 +28,41 @@ The scanner recognizes JPEG, PNG, GIF, WebP, HEIC/HEIF, TIFF and BMP photos and 
 
 - Use the search field for filenames, folder names, artist display labels, extracted text and object tags. Use the type filter for photos or videos. With a single root and no folder shortcuts, album and artist selectors appear when there are values to choose from.
 - In **View → Show**, select **Favorites**, **Pinned**, **Bookmarks**, **Faces**, **Pets** or **Text**. As owner, use **Mark as best** on a tile or the **Best**, **Pin** and **Bookmark** controls in the viewer to set those flags.
-- Use **View → Sort** for the quick choices or **View → More controls → Sort order** for oldest, name order and other options. **Artist** switches to all media sorted by artist and clears other gallery filters. **Recently opened**, **Continue watching** and **Less-seen shuffle** use recorded owner activity. In **Continue watching**, a video seeks to its saved position when opened.
-- In **View → More controls → Dates and resolution**, filter on media creation or import dates, a date range and minimum resolution. In **Saved views**, name and save the current filter and sort choices for reuse in this browser. **Pin to toolbar** adds quick buttons for shuffle, favorites or pausing previews.
+- Use **View → Sorting and filters → Sort order** for newest, oldest, name order and other options. **Artist** switches to all media sorted by artist and clears other gallery filters. **Recently opened**, **Continue watching** and **Less-seen shuffle** use recorded owner activity. In **Continue watching**, a video seeks to its saved position when opened.
+- In **View → Dates and resolution**, filter on media creation or import dates, a date range and minimum resolution. In **Saved views**, name and save the current filter and sort choices for reuse in this browser. **Pin to toolbar** adds quick buttons for shuffle, favorites or pausing previews.
 - Use the **Media size** slider and choose **Whole frame** or **Fill tiles**. Use a video's resize control to enlarge one tile. **Randomly enlarge videos** and **Reshuffle** adjust the arrangement. **Artist outlines** offers fine borders, outlines on hover and an optional color shuffle.
-- **Settings → Appearance** controls theme and visual effects. The browser's reduced-motion preference applies. Effects and several playback choices are browser-specific, so set them separately on a phone, tablet or desktop.
+- **Settings → Preferences → Appearance** controls theme and visual effects. The browser's reduced-motion preference applies. Effects and several playback choices are browser-specific, so set them separately on a phone, tablet or desktop.
 
 ## Play and inspect
 
-Select any tile to open the viewer. Use **Previous** or **Next**, or the left and right arrow keys when focus is outside native video controls. Press **Escape** to close the viewer. **Play slideshow** advances photos and continues when a video ends. Double-click to zoom or use pinch on a touch screen, then drag to pan.
+Select any tile to open the viewer. Use **Previous** or **Next** to switch media. When viewing photos, the left and right arrow keys can also switch items. Press **Escape** to close the viewer. **Play slideshow** advances photos and continues when a video ends. Double-click to zoom or use pinch on a touch screen, then drag to pan.
 
-Videos open the original source in the browser's player, with controls for seeking, audio and playback speed. If the browser rejects the source, VidStream can prepare a compatible copy in its cache. Wait for preparation or check the owner work queue for a failure. **Download original**, when enabled and permitted, retrieves the source. To download several allowed items together, use the gallery's **Select** control, choose the items and select **Download** to get a ZIP.
+Videos open the original source in the browser's player, with controls for seeking, audio and playback speed. If the browser rejects the source, VidStream can prepare a compatible copy in its cache. Wait for preparation or check the owner work queue for a failure. **Download original**, when enabled and permitted, retrieves the source.
 
-Open **Info** for available metadata, technical details and the permanent media ID. Owners can inspect stored activity and revision details. For video, use **Stats for nerds** or enable it in **Settings → Video player** to see source and viewport resolution, reported frame rates, dropped frames, buffering and the playback source. Use the same settings card to adjust background blur.
+Use **←** and **→**, or the **−10s** and **+10s** player buttons, to seek within a video. The outside chevrons still switch media. VidStream saves video position with the server catalog, independently of viewing history.
 
-Library and media addresses require an owner session. **Download original** stays available to the signed-in owner when `ALLOW_ORIGINAL_DOWNLOAD` is enabled. If you enable `SHOW_RSS_FEED`, visit `/feed.xml` in your signed-in browser. Feed clients that cannot send the owner session cookie cannot access it. [Security and privacy](../SECURITY.md)
+Open **Info** for available metadata, technical details and the permanent media ID. Owners can inspect stored activity and revision details. For video, use **Stats for nerds** or enable it in **Settings → Preferences → Video player** to see source and viewport resolution, reported frame rates, dropped frames, buffering and the playback source. Use the same settings card to adjust background blur.
+
+Library and media addresses require an owner session. **Download original** stays available to the signed-in owner when `ALLOW_ORIGINAL_DOWNLOAD` is enabled. [Security and privacy](../SECURITY.md)
+
+## Scan and trace library issues
+
+**Scan library now** starts a scan from an empty gallery. When a folder is
+selected, the button scans that folder. **Dashboard → Scan activity** shows
+active work. **Server logs** are at the bottom of Dashboard.
+
+The Dashboard **Notifications** button shows slow operations, import
+warnings, storage warnings and app errors. Entries have a stable ID and,
+when tied to media, a path relative to the library mount. Use **Open media**
+when available or **Copy path** to locate a file on the host. Repeated
+occurrences of the same issue update its count. Notifications are stored in
+the server catalog. Fatal startup failures still appear in the container logs.
 
 ## Adjust previews and playback load
 
 The optimized gallery preview is a muted, short loop at the source frame rate up to 60 fps. Actual playback depends on the browser, codec, device, storage and connection. The gallery releases media elements for distant tiles as you scroll. A large library still needs processing time and disk space for the catalog and derivatives.
 
-- Pause or enable **Autoplay previews** in **View**. Under **More controls → Playback**, reduce the simultaneous preview limit, choose **Optimized** or **Original**, or enable **Data saver**. Data saver reloads the page to apply lighter loading behavior.
+- Pause or enable **Autoplay previews** in **View**. Use **View → Video previews → Lightweight gallery** for smaller posters and fewer effects while preview autoplay stays available. In the same **Video previews** card, reduce **Concurrent previews**, choose **Optimized** or **Original**, or enable **Data saver**. Data saver reloads the page to apply lighter loading behavior.
 - Use **Check playback smoothness** under **Playback** to measure the current browser. In the viewer, use **Stats for nerds** to inspect an individual clip.
 - If initial import competes with browsing, set **Settings → Library tools → Background work** to **Browse comfortably** and check queued and failed tasks. The dashboard reports resources visible to the process or container. [Hardware and container limits](HARDWARE.md)
 - The optional [RAM cache](RAM_CACHE.md) changes where generated derivatives are kept while the server runs. Allocate memory for both the cache and the application, and allow a graceful stop to save its snapshot.
@@ -62,11 +77,12 @@ The owner can also enter crop position and dimensions, set a maximum width, and 
 
 | Feature | How to use it |
 | --- | --- |
-| Import and troubleshoot files | Open **Dashboard** from the library summary. Review counts, scan history, unsupported files, inaccessible folders and indexed items. In **Settings → Library tools**, use **Retry / reconcile library** after fixing a path or permission. **View → More controls → Refresh metadata & previews** forces a more expensive refresh. |
+| Import and troubleshoot files | Use **Scan** beside a folder to scan only that folder. Its **ⓘ** shows the last outcome and file, directory, and media counts. Open **Dashboard → Scan activity** for the current phase, active files and recent messages. The same dashboard contains scan history, import issues and indexed files. In **Settings → Library tools**, use **Retry / reconcile library** after fixing a path or permission. **View → Video previews → Refresh metadata & previews** forces a more expensive refresh. |
 | Explore the library map | In **Dashboard**, choose area by storage size or file count, and show artists/folders or individual files. Select a region or item to open it. |
+| Benchmark a deployment | Use **Dashboard → Benchmark** on the device you watch from. The report includes cache and preview suggestions and can be downloaded as JSON. [Benchmark guide](BENCHMARK.md) |
 | Check server resources | Open **Dashboard** and review the resource readings. A container's memory limit can be lower than its host's physical RAM. [Resource guide](HARDWARE.md) |
 | Use local recognition | The scanning configuration controls face/pet presence, OCR and perceptual duplicate grouping separately. Inspect or adjust the relevant `ENABLE_…` fields in [the sample configuration](../.env.example). General object tags require the optional object-recognition stack. In **Dashboard**, choose a preset model and device, download trusted weights if needed, save the enabled setting and rescan. [Hardware and recognition setup](HARDWARE.md) |
-| Manage viewing history | Toggle **Record media activity** under **Settings → Library**. **Settings → History** lists recent recorded activity. To delete older raw events, use **Settings → Library tools → Activity retention**, enter a retention period and confirm. Cumulative counts and viewing positions are retained. |
+| Manage viewing history | Toggle **Record media activity** under **Settings → Preferences → Library**. **Settings → History** lists recent recorded activity. To delete older raw events, use **Settings → Library tools → Activity retention**, enter a retention period and confirm. Cumulative counts and viewing positions are retained. |
 | Back up the catalog | Choose **Settings → Library tools → Create catalog backup** and download the consistent SQLite snapshot. Back up the original media, hidden edit archives, private configuration and complete persistent data separately for recovery. |
 | Relink a moved file | Copy its permanent media ID from **Info**. In **Settings → Library tools → Relink or label media**, enter that ID and its new path relative to the media root. VidStream checks the file's bytes and that the path belongs to no other item before linking it to the existing history. |
 | Change an artist label | In the same panel, enter the media ID and save an **Artist display label**. Clear that value to restore the folder label. This changes the catalog label without renaming the source. |

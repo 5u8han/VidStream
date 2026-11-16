@@ -37,10 +37,14 @@ jobs:
           node scripts/setup-compose.js vidstream-ci:local 8080 light-table -- /media-sample/first > "$RUNNER_TEMP/compose.yaml"
           node scripts/setup-compose.js --add-folder /media-sample/second < "$RUNNER_TEMP/compose.yaml" > "$RUNNER_TEMP/compose-added.yaml"
           docker compose -f "$RUNNER_TEMP/compose-added.yaml" config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.portable.yml -f docker-compose.portable-ram.yml config --quiet
+          STREAM_TLS_HOST=vidstream.example.test STREAM_TLS_CERT_DIR="$RUNNER_TEMP" \
+            docker compose -f docker-compose.yml -f docker-compose.https.yml config --quiet
       - name: Container startup
         run: |
           docker build --pull --tag vidstream-ci:local .
           container=$(docker run --detach --security-opt no-new-privileges:true \
+            --env ADMIN_PASSWORD=benchmark-ci-only-passphrase \
             --publish 127.0.0.1::4000 vidstream-ci:local)
           trap 'docker rm -f "$container" > /dev/null' EXIT
           port=$(docker port "$container" 4000/tcp)
@@ -49,3 +53,4 @@ jobs:
             docker logs "$container"
             exit 1
           fi
+          VIDSTREAM_TEST_URL="http://$port" VIDSTREAM_TEST_PASSWORD=benchmark-ci-only-passphrase node scripts/check-benchmark.js
