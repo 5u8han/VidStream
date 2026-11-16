@@ -23,33 +23,49 @@ and encode source files. Metadata operations that do not return and source hashe
 progress time out after 45 seconds. A blocked system call may still need
 the device or mount recovered on the host. Container block I/O alone may miss bind-mount reads.
 
-`PROCESSING_CONCURRENCY=auto` budgets workers using the CPUs and memory
-available to the server. An explicit positive number caps that budget.
-**Settings → Library tools → Background work → Process faster** allows the
-full budget. With 12 visible logical CPUs and 2 GiB of container
-memory, automatic sizing allows four media workers. The Balanced preset
-runs two background tasks, while Process faster can use all four. A host
-with 64 visible logical CPUs and ample container RAM can schedule up to
-64 processing jobs in Process faster. A processing job can start several
-child processes and each job's memory consumption depends on its input.
-The worker budget is a scheduling estimate, with room reserved for the
-server and browser requests.
+`PROCESSING_CONCURRENCY=auto` sizes the media-processing queue from the
+logical CPUs available to VidStream, including Docker CPU quotas, up to
+64. The queue also budgets 384 MiB per worker after reserving 512 MiB for
+the server. An explicit positive `PROCESSING_CONCURRENCY` value lowers
+the resulting ceiling. **Settings → Library tools → Background work →
+Process faster** uses the full budget. Balanced uses about half the
+budget and Browse uses one background slot.
+
+Set `SCAN_WORKER_MULTIPLIER=2` to try twice as many media-processing jobs
+per CPU. Each node sizes its own queue. The doubled ceiling still depends
+on memory and any explicit processing cap. New guided and manual Docker
+deployments start with a 2 GiB memory limit, which permits four media
+workers even on a 64-thread machine.
+
+| Logical CPUs visible to VidStream | Default ceiling | Doubled ceiling | Memory budget needed to reach the doubled ceiling |
+| ---: | ---: | ---: | ---: |
+| 24 | 24 | 48 | 18.5 GiB |
+| 32 | 32 | 64 | 24.5 GiB |
+| 64 | 64 | 128 | 48.5 GiB |
+
+These are queue slots. Preview encoding already requests two FFmpeg
+encoder threads per video. Photo processing and recognition may launch
+other child processes. RAM use also depends on the files and catalog
+size. On workloads that already saturate CPU or disk, extra jobs can
+take longer and affect playback.
 
 The preparation and media-processing queues refill as jobs finish. One
 slow file can occupy one worker without making the rest of its batch wait.
-`SCAN_READ_CONCURRENCY=auto` limits simultaneous source file preparation
-to four readers or fewer on smaller hosts. Raise it by small steps when a
-local SSD or multiple storage devices can sustain it. Too many readers
-can slow one hard disk or NAS. Discovery and metadata operations also
-run concurrently. Node's asynchronous filesystem calls share the
-`UV_THREADPOOL_SIZE` pool, configured when the server starts.
+`SCAN_READ_CONCURRENCY=auto` allows up to four source preparation jobs.
+Set `SCAN_READ_CONCURRENCY=8` to try eight on a fast SSD or several drives.
+Explicit readers are limited to 64 and to twice the calculated media-worker
+ceiling. Metadata checks use up to four times the reader limit, bounded
+between 4 and 128. Directory discovery uses up to 32 of those slots.
+A single DAS hard disk can slow down with too many simultaneous reads.
+Node's asynchronous filesystem operations share its process-wide
+`UV_THREADPOOL_SIZE` pool, configured when Node starts.
 
 ### Performance configuration for a larger host
 
 For a 128 GiB server, this Compose example gives the container up to
-96 GiB, reserves memory on the host for other services, and starts with
-eight source readers. Merge these keys into the existing `stream` service
-and retain its current storage mounts.
+96 GiB, enables the doubled media-worker ceiling and starts with eight
+source preparation slots. Merge these keys into the existing guided
+`compose.yaml` and retain its project name and storage mounts.
 
 ```yaml
 services:
@@ -58,15 +74,19 @@ services:
     memswap_limit: 96g
     environment:
       PROCESSING_CONCURRENCY: "auto"
+      SCAN_WORKER_MULTIPLIER: "2"
       SCAN_READ_CONCURRENCY: "8"
       UV_THREADPOOL_SIZE: "16"
 ```
 
-Choose **Process faster** for bulk import. Compare scan times and server
-CPU, disk, and memory graphs before raising read concurrency again. For
-manual Compose, the existing `STREAM_MEM_LIMIT` setting controls the
-memory ceiling. Parent mounts, VM or Docker Desktop resources, and
-container CPU quotas can impose other limits. [Docker resource constraints](https://docs.docker.com/engine/containers/resource_constraints/)
+For manual Compose, put the same environment entries in `.env` using
+`KEY=value` syntax and set `STREAM_MEM_LIMIT=96g` in place of the two
+Compose memory keys. Recreate VidStream with your usual Compose
+configuration to apply these values and reuse its database and cache.
+Choose **Process faster** for bulk import. Compare Dashboard throughput,
+playback and disk activity before raising read concurrency on a DAS.
+VM resources and Docker CPU quotas can reduce the budget even with these
+settings. [Docker resource constraints](https://docs.docker.com/engine/containers/resource_constraints/)
 
 ### Estimate the SSD size
 

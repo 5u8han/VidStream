@@ -946,14 +946,55 @@
     }
     function showScanActivity(id, logSection) {
       var pane = section('Scan activity');
+      pane.classList.add('dashboard-scan');
       var current = el('p', { class: 'dashboard-lead' }, 'Loading scan activity…');
       var details = el('p', { class: 'modal-sub' });
-      var active = el('ul', { class: 'dashboard-scan-list' });
-      var logs = el('ol', { class: 'dashboard-scan-list dashboard-log' });
-      logs.setAttribute('aria-label', 'Recent scan log');
-      pane.append(current, details, active);
-      logSection.appendChild(logs);
-      var signature = '';
+      var message = el('p', { class: 'dashboard-scan-status', hidden: true });
+      var activeHeading = el('h4', { id: 'dashboard-active-scan-heading' }, 'Active operations');
+      var active = el('ul', { class: 'dashboard-scan-list', tabindex: '0', 'aria-labelledby': activeHeading.id, hidden: true });
+      var recentHeading = el('h4', { id: 'dashboard-recent-scan-heading' }, 'Recent operations');
+      var recent = el('ol', { class: 'dashboard-scan-list', tabindex: '0', 'aria-labelledby': recentHeading.id, hidden: true });
+      var recentEmpty = el('p', { class: 'modal-sub' }, 'No recorded operations yet.');
+      var logs = el('ol', { class: 'dashboard-scan-list dashboard-log', tabindex: '0', 'aria-label': 'Recent scan log', hidden: true });
+      var logsEmpty = el('p', { class: 'modal-sub' }, 'No scan messages yet.');
+      pane.append(current, details, message, activeHeading, active, recentHeading, recent, recentEmpty);
+      logSection.append(logs, logsEmpty);
+      var signatures = new WeakMap();
+
+      function elapsedSince(time, now) {
+        var seconds = Math.floor((now - Date.parse(time)) / 1000);
+        return Number.isFinite(seconds) ? Math.max(0, seconds) : null;
+      }
+      function elapsedLabel(seconds) {
+        if (seconds < 60) return seconds + 's';
+        var minutes = Math.floor(seconds / 60);
+        return minutes + 'm ' + seconds % 60 + 's';
+      }
+      function operationLine(task, now) {
+        var fields = [task.stage, task.path || 'media root'];
+        var finished = task.finishedAt && Date.parse(task.finishedAt);
+        var duration = Math.max(0, (finished || now) - Date.parse(task.startedAt));
+        if (finished) fields.push((task.outcome === 'failed' ? 'Failed' : 'Finished') + ' at ' + new Date(finished).toLocaleTimeString());
+        if (Number.isFinite(duration)) fields.push(duration < 1000 ? duration + 'ms' : elapsedLabel(Math.floor(duration / 1000)));
+        if (Number.isFinite(task.bytesRead) && Number.isFinite(task.size)) {
+          fields.push(formatFileSize(task.bytesRead) + ' / ' + formatFileSize(task.size));
+        }
+        var idleSeconds = elapsedSince(task.lastProgressAt || task.startedAt, now);
+        if (!finished && idleSeconds >= 45) fields.push('Awaiting progress for ' + elapsedLabel(idleSeconds));
+        var line = el('li', { class: 'dashboard-file' });
+        line.textContent = fields.join(' · ');
+        return line;
+      }
+      function updateHistory(list, entries, render) {
+        var signature = JSON.stringify(entries);
+        if (signatures.get(list) === signature) return;
+        signatures.set(list, signature);
+        var scrollTop = list.scrollTop;
+        var newestFirst = entries.slice().reverse();
+        list.replaceChildren(...newestFirst.map(render));
+        list.hidden = !entries.length;
+        list.scrollTop = scrollTop;
+      }
       async function refresh() {
         if (id !== openId) return;
         try {
@@ -964,41 +1005,48 @@
           current.textContent = scanDescription(data);
           if (!data.progress && data.lastScan?.status) current.textContent += ' · Last scan ' + data.lastScan.status;
           var progress = data.progress;
+          var now = Date.now();
+          var activeTasks = progress?.active || [];
+          var recentTasks = progress?.recentActivities || data.recentActivities || [];
           var status = [];
           if (progress?.startedAt) status.push('Started ' + new Date(progress.startedAt).toLocaleTimeString());
-          if (progress?.lastProgressAt) {
-            var seconds = Math.max(0, Math.round((Date.now() - new Date(progress.lastProgressAt).getTime()) / 1000));
-            status.push('Last progress ' + seconds + 's ago');
-          }
+          var idleSeconds = elapsedSince(progress?.lastProgressAt, now);
+          if (idleSeconds !== null) status.push('Last progress ' + elapsedLabel(idleSeconds) + ' ago');
+          if (Number.isFinite(progress?.bytesRead)) status.push(formatFileSize(progress.bytesRead) + ' read for hashing');
           if (data.parallelism) {
-            status.push(data.parallelism.workers + ' media workers', data.parallelism.effectiveCores + ' logical CPUs visible');
+            status.push(data.parallelism.workers + ' media-worker ceiling', data.parallelism.effectiveCores + ' effective logical CPUs');
+            if (data.parallelism.processingLimit) status.push(data.parallelism.processingLimit + ' background slots');
+            if (data.parallelism.workerMultiplier > 1) status.push(data.parallelism.workerMultiplier + '× scan concurrency');
             if (data.parallelism.readers) status.push(data.parallelism.readers + ' source readers');
             if (data.parallelism.metadataWorkers) status.push(data.parallelism.metadataWorkers + ' metadata workers');
+            if (data.parallelism.directoryWorkers) status.push(data.parallelism.directoryWorkers + ' directory workers');
           }
           if (data.queued?.length) status.push(data.queued.length + ' queued');
           if (data.pendingStorageReads) status.push(data.pendingStorageReads + ' storage operations still awaiting the OS');
           details.textContent = status.join(' · ');
-          active.replaceChildren(...(progress?.active || []).map(function (task) {
-            var seconds = Math.max(0, Math.round((Date.now() - new Date(task.startedAt).getTime()) / 1000));
+          message.hidden = !(progress && idleSeconds >= 45);
+          message.textContent = message.hidden ? '' : 'The scan has reported no progress for ' + elapsedLabel(idleSeconds) + '. Check the active operations and server log below.';
+          activeHeading.textContent = 'Active operations (' + activeTasks.length.toLocaleString() + ')';
+          activeHeading.hidden = !data.scanning;
+          var scrollTop = active.scrollTop;
+          active.replaceChildren(...activeTasks.map(function (task) { return operationLine(task, now); }));
+          active.hidden = !activeTasks.length;
+          active.scrollTop = scrollTop;
+          recentHeading.textContent = 'Recent operations (' + recentTasks.length.toLocaleString() + ')';
+          recentEmpty.hidden = Boolean(recentTasks.length);
+          updateHistory(recent, recentTasks, function (task) { return operationLine(task, now); });
+          var events = data.logs || [];
+          logsEmpty.hidden = Boolean(events.length);
+          updateHistory(logs, events, function (entry) {
             var line = el('li', { class: 'dashboard-file' });
-            line.textContent = task.stage + ' · ' + (task.path || 'media root') + ' · ' + seconds + 's';
-            if (Number.isFinite(task.bytesRead) && Number.isFinite(task.size)) {
-              line.textContent += ' · ' + formatFileSize(task.bytesRead) + ' / ' + formatFileSize(task.size);
-            }
+            line.textContent = new Date(entry.at).toLocaleTimeString() + ' · ' + (entry.level || 'info') + ' · ' + entry.message;
             return line;
-          }));
-          var events = (data.logs || []).slice(-60).reverse();
-          var nextSignature = JSON.stringify(events);
-          if (nextSignature !== signature) {
-            signature = nextSignature;
-            logs.replaceChildren(...events.map(function (entry) {
-              var line = el('li', { class: 'dashboard-file' });
-              line.textContent = new Date(entry.at).toLocaleTimeString() + ' · ' + (entry.level || 'info') + ' · ' + entry.message;
-              return line;
-            }));
-          }
+          });
         } catch (error) {
-          if (id === openId) current.textContent = error.message;
+          if (id === openId) {
+            message.hidden = false;
+            message.textContent = 'Could not refresh scan activity. Details shown are from the last successful update.';
+          }
         } finally {
           if (id === openId) refreshTimer = setTimeout(refresh, 3000);
         }

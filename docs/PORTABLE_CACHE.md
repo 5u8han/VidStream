@@ -19,6 +19,16 @@ also be retained by the host operating system's RAM cache. Use Start-Here's
 stop option before copying the directory so that pending work and SQLite
 writes can settle.
 
+The scanner saves catalog entries and completed derivative stages during
+the import. After an interruption, the next scan can reuse that work for
+unchanged source files. It walks the source directories again to check
+what is there. Recent scan operations are saved with the scan report.
+Manual Compose defaults to the `stream-data` and `stream-cache` Docker
+volumes. The storage location follows your existing mounts. To use
+`~/VidStreamCache`, explicitly bind a directory there to `/app/.cache`
+and retain the current data mount for SQLite. Keep this folder on the SSD
+and outside the source library.
+
 An optimized preview can be fetched from the host cache even after a browser
 drops its local copy. With **Original** preview mode or the full player,
 uncached portions of a source still have to be read from the attached drive.

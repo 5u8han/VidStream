@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add an opt-in double scan-worker budget for hosts with spare CPU and RAM. Keep source read concurrency independently configurable.
+- Show active scan operations, recent outcomes, source hashing progress and storage waits in Dashboard. Keep recent operations with completed scan reports.
+
 ## 3.0.0 — Portable libraries and deployment benchmark
 
 - Measure real filesystem block size for cache limits, snapshots and disk alerts, including Docker Desktop host-backed mounts.

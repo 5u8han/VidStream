@@ -31,6 +31,8 @@ html[data-effects=off] .folder-menu { animation: none; }
 .folder-scan-action:hover, .folder-scan-action[aria-expanded=true] { background: var(--surface-2); }
 .folder-scan-action:disabled { color: var(--text-muted); cursor: default; }
 .folder-scan-details { grid-column: 1 / -1; margin: 2px 8px 9px; color: var(--text-muted); font: 12px/1.5 var(--font-display); }
-.dashboard-scan-list { list-style: none; margin: 8px 0; padding: 0; }
-.dashboard-log { max-height: 240px; overflow: auto; overscroll-behavior: contain; }
+.dashboard-scan h4 { font-size: 13px; margin: 16px 0 6px; }
+.dashboard-scan-list { list-style: none; margin: 8px 0; padding: 0 8px; max-height: min(360px, 45dvh); overflow: auto; overscroll-behavior: contain; }
+.dashboard-log { max-height: min(440px, 55dvh); }
 .dashboard-scan-list li { overflow-wrap: anywhere; }
+.dashboard-scan-status { border-inline-start: 3px solid var(--accent); padding: 8px 12px; background: var(--surface-2); font-size: 13px; }
