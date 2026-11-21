@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.1.1 — Scan recovery
+
+- Skip a stalled file from Dashboard, let unresponsive file workers time out, and retry individual failures in Media repairs. Healthy files and queued folders can continue.
+- Check source metadata close to the actual read and verify source stability before publishing results. Report which file attributes changed and flag mount changes during a scan.
+- Report scan totals every five minutes and keep the underlying FFprobe error available when a video cannot be read.
+
 ## 3.1.0 — Launch Edition
 
 The first public launch brings the local gallery, multi-machine library

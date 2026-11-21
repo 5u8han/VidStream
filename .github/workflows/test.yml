@@ -43,6 +43,7 @@ jobs:
       - name: Container startup
         run: |
           docker build --pull --tag vidstream-ci:local .
+          docker run --rm --network none vidstream-ci:local node scripts/check-scan-recovery.js
           mailbox=$(mktemp -d "$RUNNER_TEMP/vidstream-mailbox.XXXXXXXX")
           container=$(docker run --detach --security-opt no-new-privileges:true \
             --env ADMIN_PASSWORD=benchmark-ci-only-passphrase \

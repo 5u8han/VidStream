@@ -179,6 +179,42 @@ The optional RAM cache needs space for its entire working set and a disk
 snapshot. Use a persistent SSD cache for a large library whose derivatives
 can exceed the available RAM. [RAM cache options](RAM_CACHE.md)
 
+## When one file holds up a scan
+
+Open **Dashboard → Scan activity → Active operations**. A long total scan
+time is normal on a large drive. Look at the last progress for the *individual
+file*. If a source hash keeps gaining bytes, it is still moving. During media
+processing the dashboard can also show the tool working on that file.
+
+1. Choose **Skip this file** beside a stalled operation and confirm its name.
+   VidStream releases that worker so the scan can continue. A queued folder
+   starts when the current scan finishes. Skip applies to the selected
+   operation only. The button is available while it is safe to cancel.
+2. Open **Dashboard → Media repairs** after the scan. Select the skipped file
+   and retry it once the source and its mount are stable. Skipping leaves the
+   original in place. A later normal scan can try the file again.
+3. If several operations stop across different folders, check the DAS and
+   the disk holding the cache. On Ubuntu, `lsblk -f` lists filesystems and mount
+   points. `df -h` shows free space on mounted filesystems. On the host,
+   `journalctl -k --since "2 days ago" --no-pager` reads recent kernel messages.
+   Look around the time of the first failure for USB resets, disconnects,
+   read errors or filesystem warnings. These commands read system state.
+
+File reads have an inactivity timeout. Preparing posters, metadata, previews
+and analysis also has a ten-minute progress watchdog, and individual media
+tools can have shorter deadlines. A single stalled file goes to Media repairs.
+Several cancellations that remain blocked inside the operating system can
+stop the scan to protect the catalog. Restore the mount and run a normal
+folder scan in that case. Committing finished files to the cache and catalog
+requires responsive storage.
+
+During an active, unpaused scan the Docker log prints totals every five
+minutes, including after the first 100 individual file failures. Dashboard
+keeps recording file issues beyond that log sample. On an older installation
+without the skip control, update using its existing Compose configuration,
+data and cache. A restarted scan can walk the directories again and reuse
+completed imports. **Refresh metadata & previews** requests extra work.
+
 ## Check the current deployment
 
 Run these read-only checks on the Linux host, from the directory containing

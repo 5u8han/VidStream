@@ -1027,6 +1027,7 @@
       var repairButton = el('button', { type: 'button', class: 'dashboard-next' }, 'Media repairs');
       repairButton.onclick = function () { openRepairs(repairButton); };
       var pauseStatus = el('p', { class: 'modal-sub', role: 'status', hidden: true });
+      var skipStatus = el('p', { class: 'modal-sub', role: 'status', hidden: true });
       var message = el('p', { class: 'dashboard-scan-status', hidden: true });
       var activeHeading = el('h4', { id: 'dashboard-active-scan-heading' }, 'Active operations');
       var active = el('ul', { class: 'dashboard-scan-list', tabindex: '0', 'aria-labelledby': activeHeading.id, hidden: true });
@@ -1037,7 +1038,7 @@
       var logsEmpty = el('p', { class: 'modal-sub' }, 'No scan messages yet.');
       var scanActions = el('div', { class: 'dashboard-repair-tools' });
       scanActions.append(repairButton, pauseButton);
-      pane.append(current, details, scanActions, pauseStatus, message, activeHeading, active, recentHeading, recent, recentEmpty);
+      pane.append(current, details, scanActions, pauseStatus, message, activeHeading, active, skipStatus, recentHeading, recent, recentEmpty);
       logSection.append(logs, logsEmpty);
       var signatures = new WeakMap();
       var indexingPaused = false;
@@ -1069,22 +1070,76 @@
       function elapsedLabel(seconds) {
         if (seconds < 60) return seconds + 's';
         var minutes = Math.floor(seconds / 60);
-        return minutes + 'm ' + seconds % 60 + 's';
+        if (minutes < 60) return minutes + 'm ' + seconds % 60 + 's';
+        var hours = Math.floor(minutes / 60);
+        if (hours < 24) return hours + 'h ' + minutes % 60 + 'm';
+        return Math.floor(hours / 24) + 'd ' + hours % 24 + 'h ' + minutes % 60 + 'm';
       }
-      function operationLine(task, now) {
+      function operationText(task, now) {
         var fields = [task.stage, task.path || 'media root'];
+        if (!task.finishedAt && task.command) fields.push(task.command);
         var finished = task.finishedAt && Date.parse(task.finishedAt);
         var duration = Math.max(0, (finished || now) - Date.parse(task.startedAt));
-        if (finished) fields.push((task.outcome === 'failed' ? 'Failed' : 'Finished') + ' at ' + new Date(finished).toLocaleTimeString());
+        if (finished) {
+          var label = { failed: 'Failed', skipped: 'Skipped', 'timed-out': 'Timed out' }[task.outcome] || 'Finished';
+          fields.push(label + ' at ' + new Date(finished).toLocaleTimeString());
+        }
         if (Number.isFinite(duration)) fields.push(duration < 1000 ? duration + 'ms' : elapsedLabel(Math.floor(duration / 1000)));
         if (Number.isFinite(task.bytesRead) && Number.isFinite(task.size)) {
           fields.push(formatFileSize(task.bytesRead) + ' / ' + formatFileSize(task.size));
         }
         var idleSeconds = elapsedSince(task.lastProgressAt || task.startedAt, now);
         if (!finished && idleSeconds >= 45) fields.push('Awaiting progress for ' + elapsedLabel(idleSeconds));
-        var line = el('li', { class: 'dashboard-file' });
-        line.textContent = fields.join(' · ');
-        return line;
+        return fields.join(' · ');
+      }
+      function skipButton(task) {
+        var button = el('button', { type: 'button', class: 'dashboard-next dashboard-scan-skip' }, 'Skip this file');
+        button.setAttribute('aria-label', 'Skip this file: ' + task.path);
+        button.onclick = async function () {
+          if (!window.confirm('Skip this file for the current scan?\n\n' + task.path + '\n\nYou can retry it later in Media repairs.')) return;
+          button.disabled = true;
+          skipStatus.hidden = false;
+          skipStatus.textContent = 'Requesting skip…';
+          try {
+            var response = await fetch('/api/scan-control/skip', { method: 'POST',
+              headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: task.id }) });
+            var result = await response.json();
+            if (!response.ok) throw Error(result.error || 'Could not skip this file.');
+            skipStatus.textContent = 'Skip requested for ' + task.path + '. You can retry it in Media repairs.';
+          } catch (error) {
+            skipStatus.textContent = error.message;
+            button.disabled = false;
+          }
+        };
+        return button;
+      }
+      var activeRows = new Map();
+      function updateActive(tasks, now) {
+        var scrollTop = active.scrollTop;
+        var visibleKeys = new Set();
+        tasks.forEach(function (task) {
+          var key = task.id || JSON.stringify([task.stage, task.path, task.startedAt]);
+          visibleKeys.add(key);
+          var row = activeRows.get(key);
+          if (!row) {
+            row = el('li', { class: 'dashboard-file dashboard-scan-operation' });
+            row.appendChild(el('span'));
+            activeRows.set(key, row);
+            active.appendChild(row);
+          }
+          row.firstChild.textContent = operationText(task, now);
+          if (task.skippable && task.id) {
+            if (row.childElementCount === 1) row.appendChild(skipButton(task));
+          } else if (row.childElementCount > 1) row.lastChild.remove();
+        });
+        activeRows.forEach(function (row, key) {
+          if (!visibleKeys.has(key)) {
+            row.remove();
+            activeRows.delete(key);
+          }
+        });
+        active.hidden = !tasks.length;
+        active.scrollTop = scrollTop;
       }
       function updateHistory(list, entries, render) {
         var signature = JSON.stringify(entries);
@@ -1131,16 +1186,20 @@
           if (data.pendingStorageReads) status.push(data.pendingStorageReads + ' storage operations still awaiting the OS');
           details.textContent = status.join(' · ');
           message.hidden = !(progress && progress.pauseState !== 'paused' && idleSeconds >= 45);
-          message.textContent = message.hidden ? '' : 'The scan has reported no progress for ' + elapsedLabel(idleSeconds) + '. Check the active operations and server log below.';
+          message.textContent = message.hidden ? '' : 'The scan has reported no progress for ' + elapsedLabel(idleSeconds) + '. ' +
+            (activeTasks.some(function (task) { return task.skippable; })
+              ? 'Use Skip this file next to a stalled file to let the scan move on.'
+              : 'Check the active operations and server log below.');
           activeHeading.textContent = 'Active operations (' + activeTasks.length.toLocaleString() + ')';
           activeHeading.hidden = !data.scanning;
-          var scrollTop = active.scrollTop;
-          active.replaceChildren(...activeTasks.map(function (task) { return operationLine(task, now); }));
-          active.hidden = !activeTasks.length;
-          active.scrollTop = scrollTop;
+          updateActive(activeTasks, now);
           recentHeading.textContent = 'Recent operations (' + recentTasks.length.toLocaleString() + ')';
           recentEmpty.hidden = Boolean(recentTasks.length);
-          updateHistory(recent, recentTasks, function (task) { return operationLine(task, now); });
+          updateHistory(recent, recentTasks, function (task) {
+            var line = el('li', { class: 'dashboard-file' });
+            line.textContent = operationText(task, now);
+            return line;
+          });
           var events = data.logs || [];
           logsEmpty.hidden = Boolean(events.length);
           updateHistory(logs, events, function (entry) {

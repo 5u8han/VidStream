@@ -1,6 +1,6 @@
 {
   "name": "stream",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "description": "A self-hosted photo and video stream. Embedded SQLite, no frontend build step and no runtime npm dependencies.",
   "license": "MIT",
   "private": true,

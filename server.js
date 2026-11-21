@@ -16,7 +16,7 @@ const { renderShell } = require('./lib/template');
 const { pageHandler } = require('./lib/handlers/page');
 const { mediaHandler } = require('./lib/handlers/media');
 const {
-  itemsHandler, itemHandler, rescanHandler, scanControlHandler, healthHandler, libraryStatusHandler, readyPreviewsHandler,
+  itemsHandler, itemHandler, rescanHandler, scanControlHandler, skipScanFileHandler, healthHandler, libraryStatusHandler, readyPreviewsHandler,
   duplicatesHandler, dashboardHandler, dashboardFilesHandler, diagnosticsHandlers, aiStatusHandler, aiUpdateHandler, aiInstallHandler,
 } = require('./lib/handlers/api');
 const { loginHandler, logoutHandler, setupHandler } = require('./lib/handlers/auth');
@@ -130,6 +130,7 @@ router.post('/api/ai/install', aiInstallHandler(cfg, ai));
 router.get('/api/duplicates', duplicatesHandler(cfg, db));
 router.post('/api/rescan', rescanHandler(cfg, db, scanner));
 router.post('/api/scan-control', scanControlHandler(cfg, scanner));
+router.post('/api/scan-control/skip', skipScanFileHandler(cfg, scanner));
 router.get('/media/:id/:variant', mediaHandler(cfg, db));
 router.get('/', pageHandler(cfg, db));
 router.get('/:id', pageHandler(cfg, db));
