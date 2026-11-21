@@ -23,6 +23,15 @@ their own operating-system and Python packages. For registry publishing, use
 a write-enabled token in GitHub Actions secrets and rotate it before it
 expires. [Update commands](docs/COMMANDS.md) · [Docker Hub publishing](docs/DOCKER_HUB.md)
 
+## Updates from the browser
+
+For a guided Git checkout, the owner's **Settings → Updates** action sends a
+fixed check or install request to a helper on the same host. Keep the
+helper's `.vidstream-updater/` directory private to that installation.
+The helper uses the host user's Git and Docker access. The web container
+receives only the helper's request directory for this workflow. Each node
+updates through its own installation. [Updater setup and scope](docs/STARTER.md#update-an-existing-installation)
+
 ## Linux host access
 
 Manual and guided bridge-network installs publish to `127.0.0.1` by default.

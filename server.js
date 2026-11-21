@@ -16,7 +16,7 @@ const { renderShell } = require('./lib/template');
 const { pageHandler } = require('./lib/handlers/page');
 const { mediaHandler } = require('./lib/handlers/media');
 const {
-  itemsHandler, itemHandler, rescanHandler, healthHandler, libraryStatusHandler, readyPreviewsHandler,
+  itemsHandler, itemHandler, rescanHandler, scanControlHandler, healthHandler, libraryStatusHandler, readyPreviewsHandler,
   duplicatesHandler, dashboardHandler, dashboardFilesHandler, diagnosticsHandlers, aiStatusHandler, aiUpdateHandler, aiInstallHandler,
 } = require('./lib/handlers/api');
 const { loginHandler, logoutHandler, setupHandler } = require('./lib/handlers/auth');
@@ -57,6 +57,7 @@ const scanner = new Scanner(cfg, db, {
   coordinator, onIssue,
   onLog: (msg) => console.log(`[stream] ${msg}`),
 });
+const schedule = new (require('./lib/scan-schedule').ScanSchedule)(cfg, db.store, scanner);
 
 const { MediaEditor } = require('./lib/media-editor');
 const { libraryHandlers } = require('./lib/handlers/library');
@@ -64,12 +65,16 @@ const editor = new MediaEditor(cfg, db, scanner);
 const library = libraryHandlers(cfg, db, {edit:(item,body)=>coordinator.run('edit',item.filename,()=>editor.edit(item,body),{heavy:true,priority:20,path:item.relPath})});
 const { settingsHandlers } = require('./lib/handlers/settings');
 const resources = new (require('./lib/resource-monitor').ResourceMonitor)(cfg,db.store);
-const settings = settingsHandlers(cfg, db);
+const settings = settingsHandlers(cfg, db, schedule);
 const folders = require('./lib/handlers/folders').folderCollectionsHandlers(cfg, db);
 const maintenance = new (require('./lib/maintenance').Maintenance)(cfg,db);
 const playback = new (require('./lib/playback-service').PlaybackService)(cfg,db,coordinator);
 const workbench = require('./lib/handlers/workbench').workbenchHandlers(cfg,db,{maintenance,coordinator,playback,scanner});
 const router = new Router();
+const updates = require('./lib/app-update').updateHandlers(cfg);
+router.get('/api/updates', updates.status);
+router.post('/api/updates/check', updates.check);
+router.post('/api/updates/apply', updates.apply);
 router.get('/api/folders', folders.get);
 router.post('/api/folders', folders.update);
 router.get('/api/node-info', nodeHandlers.info);
@@ -89,9 +94,11 @@ router.post('/api/maintenance/backup',workbench.backup);
 router.get('/api/maintenance/backup/:name',workbench.backupFile);
 router.post('/api/maintenance/retention',workbench.retention);
 router.get('/api/settings', settings.get);
+router.get('/api/settings/scanning', settings.scanning);
 router.get('/api/library-map',require('./lib/handlers/library-map').libraryMapHandler(cfg,db));
 router.get('/api/resources', async(req,res)=>{if(!isAdmin(req,cfg)){res.writeHead(403);return res.end();}res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');res.end(JSON.stringify(await resources.sample()));});
 router.post('/api/settings', settings.update);
+router.post('/api/settings/scanning', settings.updateScanning);
 router.post('/api/activity', settings.events);
 router.get('/api/activity', settings.activity);
 router.post('/api/items/:id/resume', settings.resume);
@@ -111,6 +118,8 @@ router.post('/api/benchmark/host', benchmark.host);
 router.get('/api/benchmark/network', benchmark.network);
 const notifications = diagnosticsHandlers(cfg, db, diagnostics, scanner, playback);
 router.get('/api/notifications', notifications.get);
+router.get('/api/notifications/recovery', notifications.recoveryList);
+router.get('/api/notifications/:id/source', notifications.recoverySource);
 router.post('/api/notifications/read', notifications.read);
 router.get('/api/notifications/:id/repair', notifications.repairStatus);
 router.post('/api/notifications/:id/repair', notifications.repair);
@@ -120,6 +129,7 @@ router.post('/api/ai', aiUpdateHandler(cfg, ai));
 router.post('/api/ai/install', aiInstallHandler(cfg, ai));
 router.get('/api/duplicates', duplicatesHandler(cfg, db));
 router.post('/api/rescan', rescanHandler(cfg, db, scanner));
+router.post('/api/scan-control', scanControlHandler(cfg, scanner));
 router.get('/media/:id/:variant', mediaHandler(cfg, db));
 router.get('/', pageHandler(cfg, db));
 router.get('/:id', pageHandler(cfg, db));
@@ -195,7 +205,6 @@ async function handleRequest(req, res) {
   }
 }
 
-let rescanTimer = null;
 async function main() {
   if (cfg.setupRequired) {
     if (cfg.dockerRuntime && !cfg.setupHelperUsed) {
@@ -208,24 +217,21 @@ async function main() {
   derivativeCache.start();
   console.log(`[stream] Media folder: ${cfg.mediaDir}`);
 
+  const scanOnStart = schedule.settings().effective.scanOnStart;
   server.listen(cfg.port, cfg.host, async () => {
     console.log(`[stream] ${cfg.title} listening on http://${cfg.host}:${cfg.port}`);
     nodes.start();
-    if (!cfg.scanOnStart && await scanner.hasSavedScan()) {
-      console.log('[stream] Serving the saved catalog. Startup scan disabled.');
-      scanner.startWatching();
+    if (!scanOnStart && await scanner.hasSavedScan()) {
+      console.log('[stream] Serving the saved catalog without a startup scan.');
+      schedule.start();
       return;
     }
-    console.log('[stream] Scanning in the background...');
+    console.log(scanOnStart ? '[stream] Startup scan requested by scan settings.'
+      : '[stream] No matching completed catalog for these mounts. Scanning in the background...');
     scanner.scan()
       .catch((err) => console.error('[stream] Initial scan failed:', err))
-      .finally(() => scanner.startWatching());
+      .finally(() => schedule.start());
   });
-  if (cfg.rescanIntervalMinutes > 0) {
-    rescanTimer = setInterval(() => {
-      scanner.scan().catch((err) => console.error('[stream] Interval scan failed:', err));
-    }, cfg.rescanIntervalMinutes * 60 * 1000);
-  }
 }
 
 main().catch((err) => {
@@ -236,7 +242,7 @@ main().catch((err) => {
 let shuttingDown=false;
 async function shutdown() {
   if(shuttingDown)return;shuttingDown=true;
-  resources.stop();scanner.stopWatching();clearInterval(rescanTimer);
+  resources.stop();schedule.stop();scanner.stopWatching();
   await derivativeCache.stop();
   ai.stop();
   await nodes.stop();

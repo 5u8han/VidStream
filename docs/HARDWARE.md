@@ -21,7 +21,7 @@ Apply an allocation change to a manual Compose setup with this command.
 docker compose -f docker-compose.yml up -d --force-recreate stream
 ```
 
-This recreates the app with its selected limits and starts it in the background. It briefly interrupts access and reuses its mounts and data/cache/archive volumes. Include your existing local overrides in the file list. With Start-Here, edit `mem_limit` and `memswap_limit` in the generated `compose.yaml` and use the [guided start command](STARTER.md).
+This recreates the app with its selected limits and starts it in the background. It briefly interrupts access and reuses its mounts and data/cache/archive volumes. Include your existing local overrides in the file list. On a guided installation, open **Start-Here → Configure memory and access** to adjust RAM and extra swap. [Guided memory settings](STARTER.md#choose-memory-and-network-access)
 
 ## Optional NVIDIA recognition
 

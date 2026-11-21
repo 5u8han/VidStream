@@ -242,6 +242,27 @@ function starterRole(compose) {
   return lines.slice(...environment).some(line => /^      VIDSTREAM_ROLE:\s*(?:node|"node"|'node')\s*(?:#.*)?$/.test(line)) ? 'node' : 'server';
 }
 
+function enableUpdater(compose) {
+  const lines = compose.split(/\r?\n/);
+  const { stream, environment } = starterDeploymentSections(lines);
+  const volumes = section(lines, 'volumes', 4, stream);
+  const mount = ['      - type: bind', '        source: "./.vidstream-updater"', '        target: "/app/updater"',
+    '        bind:', '          create_host_path: false'];
+  const mounts = lines.slice(...volumes);
+  const targets = mounts.filter(line => /(?:target:\s*["']?|:)\/app\/updater(?:["':#\s]|$)/.test(line));
+  const settings = lines.slice(...environment).filter(line => /^      VIDSTREAM_UPDATE_DIR:/.test(line));
+  if (settings.length && (settings.length !== 1 || !/^      VIDSTREAM_UPDATE_DIR:\s*["']?\/app\/updater["']?\s*$/.test(settings[0])))
+    throw new Error('Keep the updater directory at /app/updater.');
+  if (targets.length && (targets.length !== 1 || !mounts.some((_, i) => mount.every((line, n) => mounts[i + n] === line))))
+    throw new Error('The updater target already has a custom mount.');
+  const insertions = [];
+  if (!settings.length) insertions.push([environment[0], '      VIDSTREAM_UPDATE_DIR: /app/updater']);
+  if (!targets.length) insertions.push([volumes[0], ...mount]);
+  if (!insertions.length) return compose;
+  for (const [at, ...entries] of insertions.sort((a, b) => b[0] - a[0])) lines.splice(at, 0, ...entries);
+  return lines.join(compose.includes('\r\n') ? '\r\n' : '\n');
+}
+
 function addFolderToCompose(compose, source, storageDirectory, effectiveRole) {
   avoidStorageOverlap(source, storageDirectory);
   const lines = compose.split('\n');
@@ -368,6 +389,8 @@ if (require.main === module) {
       process.stdout.write(addFolderToCompose(fs.readFileSync(0, 'utf8'), args[1], args[2], args[3]));
     } else if (args[0] === '--role') {
       process.stdout.write(starterRole(fs.readFileSync(0, 'utf8')) + '\n');
+    } else if (args[0] === '--enable-updater') {
+      process.stdout.write(enableUpdater(fs.readFileSync(0, 'utf8')));
     } else if (args[0] === '--deployment-summary') {
       const { memory, swap, bind, host, port } = inspectDeployment(fs.readFileSync(0, 'utf8')).settings;
       process.stdout.write([memory, swap, bind, host, port].join('\n') + '\n');
@@ -394,4 +417,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { createCompose, addFolderToCompose, configureCompose, makePortable, storageStatus, verifyLegacyVolumes };
+module.exports = { createCompose, addFolderToCompose, configureCompose, makePortable, storageStatus, verifyLegacyVolumes, enableUpdater };

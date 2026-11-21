@@ -183,6 +183,9 @@
 .settings-flat .settings-tool-pane button { padding: 8px 11px; border-radius: 8px; font-size: 11px; }
 .settings-flat .settings-tool-pane pre { font-size: 11px; }
 .settings-flat .settings-tool-pane a { font-size: 12px; }
+.stream-settings .settings-scan-field { display: grid; justify-items: start; gap: 5px; }
+.stream-settings .settings-scan-field select { margin: 0; }
+.settings-scan-field small { color: var(--text-muted); }
 .settings-activity-list { display: grid; gap: 6px; }
 .stream-settings.settings-flat .settings-activity-list article { display: grid; gap: 4px; margin: 0; padding: 10px; border-radius: 8px; }
 .settings-activity-list strong { font-size: 11px; font-weight: 500; overflow-wrap: anywhere; }

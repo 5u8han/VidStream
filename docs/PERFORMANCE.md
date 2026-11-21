@@ -25,8 +25,9 @@ the device or mount recovered on the host. Container block I/O alone may miss bi
 
 `PROCESSING_CONCURRENCY=auto` sizes the media-processing queue from the
 logical CPUs available to VidStream, including Docker CPU quotas, up to
-64. The queue also budgets 384 MiB per worker after reserving 512 MiB for
-the server. An explicit positive `PROCESSING_CONCURRENCY` value lowers
+64 before applying the worker multiplier. The queue budgets 384 MiB per
+worker after reserving 512 MiB for the server and the measured capacity of
+an enabled RAM cache. An explicit positive `PROCESSING_CONCURRENCY` value lowers
 the resulting ceiling. **Settings → Library tools → Background work →
 Process faster** uses the full budget. Balanced uses about half the
 budget and Browse uses one background slot.
@@ -34,8 +35,8 @@ budget and Browse uses one background slot.
 Set `SCAN_WORKER_MULTIPLIER=2` to try twice as many media-processing jobs
 per CPU. Each node sizes its own queue. The doubled ceiling still depends
 on memory and any explicit processing cap. New guided and manual Docker
-deployments start with a 2 GiB memory limit, which permits four media
-workers even on a 64-thread machine.
+deployments default to a 2 GiB memory limit. With disk cache, that allows
+at most four media workers even on a 64-thread machine.
 
 | Logical CPUs visible to VidStream | Default ceiling | Doubled ceiling | Memory budget needed to reach the doubled ceiling |
 | ---: | ---: | ---: | ---: |
@@ -144,25 +145,35 @@ A 16 GB server can still have a 2 GiB VidStream container limit. See
 If you use recognition only occasionally, disable unused analysis options
 before importing new folders. The CPU can then spend more time on previews.
 
-Startup normally checks the mounted library for changes. Completed items
-reuse their catalog records and derivatives. New or changed files can still
-require a full read to establish content identity. After discovery and file checks, import interleaves selected mounts. Image
-sizes within one stage come from a single decode, and background jobs free
-their processing slots as soon as that stage completes.
+Once an initial scan finishes, VidStream opens the saved catalog at startup
+when the mounted roots still match. It checks the roots themselves and skips
+the recursive scan. Routine changes to app code or preview settings no
+longer invalidate that startup decision. A new library or changed mount
+still starts a scan. A saved scan from an older build is migrated when its
+original signature still matches. If VidStream cannot verify that signature,
+it makes one reconciliation pass. Matching source size, timestamp and
+catalog hashes let it reuse completed work for unchanged files.
 
-After the initial import is complete, set `SCAN_ON_START: "0"` under
-`services → stream → environment` in the generated `compose.yaml` if you
-prefer to open the saved catalog on restart without an immediate scan.
-With manual Compose, set `SCAN_ON_START=0` in `.env`. VidStream still scans
-an empty catalog, a library with no completed scan under this version, or
-a library whose mount or processing configuration changed. File watching
-and configured interval scans are independent. To avoid a recursive watcher
-traversal at startup, also set `WATCH_FOR_CHANGES: "0"` in guided Compose
-and leave `RESCAN_INTERVAL_MINUTES` at zero. Use `WATCH_FOR_CHANGES=0` in a
-manual `.env`. If your storage does not send reliable change notifications,
-use the gallery's **Rescan library** control after adding files. Applying
-this setting requires a container recreation using the usual Compose files.
-An individual unreadable file can be retried with a manual rescan.
+Open **Settings → Scan scheduling** to choose the startup scan behavior,
+turn file watching on or off, and set a rescan interval. The startup choice
+applies at the next launch. Watcher and timer changes apply to the running
+server after its initial startup scan finishes.
+
+**Use deployment setting** follows `SCAN_ON_START`, `WATCH_FOR_CHANGES`, or
+`RESCAN_INTERVAL_MINUTES` from Compose or the environment. An explicit
+choice overrides that deployment value for this server and survives
+container recreation when you retain the SQLite data mount. For manual
+scans only, select **Open saved catalog** and set both **Watch folders for
+changes** and **Scheduled rescans** to **Off**. A new library or changed
+mount can still require a scan. Recursive file watching may enumerate the
+entire tree. New or changed files may still need a full read to establish
+their content identity.
+
+In **Dashboard → Scan activity**, use **Pause indexing** to stop starting
+new scan operations while the current ones finish. **Resume indexing**
+continues the same scan and retains its progress while VidStream stays
+running. A container restart ends that scan. A later scan on those mounts
+uses the catalog and derivatives already saved to disk.
 
 The optional RAM cache needs space for its entire working set and a disk
 snapshot. Use a persistent SSD cache for a large library whose derivatives

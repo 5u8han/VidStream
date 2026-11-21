@@ -15,7 +15,9 @@
   var galleryRefreshSuggested = false;
   var effectsMode = storageGet('stream-effects', 'full');
   var lightweightGallery = storageGet('stream-lightweight', '0') === '1';
-  var previewMemoryEnabled = storageGet('stream-preview-memory', '0') === '1';
+  var previewMemoryChoices = [[0, 'Off'], [256, '256 MiB'], [512, '512 MiB'], [1024, '1 GiB'], [2048, '2 GiB']];
+  var previewMemoryMiB = Number(storageGet('stream-preview-memory-mib', storageGet('stream-preview-memory', '1') === '1' ? '1024' : '0'));
+  if (!previewMemoryChoices.some(function (choice) { return choice[0] === previewMemoryMiB; })) previewMemoryMiB = 0;
   var pinnedActions=[];try{pinnedActions=JSON.parse(storageGet('stream-pinned-actions','[]'));if(!Array.isArray(pinnedActions))pinnedActions=[];}catch(_){}
   var bg = null;
 
@@ -366,21 +368,20 @@
       dataSaverMode = !dataSaverMode; storageSet('stream-data-saver', dataSaverMode ? '1' : '0'); location.reload();
     });
     paintChoice(saver, dataSaverMode);
-    var memory = choice('Keep recent previews in memory', { 'aria-describedby': 'preview-memory-help' }, function () {
-      previewMemoryEnabled = !previewMemoryEnabled;
-      storageSet('stream-preview-memory', previewMemoryEnabled ? '1' : '0');
-      paintChoice(memory, previewMemoryEnabled);
-      if (!previewMemoryEnabled) previewMemory.clear();
+    var memory = selectControl('Browser preview memory', previewMemoryChoices, previewMemoryMiB, function (value) {
+      previewMemoryMiB = Number(value);
+      storageSet('stream-preview-memory-mib', value);
+      previewMemory.setBudget(previewMemoryMiB * 1024 ** 2);
     });
-    paintChoice(memory, previewMemoryEnabled);
-    var memoryHelp = el('p', { id: 'preview-memory-help', class: 'menu-help' }, 'Keep up to 64 MiB of recent optimized clips in this tab. First play waits for the short clip to load.');
+    memory.control.setAttribute('aria-describedby', 'preview-memory-help');
+    var memoryHelp = el('p', { id: 'preview-memory-help', class: 'menu-help' }, 'Keep recently played optimized clips in this tab. Choose a larger budget on devices with spare memory.');
     var diagnose = choice('Check playback smoothness', {}, function () {
       window.StreamNavigation.leave('options');
       window.StreamDiagnostics.open({
         videos: function () { return Array.from(runningPreviews).map(function (tile) { return tile._video; }).filter(Boolean).slice(0, 4); },
         previewLimit: MAX_PREVIEWS,
         previewStats: function () {
-          return Object.assign(previewController.stats(), { tabMemory: Object.assign({ enabled: previewMemoryEnabled }, previewMemory.stats()) });
+          return Object.assign(previewController.stats(), { tabMemory: Object.assign({ enabled: previewMemoryMiB > 0 }, previewMemory.stats()) });
         },
         effects: document.documentElement.dataset.effects,
         lightweight: lightweightGallery,
@@ -388,9 +389,9 @@
       });
     });
     var playbackControls = el('div', { class: 'view-date-range' });
-    playbackControls.append(source.field, maxPreview.field);
+    playbackControls.append(source.field, maxPreview.field, memory.field);
     var playbackActions = el('div', { class: 'view-action-row' });
-    playbackActions.append(saver, memory, diagnose);
+    playbackActions.append(saver, diagnose);
     playback.append(playbackControls, playbackActions, memoryHelp);
     if (isAdmin) {
       var rebuild = choice('Refresh metadata & previews', {}, function () {
@@ -638,7 +639,7 @@
     }
     if (s.failedCount > 0) {
       var f = el('button', { type: 'button', title: 'See which files could not be read' }, s.failedCount.toLocaleString() + ' unreadable');
-      f.addEventListener('click', function () { dashboardModal.open('issues'); });
+      f.addEventListener('click', function () { dashboardModal.open('repairs'); });
       root.appendChild(f);
     }
     root.appendChild(el('span', { class: 'total' }, s.total.toLocaleString() + ' total'));
@@ -712,6 +713,8 @@
     var names = { discovering: 'Discovering', checking: 'Checking', processing: 'Importing', reconciling: 'Reconciling' };
     var phase = names[progress.phase] || 'Scanning';
     var count = function (n) { return Number(n || 0).toLocaleString(); };
+    if (progress.pauseState === 'paused') phase = 'Paused · ' + phase;
+    if (progress.pauseState === 'pausing') phase = 'Pausing · ' + phase;
     if (progress.folder) phase += ' ' + progress.folder;
     if (progress.phase === 'discovering') return phase + ' · ' + count(progress.discovered) + ' media found';
     if (progress.phase === 'checking') return phase + ' · ' + count(progress.examined) + ' / ' + count(progress.discovered) + ' checked';
@@ -792,38 +795,109 @@
 
   function buildDashboardModal() {
     var scrim = el('div', { class: 'modal-scrim dashboard-scrim' });
+    scrim.inert = true;
+    scrim.setAttribute('aria-hidden', 'true');
     var card = el('section', { class: 'dashboard-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Library dashboard' });
     var head = el('div', { class: 'dashboard-head' });
+    var back = el('button', { type: 'button', class: 'dashboard-back', hidden: true });
+    head.appendChild(back);
     head.appendChild(el('h2', {}, 'Dashboard'));
     var notifications = window.StreamDashboardNotifications.mount(head, { openItem: openItem });
     function openItem(itemId) {
-      dismiss();
-      fetch('/api/item/' + encodeURIComponent(itemId)).then(function (r) {
-        if (!r.ok) throw Error('Media unavailable');
-        return r.json();
-      }).then(function (data) { if (data.item) openLightbox(data.item, true); })
-        .catch(function (error) { showToast(error.message); });
+      dismiss(function () {
+        fetch('/api/item/' + encodeURIComponent(itemId)).then(function (r) {
+          if (!r.ok) throw Error('Media unavailable');
+          return r.json();
+        }).then(function (data) { if (data.item) openLightbox(data.item, true); })
+          .catch(function (error) { showToast(error.message); });
+      });
     }
     var close = el('button', { class: 'icon-btn', 'aria-label': 'Close dashboard' }, icon('close'));
     head.appendChild(close);
     var body = el('div', { class: 'dashboard-body' });
     card.appendChild(head); card.appendChild(body); scrim.appendChild(card);
-    var refreshTimer, openId = 0, returnFocus, benchmarkPanel;
-    function dismiss() {
-      if (!scrim.classList.contains('open')) return;
-      openId++;
-      clearTimeout(refreshTimer);
-      notifications.close();
-      benchmarkPanel?.dispose();
-      scrim.classList.remove('open');
-      returnFocus?.focus({ preventScroll: true });
+    var repairs = window.StreamDashboardNotifications.mountRepairs(card, { openItem: openItem, openRepair: openRepair });
+    var navigation = window.StreamNavigation;
+    var pendingDismiss;
+    var refreshTimer, openId = 0, returnFocus, benchmarkPanel, folderMapView;
+    function setBackLabel(label) {
+      back.hidden = !label;
+      back.textContent = label ? '‹ ' + label : '';
+      head.querySelector('.dashboard-issues-toggle').hidden = Boolean(label);
+      head.classList.toggle('dashboard-head-nested', Boolean(label));
     }
-    close.addEventListener('click', dismiss);
+    function openRepairs(origin, issueId) {
+      function show() {
+        if (!scrim.classList.contains('open')) return false;
+        notifications.close();
+        body.hidden = true;
+        setBackLabel('Dashboard');
+        repairs.open();
+        return true;
+      }
+      function hide() {
+        repairs.close();
+        body.hidden = false;
+        setBackLabel(null);
+        if (pendingDismiss) {
+          var finish = pendingDismiss;
+          pendingDismiss = null;
+          finish();
+        } else (origin?.isConnected ? origin : close).focus({ preventScroll: true });
+      }
+      if (!navigation.enter('dashboard-repairs', { back: hide, forward: show })) return;
+      show();
+      if (issueId) openRepair(issueId);
+    }
+    function openRepair(issueId, origin) {
+      function show() {
+        if (!scrim.classList.contains('open')) return false;
+        setBackLabel('Media repairs');
+        void repairs.showDetail(issueId);
+        return true;
+      }
+      function hide() {
+        if (pendingDismiss) return;
+        setBackLabel('Dashboard');
+        repairs.showList(origin);
+      }
+      if (navigation.enter('dashboard-repair', { back: hide, forward: show })) show();
+    }
+    function dismiss(afterClose) {
+      if (!scrim.classList.contains('open')) return;
+      function finish() {
+        openId++;
+        clearTimeout(refreshTimer);
+        notifications.close();
+        repairs.close();
+        benchmarkPanel?.dispose();
+        folderMapView?.dispose();
+        scrim.classList.remove('open');
+        scrim.inert = true;
+        scrim.setAttribute('aria-hidden', 'true');
+        returnFocus?.focus({ preventScroll: true });
+        afterClose?.();
+      }
+      if (navigation.has('dashboard-repairs')) {
+        if (navigation.leave('dashboard-repairs')) pendingDismiss = finish;
+      } else finish();
+    }
+    close.addEventListener('click', function () { dismiss(); });
+    back.addEventListener('click', function () { navigation.back(); });
     scrim.addEventListener('click', function (e) { if (e.target === scrim) dismiss(); });
     card.addEventListener('keydown', function (e) {
+      if (e.key === 'Tab') {
+        var controls = Array.from(card.querySelectorAll('a[href],button,select,input,textarea,summary,[tabindex="0"]'))
+          .filter(function (control) { return !control.disabled && !control.closest('[hidden],[inert]') && control.getClientRects().length; });
+        var first = controls[0], last = controls.at(-1);
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        return;
+      }
       if (e.key !== 'Escape') return;
       e.stopPropagation();
-      if (notifications.isOpen()) {
+      if (!back.hidden) navigation.back();
+      else if (notifications.isOpen()) {
         notifications.close();
         head.querySelector('.dashboard-issues-toggle').focus({ preventScroll: true });
       } else dismiss();
@@ -949,6 +1023,10 @@
       pane.classList.add('dashboard-scan');
       var current = el('p', { class: 'dashboard-lead' }, 'Loading scan activity…');
       var details = el('p', { class: 'modal-sub' });
+      var pauseButton = el('button', { type: 'button', class: 'dashboard-next', hidden: true }, 'Pause indexing');
+      var repairButton = el('button', { type: 'button', class: 'dashboard-next' }, 'Media repairs');
+      repairButton.onclick = function () { openRepairs(repairButton); };
+      var pauseStatus = el('p', { class: 'modal-sub', role: 'status', hidden: true });
       var message = el('p', { class: 'dashboard-scan-status', hidden: true });
       var activeHeading = el('h4', { id: 'dashboard-active-scan-heading' }, 'Active operations');
       var active = el('ul', { class: 'dashboard-scan-list', tabindex: '0', 'aria-labelledby': activeHeading.id, hidden: true });
@@ -957,9 +1035,32 @@
       var recentEmpty = el('p', { class: 'modal-sub' }, 'No recorded operations yet.');
       var logs = el('ol', { class: 'dashboard-scan-list dashboard-log', tabindex: '0', 'aria-label': 'Recent scan log', hidden: true });
       var logsEmpty = el('p', { class: 'modal-sub' }, 'No scan messages yet.');
-      pane.append(current, details, message, activeHeading, active, recentHeading, recent, recentEmpty);
+      var scanActions = el('div', { class: 'dashboard-repair-tools' });
+      scanActions.append(repairButton, pauseButton);
+      pane.append(current, details, scanActions, pauseStatus, message, activeHeading, active, recentHeading, recent, recentEmpty);
       logSection.append(logs, logsEmpty);
       var signatures = new WeakMap();
+      var indexingPaused = false;
+      function updatePauseControl(pauseState) {
+        indexingPaused = Boolean(pauseState);
+        pauseButton.textContent = indexingPaused ? 'Resume indexing' : 'Pause indexing';
+      }
+      pauseButton.addEventListener('click', async function () {
+        pauseButton.disabled = true;
+        try {
+          var response = await fetch('/api/scan-control', { method: 'POST',
+            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paused: !indexingPaused }) });
+          var result = await response.json();
+          if (!response.ok) throw Error(result.error || 'Could not change indexing state.');
+          updatePauseControl(result.pauseState);
+          pauseStatus.hidden = false;
+          pauseStatus.textContent = indexingPaused ? 'The active operations can finish before indexing pauses.' : 'Indexing resumed.';
+          void fetchLibraryStatus();
+        } catch (error) {
+          pauseStatus.hidden = false;
+          pauseStatus.textContent = error.message;
+        } finally { pauseButton.disabled = false; }
+      });
 
       function elapsedSince(time, now) {
         var seconds = Math.floor((now - Date.parse(time)) / 1000);
@@ -998,6 +1099,7 @@
       async function refresh() {
         if (id !== openId) return;
         try {
+          if (body.hidden) return;
           var response = await fetch('/api/library-status?details=1');
           if (!response.ok) throw Error('Scan activity unavailable');
           var data = await response.json();
@@ -1005,6 +1107,9 @@
           current.textContent = scanDescription(data);
           if (!data.progress && data.lastScan?.status) current.textContent += ' · Last scan ' + data.lastScan.status;
           var progress = data.progress;
+          pauseButton.hidden = !progress;
+          if (!progress) pauseStatus.hidden = true;
+          if (!pauseButton.disabled) updatePauseControl(progress?.pauseState);
           var now = Date.now();
           var activeTasks = progress?.active || [];
           var recentTasks = progress?.recentActivities || data.recentActivities || [];
@@ -1015,6 +1120,7 @@
           if (Number.isFinite(progress?.bytesRead)) status.push(formatFileSize(progress.bytesRead) + ' read for hashing');
           if (data.parallelism) {
             status.push(data.parallelism.workers + ' media-worker ceiling', data.parallelism.effectiveCores + ' effective logical CPUs');
+            if (data.parallelism.cacheRamBytes) status.push(formatFileSize(data.parallelism.cacheRamBytes) + ' reserved for RAM cache');
             if (data.parallelism.processingLimit) status.push(data.parallelism.processingLimit + ' background slots');
             if (data.parallelism.workerMultiplier > 1) status.push(data.parallelism.workerMultiplier + '× scan concurrency');
             if (data.parallelism.readers) status.push(data.parallelism.readers + ' source readers');
@@ -1024,7 +1130,7 @@
           if (data.queued?.length) status.push(data.queued.length + ' queued');
           if (data.pendingStorageReads) status.push(data.pendingStorageReads + ' storage operations still awaiting the OS');
           details.textContent = status.join(' · ');
-          message.hidden = !(progress && idleSeconds >= 45);
+          message.hidden = !(progress && progress.pauseState !== 'paused' && idleSeconds >= 45);
           message.textContent = message.hidden ? '' : 'The scan has reported no progress for ' + elapsedLabel(idleSeconds) + '. Check the active operations and server log below.';
           activeHeading.textContent = 'Active operations (' + activeTasks.length.toLocaleString() + ')';
           activeHeading.hidden = !data.scanning;
@@ -1041,9 +1147,9 @@
             var line = el('li', { class: 'dashboard-file' });
             line.textContent = new Date(entry.at).toLocaleTimeString() + ' · ' + (entry.level || 'info') + ' · ' + entry.message;
             if (entry.issueId) {
-              var actions = el('div', { class: 'dashboard-notification-actions' });
-              line.appendChild(actions);
-              window.StreamDashboardNotifications?.repairAction(entry.issueId, actions);
+              var review = el('button', { type: 'button', class: 'dashboard-next' }, 'Review repair');
+              review.onclick = function () { openRepairs(review, entry.issueId); };
+              line.appendChild(review);
             }
             return line;
           });
@@ -1064,7 +1170,10 @@
       clearTimeout(refreshTimer);
       var id = ++openId;
       benchmarkPanel?.dispose();
+      folderMapView?.dispose();
       body.replaceChildren();
+      scrim.inert = false;
+      scrim.setAttribute('aria-hidden', 'false');
       scrim.classList.add('open');
       close.focus({ preventScroll: true });
       var logSection = el('section', { class: 'dashboard-section' });
@@ -1080,6 +1189,7 @@
       var loading = el('p', { class: 'modal-sub' }, 'Loading library statistics…');
       body.append(loading, logSection);
       if (target === 'notifications') notifications.open();
+      if (target === 'repairs') openRepairs();
       fetch('/api/dashboard').then(function (r) { if (!r.ok) throw Error('Dashboard unavailable'); return r.json(); })
         .then(function (d) {
           if (id !== openId) return;
@@ -1091,6 +1201,13 @@
           if (d.lastScan) summary.appendChild(el('p', { class: 'modal-sub' },
             'Last scan: ' + d.lastScan.at + ' · ' + (d.lastScan.durationMs / 1000).toFixed(1) +
             ' seconds · +' + d.lastScan.added + ' new · ' + d.lastScan.updated + ' updated · ' + d.lastScan.removed + ' removed'));
+          var folderMap = el('details', { class: 'dashboard-section' });
+          folderMap.appendChild(el('summary', {}, 'Folder storage map'));
+          body.appendChild(folderMap);
+          folderMap.addEventListener('toggle', function () {
+            if (id !== openId || !folderMap.open || folderMap.querySelector('.folder-storage-map')) return;
+            folderMapView = window.StreamLibraryMap.mountFolders(folderMap, { color: creatorColor });
+          });
           barChart('Creators / folders', d.creators, function (x) { return x.name; }, function (x) { return x.photos + x.videos; });
           barChart('Formats', d.formats, function (x) { return x.name; }, function (x) { return x.count; });
           barChart('Resolution', d.resolutions, function (x) { return x.name; }, function (x) { return x.count; });
@@ -1105,27 +1222,9 @@
             scans.appendChild(el('div', { class: 'dashboard-file' }, scan.at + ' · ' + (scan.durationMs / 1000).toFixed(1) + 's · +' + scan.added + ' / ~' + scan.updated + ' / −' + scan.removed + ' · ' + scan.failed + ' failed'));
           });
           if (!d.history?.length) scans.appendChild(el('p', {}, 'No scan history yet'));
-          var errors = section('Not imported / errors');
-          var issues = [].concat((d.failed || []).map(function (x) { return x.relPath + ': ' + x.error; }),
-            (d.walkErrors || []).map(function (x) { return x.relPath + ': unavailable folder · ' + x.error; }),
-            (d.unsupported || []).map(function (x) { return x.relPath + ': unsupported ' + x.ext; }));
-          var issueTable = el('div', { class: 'dashboard-files' });
-          issues.forEach(function (message) {
-            var line = el('div', { class: 'dashboard-file' });
-            line.textContent = message;
-            issueTable.appendChild(line);
-          });
-          errors.appendChild(issueTable);
-          if (!issues.length) errors.appendChild(el('p', {}, 'No issues reported in the latest scan.'));
-          if ((d.issueCount || 0) > issues.length) errors.appendChild(el('p', { class: 'modal-sub' }, 'Showing a sample of ' + d.issueCount.toLocaleString() + ' issues.'));
-          if (issues.length && navigator.clipboard) {
-            var copy = el('button', { type: 'button', class: 'dashboard-next' }, 'Copy listed issues');
-            copy.onclick = function () { navigator.clipboard.writeText(issues.join('\n')).then(function () { showToast('Issues copied'); }).catch(function () { showToast('Could not copy issues'); }); };
-            errors.appendChild(copy);
-          }
           window.StreamResources.mount(body, function () { return id === openId; });
           var mapPanel = el('details', { class: 'dashboard-section' });
-          mapPanel.appendChild(el('summary', {}, 'Library map'));
+          mapPanel.appendChild(el('summary', {}, 'Artist map'));
           body.appendChild(mapPanel);
           mapPanel.addEventListener('toggle', function mountMap() {
             if (!mapPanel.open) return;
@@ -1636,7 +1735,7 @@
     return currentPreviewSource() === 'original' ? item.urls.original : item.urls.preview;
   }
 
-  var previewMemory = window.StreamPreviewMemory.create();
+  var previewMemory = window.StreamPreviewMemory.create({ budget: previewMemoryMiB * 1024 ** 2 });
   var previewController = window.StreamPreviewController.create({enabled:function () { return autoplayEnabled && !dataSaverMode; },
     blocked:function () { return Boolean(restoreTask) || document.hidden || document.body.classList.contains('lb-open'); },limit:function () { return MAX_PREVIEWS; },
     attach:attachVideoPreview,source:previewUrl,onChange:updateBackgroundBusy});
@@ -1661,29 +1760,74 @@
       return tile._video;
     }
     var video = document.createElement('video');
+    var timeline = source === item.urls.preview && Number.isFinite(item.duration) && item.duration > 60;
+    var clipCount = timeline ? Math.ceil(item.duration / 60) : 1;
+    var clip = timeline && tile._previewMinute < clipCount ? tile._previewMinute || 0 : 0;
+    var nextAfterFallback = 0, failedMinute = 0, failures = 0;
     video.className = 'tile-media tile-video-el';
     video.muted = true;
-    video.loop = true;
+    video.loop = !timeline;
     video.playsInline = true;
     video.preload = 'metadata';
     video._streamItem = item;
-    if (previewMemoryEnabled && source === item.urls.preview) {
-      video._previewDownload = previewMemory.acquire(source).then(function (lease) {
-        if (tile._video !== video) { lease?.release(); return; }
+    tile._video = video;
+    var sourceChange = 0;
+    function playIfActive() {
+      if (!document.hidden && runningPreviews.has(tile)) video.play().catch(function () {});
+    }
+    function setClip(minute, autoplay) {
+      var generation = ++sourceChange;
+      clip = minute;
+      tile._previewMinute = minute;
+      if (autoplay) tile._resumeAt = 0;
+      var url = minute === 0 ? source : source + (source.includes('?') ? '&' : '?') + 'minute=' + minute;
+      video._previewMemoryLease?.release();
+      video._previewMemoryLease = null;
+      video._previewMemoryKey = null;
+      video._previewClipUrl = source === item.urls.preview ? url : null;
+      video._previewDownload = null;
+      function select(lease) {
+        if (tile._video !== video || generation !== sourceChange) { lease?.release(); return; }
         video._previewMemoryLease = lease;
-        video._previewMemoryKey = lease ? source : null;
-        video.src = lease?.url || source;
+        video._previewMemoryKey = lease ? url : null;
+        video.src = lease?.url || url;
+        if (autoplay) playIfActive();
+      }
+      if (previewMemoryMiB > 0 && source === item.urls.preview)
+        video._previewDownload = previewMemory.acquire(url).then(select);
+      else select(null);
+    }
+    setClip(clip, false);
+    if (timeline) {
+      function advanceClip() {
+        if (tile._video !== video || document.hidden || !runningPreviews.has(tile)) return;
+        var next = nextAfterFallback || ((clip + 1) % clipCount);
+        nextAfterFallback = 0;
+        setClip(next, true);
+      }
+      video.addEventListener('ended', advanceClip);
+      video.addEventListener('timeupdate', function () {
+        if (clip === 0 && video.duration > 5.5 && video.currentTime >= 5) advanceClip();
       });
-    } else video.src = source;
+    }
     video.addEventListener('error', function () {
+      if (tile._video !== video) return;
       video.classList.remove('has-frame');
       if (video._previewMemoryLease) {
-        previewMemory.discard(source);
+        previewMemory.discard(video._previewClipUrl);
         video._previewMemoryLease.release();
         video._previewMemoryLease = null;
         video._previewMemoryKey = null;
-        video.src = source;
-        if (!document.hidden && runningPreviews.has(tile)) video.play().catch(function () {});
+        video.src = video._previewClipUrl;
+        playIfActive();
+        return;
+      }
+      if (timeline && clip > 0) {
+        failures = failedMinute === clip ? failures + 1 : 1;
+        failedMinute = clip;
+        nextAfterFallback = failures < 2 ? clip : (clip + 1) % clipCount;
+        setClip(0, true);
+        previewController.schedule();
         return;
       }
       if (currentPreviewSource() === 'original' && item.urls.preview && video.getAttribute('src') === item.urls.original) {
@@ -1695,13 +1839,14 @@
     tile.appendChild(video);
     video.addEventListener('playing', function () {
       video.classList.add('has-frame', 'playing');
+      var label = tile.querySelector('.tile-live-label');
+      if (label) label.textContent = timeline ? formatDuration(clip * 60) : 'LIVE';
       tile.querySelector('.tile-live')?.classList.add('on');
     });
     video.addEventListener('pause', function () {
       video.classList.remove('playing');
       tile.querySelector('.tile-live')?.classList.remove('on');
     });
-    tile._video = video;
     return video;
   }
 
@@ -1744,7 +1889,7 @@
 
   var revalidatePreviewTab = false;
   window.addEventListener('pagehide', function () {
-    revalidatePreviewTab = previewMemoryEnabled || previewMemory.stats().bytes > 0;
+    revalidatePreviewTab = previewMemoryMiB > 0 || previewMemory.stats().bytes > 0;
     if (revalidatePreviewTab) clearPreviewMemory();
   });
   window.addEventListener('pageshow', function (event) {
@@ -1830,7 +1975,7 @@
         remeasureAndReflow();
       });
       tile.appendChild(expand);
-      var live = el('span', { class: 'tile-live' }, '<span class="tile-live-dot"></span>LIVE');
+      var live = el('span', { class: 'tile-live' }, '<span class="tile-live-dot"></span><span class="tile-live-label">LIVE</span>');
       tile.appendChild(live);
       if (item.duration) {
         tile.appendChild(el('span', { class: 'tile-duration mono' }, formatDuration(item.duration)));

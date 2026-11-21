@@ -21,6 +21,7 @@ draft=
 snapshot=
 edit_lock=
 portable_stage=
+update_only=false
 
 fail() { printf 'VidStream setup: %s\n' "$*" >&2; exit 1; }
 
@@ -488,6 +489,19 @@ check_host_network() {
   fi
 }
 
+build_checkout_image() {
+  local tag=$1 revision changes top
+  top=$(git -C "$source_dir" rev-parse --show-toplevel 2>/dev/null) || top=
+  if [[ "$top" == "$source_dir" ]] &&
+     changes=$(git -C "$source_dir" status --porcelain) && [[ -z "$changes" ]]; then
+    revision=$(git -C "$source_dir" rev-parse --verify 'HEAD^{commit}') || return 1
+    git -C "$source_dir" archive --format=tar "$revision" |
+      "${docker[@]}" build --pull --build-arg "VIDSTREAM_REVISION=$revision" --label "org.opencontainers.image.revision=$revision" --tag "$tag" -
+  else
+    "${docker[@]}" build --pull --tag "$tag" "$source_dir"
+  fi
+}
+
 first_setup() {
   local existing_containers existing_volumes url setup_code attempt
   [[ "$port" =~ ^[0-9]{1,5}$ ]] || fail 'VIDSTREAM_PORT must be a number from 1 to 65535.'
@@ -516,7 +530,7 @@ first_setup() {
   if [[ -z "${VIDSTREAM_IMAGE:-}" && -f "$source_dir/Dockerfile" ]]; then
     image=vidstream-starter:local
     printf 'Building VidStream from this checkout.\n'
-    "${docker[@]}" build --pull --tag "$image" "$source_dir"
+    build_checkout_image "$image"
   else
     "${docker[@]}" pull "$image" || fail 'The VidStream image could not be downloaded. Check the image name and your registry access.'
   fi
@@ -536,6 +550,7 @@ first_setup() {
   draft=
   printf 'Saved your settings to %s.\n' "$compose_file"
   compose+=(--file "$compose_file")
+  enable_host_updater "$image"
   "${compose[@]}" up -d --pull never || fail "Could not start VidStream. Your configuration is saved at $compose_file."
 
   url=$(deployment_url)
@@ -667,7 +682,7 @@ prepare_existing() {
   container_ids=$("${docker[@]}" ps -aq --filter "label=com.docker.compose.project=$project" --filter 'label=com.docker.compose.service=stream' --filter 'label=com.docker.compose.oneoff=False')
   for container in $container_ids; do
     running_config=$("${docker[@]}" inspect --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$container")
-    [[ "$running_config" == "$compose_file" ]] || fail "The existing project used a different Compose path or added overrides ($running_config). Use that exact configuration."
+    [[ "$running_config" == "$compose_file" || "$running_config" -ef "$compose_file" ]] || fail "The existing project used a different Compose path or added overrides ($running_config). Use that exact configuration."
   done
 }
 
@@ -678,10 +693,110 @@ start_existing() {
   if [[ "$existing_image" == vidstream-starter:local ]] && ! "${docker[@]}" image inspect "$existing_image" >/dev/null 2>&1; then
     [[ -f "$source_dir/Dockerfile" ]] || fail 'Build or load the VidStream image before starting the saved project.'
     printf 'Building the missing local image from this checkout.\n'
-    "${docker[@]}" build --pull --tag "$existing_image" "$source_dir"
+    build_checkout_image "$existing_image"
   fi
+  enable_host_updater "$existing_image"
   "${compose[@]}" up -d --pull never --wait stream || fail 'Could not start the saved project. Make sure its image and media mount paths are available.'
   printf 'Started VidStream with its saved settings at %s.\n' "$compose_file"
+}
+
+enable_host_updater() {
+  local updater_image=$1 python updater_dir updater_draft updater_before
+  [[ "${VIDSTREAM_HELPER_CHILD:-}" != 1 ]] || return 0
+  [[ "$updater_image" == vidstream-starter:local && -e "$source_dir/.git" ]] || return 0
+  if [[ "$using_sudo" == true ]] || ! command -v python3 >/dev/null 2>&1; then
+    printf 'In-app updates need Python 3.8+ on this host and Docker access for your user. Start-Here updates remain available.\n'
+    return 0
+  fi
+  python=$(command -v python3)
+  "$python" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' || {
+    printf 'In-app updates need Python 3.8 or newer. Start-Here updates remain available.\n'
+    return 0
+  }
+  updater_dir=$install_dir/.vidstream-updater
+  [[ ! -L "$updater_dir" ]] || fail 'The updater directory must be a regular private directory.'
+  mkdir -p -- "$updater_dir"
+  chmod 700 "$updater_dir"
+  updater_draft=$(mktemp "$install_dir/.compose-updater.XXXXXXXX")
+  updater_before=$(mktemp "$install_dir/.compose-updater-before.XXXXXXXX")
+  cp -- "$compose_file" "$updater_before"
+  if ! compose_editor "$updater_image" --enable-updater < "$updater_before" > "$updater_draft"; then
+    rm -f -- "$updater_draft" "$updater_before"
+    fail 'Could not attach the updater mailbox. Your existing Compose file was kept.'
+  fi
+  if ! "${compose[@]:0:${#compose[@]}-2}" --file "$updater_draft" config --quiet; then
+    rm -f -- "$updater_draft" "$updater_before"
+    fail 'The updater configuration did not validate. Your existing Compose file was kept.'
+  fi
+  if ! cmp -s -- "$updater_before" "$compose_file"; then
+    rm -f -- "$updater_draft" "$updater_before"
+    fail 'The Compose file changed while attaching the updater. Reopen Start-Here.'
+  fi
+  if ! cmp -s -- "$updater_draft" "$updater_before"; then
+    mv -f -- "$updater_draft" "$compose_file"
+  fi
+  rm -f -- "$updater_draft" "$updater_before"
+  "$python" "$source_dir/scripts/update-helper.py" --source "$source_dir" --install "$install_dir" \
+    --docker "$docker_bin" --endpoint "$endpoint" --detach
+}
+
+update_existing() {
+  local top remote branch changes current target saved_image revision running state
+  command -v git >/dev/null 2>&1 || fail 'Install Git to update a VidStream checkout.'
+  top=$(git -C "$source_dir" rev-parse --show-toplevel 2>/dev/null) || fail 'Open Start-Here from your VidStream Git checkout to update it.'
+  [[ "$top" == "$source_dir" ]] || fail 'Open Start-Here from the root of your VidStream Git checkout.'
+  branch=$(git -C "$source_dir" symbolic-ref --quiet --short HEAD) || fail 'Switch this checkout to main before updating.'
+  [[ "$branch" == main ]] || fail 'Switch this checkout to main before updating.'
+  remote=$(git -C "$source_dir" remote get-url origin) || fail 'This checkout has no GitHub origin.'
+  case "$remote" in
+    https://github.com/5u8han/VidStream|https://github.com/5u8han/VidStream.git|git@github.com:5u8han/VidStream|git@github.com:5u8han/VidStream.git|ssh://git@github.com/5u8han/VidStream|ssh://git@github.com/5u8han/VidStream.git) ;;
+    *) fail 'Automatic updates require the official 5u8han/VidStream GitHub origin.' ;;
+  esac
+  changes=$(git -C "$source_dir" status --porcelain --untracked-files=no) || fail 'Could not check the checkout for local changes.'
+  [[ -z "$changes" ]] || fail 'Save your tracked source edits before using the updater.'
+  prepare_existing start
+  saved_image=$(existing_image_name)
+  [[ "$saved_image" == vidstream-starter:local ]] || fail 'The updater supports starter installations built from this checkout. Update your saved registry or custom image separately.'
+  snapshot_existing
+
+  printf 'Checking GitHub main for updates.\n'
+  git -C "$source_dir" fetch --no-tags --no-recurse-submodules origin '+refs/heads/main:refs/remotes/origin/main' ||
+    fail 'Could not fetch GitHub main. The existing service is still available.'
+  [[ "$(git -C "$source_dir" symbolic-ref --quiet --short HEAD)" == main ]] ||
+    fail 'The checked-out branch changed during the update. Switch to main and try again.'
+  current=$(git -C "$source_dir" rev-parse HEAD)
+  target=$(git -C "$source_dir" rev-parse --verify 'refs/remotes/origin/main^{commit}')
+  git -C "$source_dir" merge-base --is-ancestor "$current" "$target" ||
+    fail 'Local main is ahead of or has diverged from GitHub main. Resolve it before updating.'
+  if [[ "$target" != "$current" ]]; then
+    git -C "$source_dir" -c merge.autostash=false merge --ff-only --no-overwrite-ignore "$target" ||
+      fail 'Could not fast-forward safely. Review the Git error above.'
+  fi
+
+  running=$("${compose[@]}" ps -q --status running stream)
+  if [[ -n "$running" ]]; then
+    [[ "$running" != *$'\n'* ]] || fail 'Could not identify the running service.'
+    state=$("${docker[@]}" inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$running")
+    if [[ "$state" == "$target healthy" || "$state" == "$target running" ]]; then
+      printf 'VidStream is already running the latest build (%.12s). To reconnect in-app updates, choose Start existing VidStream.\n' "$target"
+      return
+    fi
+  fi
+  revision=$("${docker[@]}" image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$saved_image" 2>/dev/null) || revision=
+  if [[ "$revision" != "$target" ]]; then
+    printf 'Building VidStream %.12s. The running service stays up during the build.\n' "$target"
+    git -C "$source_dir" archive --format=tar "$target" |
+      "${docker[@]}" build --pull --build-arg "VIDSTREAM_REVISION=$target" --label "org.opencontainers.image.revision=$target" --tag "$saved_image" - ||
+      fail 'The new image did not build. The running container was kept. Retry Update VidStream to build the fetched version again.'
+  fi
+
+  [[ -f "$compose_file" && ! -L "$compose_file" ]] && cmp -s -- "$snapshot" "$compose_file" ||
+    fail 'The Compose file changed during the update. Reopen Start-Here to apply the current settings.'
+  enable_host_updater "$saved_image"
+  printf 'Applying the update with your saved Compose file and media mounts.\n'
+  "${compose[@]}" up -d --pull never --wait stream ||
+    fail 'The image built, but the updated service did not become healthy. Check its logs in Docker. Your saved configuration and storage remain in place.'
+  printf 'Updated VidStream to %.12s.\n' "$target"
 }
 
 stop_existing() {
@@ -768,6 +883,7 @@ prepare_move() {
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --terminal) terminal_only=true ;;
+    --update-only) update_only=true ;;
     -h|--help)
       printf 'VidStream setup and folder management for macOS and Linux.\nUse --terminal to type folder paths with Tab completion.\nNew setups save compose.yaml beside this launcher. VIDSTREAM_INSTALL_DIR overrides that location.\nVIDSTREAM_PORT and VIDSTREAM_IMAGE override first-time setup defaults.\n'
       exit 0
@@ -783,8 +899,9 @@ portable_dir=$install_dir/vidstream-local
 platform=$(uname -s)
 case "$platform" in Darwin|Linux) ;; *) fail 'Use Start-Here.bat on Windows.' ;; esac
 folders=()
+if [[ "$update_only" == true ]]; then update_existing; exit 0; fi
 while :; do
-  printf '\nVidStream\n  1. First-time setup\n  2. Add a media folder (server only)\n  3. Start existing VidStream\n  4. Stop VidStream\n  5. Prepare storage to move\n  6. Configure memory and access\n  Q. Exit\nChoose an option. ' >&2
+  printf '\nVidStream\n  1. First-time setup\n  2. Add a media folder (server only)\n  3. Start existing VidStream\n  4. Stop VidStream\n  5. Prepare storage to move\n  6. Configure memory and access\n  7. Update VidStream\n  Q. Exit\nChoose an option. ' >&2
   IFS= read -r action || exit 0
   case "$action" in
     1) first_setup; break ;;
@@ -793,6 +910,7 @@ while :; do
     4) prepare_existing edit; stop_existing; break ;;
     5) prepare_move; break ;;
     6) configure_existing; break ;;
+    7) update_existing; break ;;
     q|Q) exit 0 ;;
   esac
 done

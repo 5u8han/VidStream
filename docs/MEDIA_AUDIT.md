@@ -8,15 +8,16 @@ Decoding, seeking, and writing any replacements take additional time.
 
 ## Retry a failed file in VidStream
 
-Sign in as the owner and open **Dashboard → Notifications** or the server
-log. A failed import of a supported photo or video offers **Repair media**.
+Sign in as the owner and choose **Media repairs** under **Dashboard → Scan activity**.
+Select the file to open **Repair details**, then choose **Repair media**.
+You can also follow **Review repair** from a failed import in the server log.
 It rechecks just that file and retries importing its metadata, thumbnails,
 posters and previews where applicable. A successful repair can add a file
-that failed before making it into the catalog. The outcome stays in the
-notification. The file itself remains unchanged.
+that failed before making it into the catalog. The outcome stays in the repair details.
+The source file stays in place.
 
 If the player’s automatic attempt to prepare a compatible video copy fails,
-the resulting notification offers **Retry playback copy**. A successful retry
+the repair details offer **Retry playback copy**. A successful retry
 adds an **Open playback copy** link. The copy lives in VidStream’s cache and
 uses the existing playback compatibility checks.
 
@@ -25,6 +26,29 @@ cannot be read or decoded, the result includes the error from the attempt.
 The standalone audit below can perform a full-library decode check. Its
 conversion option archives originals on disk when a replacement passes
 verification.
+
+## Export unresolved media failures
+
+In **Dashboard → Media repairs**, choose **Export recovery list** to download JSON containing
+the original library-relative paths and authenticated download endpoints.
+It includes unresolved import and playback failures across the library.
+Repeated failures for the same source appear once. Originals that are
+offline or unreadable can still appear in the list for locating them later.
+
+From an updated VidStream checkout on the computer where you want the
+recovery copies, use Node.js and GNU Wget or Wget2. Substitute your server
+address and desired destination.
+
+```sh
+node scripts/download-recovery.js http://subuntu.local/ ./vidstream-recovery
+```
+
+This command prompts for your owner passphrase, retrieves the current list,
+and uses Wget to save the originals into the destination. It writes local
+copies and leaves the source media, database, and Docker configuration in
+place. Downloads use your owner session and honor the server's original
+download setting. Run it on your trusted LAN or use the server's HTTPS
+address. LDAP installations can append the username after the destination.
 
 ## Probe and decode
 

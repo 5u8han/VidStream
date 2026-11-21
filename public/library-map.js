@@ -59,5 +59,165 @@
   const cleanup=setInterval(()=>{if(!root.isConnected||!options.isOpen()){observer.disconnect();abort?.abort();clearInterval(cleanup);}},1500);
   void loadView();return {root};
  }
- window.StreamLibraryMap={mount};
+ function mountFolders(parent, options) {
+  const root = document.createElement('section');
+  root.className = 'folder-storage-map';
+  parent.appendChild(root);
+
+  function node(tag, text, parentNode = root, className) {
+   const element = document.createElement(tag);
+   if (text !== undefined) element.textContent = text;
+   if (className) element.className = className;
+   parentNode.appendChild(element);
+   return element;
+  }
+  function button(label, target, handler) {
+   const control = node('button', label, target);
+   control.type = 'button';
+   control.onclick = handler;
+   return control;
+  }
+  node('p', 'Rectangle area shows the size or number of indexed media files in each folder.', root, 'map-description');
+  const toolbar = node('div', undefined, root, 'map-toolbar');
+  const label = node('label', 'Map area ', toolbar);
+  const metric = node('select', undefined, label);
+  node('option', 'Storage size', metric).value = 'bytes';
+  node('option', 'File count', metric).value = 'files';
+  button('Refresh map', toolbar, () => void load(path, offset));
+  const breadcrumbs = node('nav', undefined, root, 'map-toolbar map-breadcrumbs');
+  breadcrumbs.setAttribute('aria-label', 'Folder path');
+  const status = node('p', 'Loading folder map…', root, 'map-description');
+  status.setAttribute('role', 'status');
+  const stage = node('div', undefined, root, 'map-stage');
+  stage.hidden = true;
+  const canvas = node('canvas', undefined, stage);
+  canvas.setAttribute('role', 'img');
+  canvas.setAttribute('aria-label', 'Folder treemap. Use the folder list below to navigate with the keyboard.');
+  const ctx = canvas.getContext('2d');
+  const inspector = node('p', '', root, 'map-description map-folder-inspector');
+  const list = node('ul', undefined, root, 'map-folder-list');
+  list.setAttribute('aria-label', 'Folders and indexed storage');
+  const pager = node('div', undefined, root, 'map-toolbar');
+  let path = '', offset = 0, branch, rectangles = [], controller, disposed = false;
+
+  const formatBytes = number => window.StreamResources.bytes(number);
+  const sizeLabel = row => formatBytes(row.bytes) + ' · ' + row.count.toLocaleString() + ' ' + (row.count === 1 ? 'file' : 'files');
+  const color = row => row.direct ? '#b2bdc5' : options.color(row.path);
+  const weight = row => metric.value === 'bytes' ? Math.max(1, row.bytes) : Math.max(1, row.count);
+
+  function entries() {
+   const folders = branch.children;
+   if (!branch.directFiles || branch.offset > 0) return folders;
+   return [...folders, { name: 'Media directly in this folder', count: branch.directFiles, bytes: branch.directBytes, direct: true }];
+  }
+
+  function draw() {
+   if (!branch || !ctx || disposed || stage.hidden || !stage.clientWidth) return;
+   const width = stage.clientWidth;
+   const height = Math.min(480, Math.max(280, Math.round(width * 0.58)));
+   const ratio = Math.min(2, window.devicePixelRatio || 1);
+   canvas.width = Math.round(width * ratio);
+   canvas.height = Math.round(height * ratio);
+   canvas.style.width = width + 'px';
+   canvas.style.height = height + 'px';
+   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+   rectangles = window.StreamLayout.treemap(entries().map(row => ({ ...row, value: weight(row) })), 0, 0, width, height);
+   for (const rect of rectangles) {
+    ctx.fillStyle = color(rect);
+    const inset = Math.min(1, rect.w / 5, rect.h / 5);
+    ctx.fillRect(rect.x + inset, rect.y + inset, rect.w - 2 * inset, rect.h - 2 * inset);
+    if (rect.w < 56 || rect.h < 24) continue;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(rect.x + 7, rect.y + 3, rect.w - 14, rect.h - 6);
+    ctx.clip();
+    ctx.fillStyle = '#13202b';
+    ctx.font = '600 13px system-ui';
+    ctx.fillText(rect.name, rect.x + 7, rect.y + 18);
+    if (rect.h >= 43) {
+     ctx.font = '11px system-ui';
+     ctx.fillText(sizeLabel(rect), rect.x + 7, rect.y + 35);
+    }
+    ctx.restore();
+   }
+  }
+
+  function showBranch(data, focus) {
+   branch = data;
+   path = branch.path;
+   offset = branch.offset;
+   breadcrumbs.replaceChildren();
+   if (path) button('All folders', breadcrumbs, () => void load('', 0, true));
+   for (const crumb of branch.breadcrumbs.slice(0, -1)) {
+    button(crumb.name, breadcrumbs, () => void load(crumb.path, 0, true));
+   }
+   const current = node('strong', path ? branch.name : 'All folders', breadcrumbs);
+   current.setAttribute('aria-current', 'location');
+   current.tabIndex = -1;
+   const scoped = (path ? branch.name : 'Whole library') + ' · ' + sizeLabel(branch);
+   const range = branch.previousOffset !== null || branch.nextOffset !== null
+    ? ' · Showing folders ' + (offset + 1).toLocaleString() + '–' + (offset + branch.children.length).toLocaleString() + ' of ' + branch.folderCount.toLocaleString()
+    : '';
+   status.textContent = branch.count ? scoped + range : 'Import media to populate the folder map.';
+   inspector.textContent = '';
+   list.replaceChildren();
+   for (const entry of entries()) {
+    const row = node('li', undefined, list);
+    const marker = node('span', undefined, row, 'map-folder-swatch');
+    marker.style.backgroundColor = color(entry);
+    marker.setAttribute('aria-hidden', 'true');
+    if (entry.direct) node('span', entry.name, row);
+    else button(entry.name, row, () => void load(entry.path, 0, true));
+    node('span', sizeLabel(entry), row, 'map-folder-size');
+   }
+   pager.replaceChildren();
+   if (branch.previousOffset !== null) button('Previous folders', pager, () => void load(path, branch.previousOffset, true));
+   if (branch.nextOffset !== null) button('Next folders', pager, () => void load(path, branch.nextOffset, true));
+   stage.hidden = !ctx || !list.children.length;
+   draw();
+   if (focus) current.focus({ preventScroll: true });
+  }
+
+  async function load(nextPath, nextOffset, focus = false) {
+   controller?.abort();
+   const request = controller = new AbortController();
+   status.textContent = 'Loading folder map…';
+   root.setAttribute('aria-busy', 'true');
+   try {
+    const query = new URLSearchParams({ group: 'folders', path: nextPath, offset: nextOffset, metric: metric.value });
+    const response = await fetch('/api/library-map?' + query, { signal: request.signal });
+    const data = await response.json();
+    if (!response.ok) throw Error(data.error || 'Folder map unavailable.');
+    if (!disposed && controller === request) showBranch(data, focus);
+   } catch (error) {
+    if (!disposed && controller === request && error.name !== 'AbortError') status.textContent = error.message;
+   } finally {
+    if (!disposed && controller === request) root.removeAttribute('aria-busy');
+   }
+  }
+
+  function hit(event) {
+   const bounds = canvas.getBoundingClientRect();
+   const x = event.clientX - bounds.left, y = event.clientY - bounds.top;
+   return rectangles.find(rect => x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h);
+  }
+  canvas.addEventListener('pointermove', event => {
+   const rect = hit(event);
+   const next = rect ? rect.name + ' · ' + sizeLabel(rect) : '';
+   if (inspector.textContent !== next) inspector.textContent = next;
+   canvas.style.cursor = rect && !rect.direct ? 'pointer' : 'default';
+  });
+  canvas.addEventListener('pointerleave', () => { inspector.textContent = ''; });
+  canvas.addEventListener('click', event => {
+   const rect = hit(event);
+   if (rect && !rect.direct) void load(rect.path, 0, true);
+  });
+  metric.onchange = () => void load(path, 0);
+  const observer = new ResizeObserver(draw);
+  observer.observe(stage);
+  void load(path, offset);
+  return { dispose() { disposed = true; observer.disconnect(); controller?.abort(); } };
+ }
+
+ window.StreamLibraryMap={mount,mountFolders};
 })();

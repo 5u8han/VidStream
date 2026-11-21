@@ -1,7 +1,19 @@
 # Changelog
 
-## Unreleased
+## 3.1.0 — Launch Edition
 
+The first public launch brings the local gallery, multi-machine library
+switcher, and large-library tools together. This release keeps the existing
+3.x version sequence, so previous installations can upgrade in place.
+
+- Offer browser preview memory budgets up to 2 GiB and keep more timeline clips on the server, with scan worker sizing that accounts for RAM cache space.
+- Move failed imports and playback jobs to Dashboard → Media repairs with a separate asset detail page.
+- Control startup scanning, file watching and scheduled rescans from Settings.
+- Check and install updates from Settings or Start-Here in a guided Git checkout. Both use the official GitHub `main` revision and skip a current running build. A private host helper applies browser-requested updates with the installation's saved mounts and storage.
+- Open a completed catalog by default on startup. Check the media roots independently of preview settings and allow an active scan to pause and resume from Dashboard.
+- Preview long videos with five-second samples from successive minute marks, fetched and cached on demand.
+- Show nested folder storage in a Dashboard treemap using the existing catalog. Keep creator grouping in Artist map.
+- List unresolved media errors and export their original files through the owner-authenticated Wget helper.
 - Configure RAM, swap and local or LAN access from Start-Here, including for an existing guided installation.
 - Choose a Server or Node role during setup or in Settings. Servers can add nodes to their switcher.
 - Show the active folder in the gallery header and restore the folder and browsing position after a reload.

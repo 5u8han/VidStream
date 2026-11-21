@@ -1,105 +1,322 @@
-# Using VidStream
+# Your VidStream guide
 
-VidStream serves the photos and videos you choose from a machine you control. Use the [Start-Here guide](STARTER.md) for a guided install or [requirements and commands](COMMANDS.md) for manual Docker and native setups.
+Pick a folder, let the previews get ready, and browse. The controls below are
+there when you need them. Your files stay on the storage attached to the
+VidStream machine you opened.
 
-## First sign-in
+Installing for the first time? Start with [Start-Here](STARTER.md). Looking
+for a terminal command? Use the [command reference](COMMANDS.md).
 
-1. Open the server address. Fresh Start-Here and manual Docker installs default to HTTP port 80, usually `http://127.0.0.1/` on the server machine. Existing installations keep their configured address.
-2. Enter the one-time owner setup code from Start-Here or the server log. Choose a username and passphrase between 10 and 256 characters. Keep the code and logs private.
-3. Sign in and check the first library. The server imports media in the background. Recently added items appear as scanning and preview generation finish.
+## First visit
 
-An existing owner account stays with its persistent data. An installation that uses `ADMIN_USERNAME` and `ADMIN_PASSWORD` or an LDAP configuration continues to use its configured sign-in. [Security and privacy](../SECURITY.md)
+1. Open the address printed by Start-Here. On the host itself, local-only
+   access usually opens at `http://127.0.0.1/`. With LAN access, use the host
+   address you chose during setup.
+2. Enter the one-time owner setup code from the launcher or server log.
+   Choose a passphrase between 10 and 256 characters. On this installation,
+   that passphrase is what you'll use the next time you sign in.
+3. Let the first scan run. New items appear as their first processing stage
+   finishes. Open Dashboard if you want to see the current files and progress.
 
-## Choose and browse a library
+An existing installation keeps its owner account with its persistent data.
+If you configured an environment password or LDAP, use that sign-in. Keep
+setup codes and logs private. [Access and privacy](../SECURITY.md)
 
-| To do this | Where to go |
+The welcome and tile entrance run once in this browser after sign-in.
+Opening a new tab while still signed in keeps the gallery ready to browse.
+To turn off the animations, choose **Settings → Preferences → Appearance →
+Animations and effects → Off**.
+
+## The top bar
+
+| Control | Use it for |
 | --- | --- |
-| Switch folders on one server | Open the current folder name at the top left and pick a folder or **All media**. Start-Here adds a menu entry for each mounted folder. VidStream remembers the selected folder in your browser and restores your gallery position after a refresh. |
-| Add another directory on the host | Reopen Start-Here and choose **Add a media folder**. The printed Compose command applies the new read-only mount and briefly restarts the service. [Start-Here guide](STARTER.md#add-a-folder-to-an-existing-setup) |
-| Manage mounts by hand | Bind each chosen host folder as a direct child of `/media/collections` and set the primary mount. [Mounted folders](MOUNTED_FOLDERS.md) |
-| Create navigation shortcuts within a single media root | As owner, open **Settings → Folders** or **Choose folders…** in the title menu. Name a shortcut and give it a path relative to the mounted root. [Folder shortcuts](FOLDERS.md) |
-| Switch to a separate server | On a machine with the **Server** role, open **Settings → Nodes**, check the other machine's address and add it. Open it from **Node** in the top bar. Change the machine role in the same settings panel. [Independent libraries](NODES.md) |
+| Current folder name | Switch folders, scan one folder, or view its last scan result |
+| Node | Open another saved VidStream machine |
+| Search | Find filenames, folder names, artist labels, and available recognition tags |
+| View | Change the grid, filters, sorting, and preview behavior |
+| Settings | Choose themes, schedule scans, check for updates, and manage this machine |
+| Dashboard | Follow scans, inspect resources, repair files, and check storage |
 
-Mounted folders and shortcuts are both views into a server's library. A shortcut filters existing catalog records. A mount controls which files Docker makes available to index. The selected folder does not grant or revoke access. With several servers, each one stores its own catalog, accounts, history and previews. Your browser connects directly to the selected server.
+In a single-root setup, album and artist selectors can appear when the
+catalog has values to choose from. Folder collections and mounted folders
+provide the primary navigation in larger setups.
 
-The scanner recognizes JPEG, PNG, GIF, WebP, HEIC/HEIF, TIFF and BMP photos and MP4/M4V, MOV, WebM, MKV and AVI videos. Available decoders and the codecs inside a file affect whether its preview or original can play. The dashboard reports unsupported and unreadable files.
+## Your folders, your order
 
-## Search, organize and change the gallery
+The scanner follows nested directories under the roots you choose. It
+recognizes JPEG, PNG, GIF, WebP, HEIC/HEIF, TIFF and BMP photos, plus MP4,
+M4V, MOV, WebM, MKV and AVI videos. A folder can also contain documents or
+ZIP archives. Those files are skipped. Video playback depends on the codec
+inside the file, so two MP4s can behave differently on the same device.
 
-- Use the search field for filenames, folder names, artist display labels, extracted text and object tags. Use the type filter for photos or videos. With a single root and no folder shortcuts, album and artist selectors appear when there are values to choose from.
-- In **View → Show**, select **Favorites**, **Pinned**, **Bookmarks**, **Faces**, **Pets** or **Text**. As owner, use **Mark as best** on a tile or the **Best**, **Pin** and **Bookmark** controls in the viewer to set those flags.
-- Use **View → Sorting and filters → Sort order** for newest, oldest, name order and other options. **Artist** switches to all media sorted by artist and clears other gallery filters. **Recently opened**, **Continue watching** and **Less-seen shuffle** use recorded owner activity. In **Continue watching**, a video seeks to its saved position when opened.
-- In **View → Dates and resolution**, filter on media creation or import dates, a date range and minimum resolution. In **Saved views**, name and save the current filter and sort choices for reuse in this browser. **Pin to toolbar** adds quick buttons for shuffle, favorites or pausing previews.
-- Use the **Media size** slider and choose **Whole frame** or **Fill tiles**. Use a video's resize control to enlarge one tile. **Randomly enlarge videos** and **Reshuffle** adjust the arrangement. **Artist outlines** offers fine borders, outlines on hover and an optional color shuffle.
-- **Settings → Preferences → Appearance** controls theme and visual effects. The browser's reduced-motion preference applies. Effects and several playback choices are browser-specific, so set them separately on a phone, tablet or desktop.
+Open the current folder name at the top left and choose a folder or **All
+media**. Start-Here's first selected mount opens on a new browser. VidStream
+then remembers your choice. Refreshing the page restores the folder and the
+gallery location from that tab. Refreshing an open photo or video restores
+the viewer too. Closing it returns you to the saved gallery position.
 
-## Play and inspect
+Very deep gallery positions restore from a nearby page of catalog records.
+Use **Start of folder** if you want to jump back to the beginning. Per-tab
+position checkpoints clear on sign-out.
 
-Select any tile to open the viewer. Use **Previous** or **Next** to switch media. When viewing photos, the left and right arrow keys can also switch items. Press **Escape** to close the viewer. **Play slideshow** advances photos and continues when a video ends. Double-click to zoom or use pinch on a touch screen, then drag to pan.
+To add a new host directory, use **Start-Here → Add a media folder** while
+the server is running. A machine with the **Server** role can add folders.
+The launcher saves the mount and prints how to apply it. Applying the new
+mount briefly recreates the container with its existing data and cache.
+A **Node** keeps serving its selected library, and you can change its role
+under **Settings → Nodes → Machine role**. [Folder setup](MOUNTED_FOLDERS.md)
 
-Videos open the original source in the browser's player, with controls for seeking, audio and playback speed. If the browser rejects the source, VidStream can prepare a compatible copy in its cache. Wait for preparation or check the owner work queue for a failure. **Download original**, when enabled and permitted, retrieves the source.
+For a manual single-root setup, **Settings → Folders** can name shortcuts
+inside that root. Enter paths relative to the mounted media directory.
+A shortcut filters the catalog. A Docker mount determines which host files
+the app can access. [Folder shortcuts](FOLDERS.md)
 
-Use **←** and **→**, or the **−10s** and **+10s** player buttons, to seek within a video. The outside chevrons still switch media. VidStream saves video position with the server catalog, independently of viewing history.
+## Make the grid feel right
 
-Open **Info** for available metadata, technical details and the permanent media ID. Owners can inspect stored activity and revision details. For video, use **Stats for nerds** or enable it in **Settings → Preferences → Video player** to see source and viewport resolution, reported frame rates, dropped frames, buffering and the playback source. Use the same settings card to adjust background blur.
+Open **View** to tune the gallery on this browser.
 
-Library and media addresses require an owner session. **Download original** stays available to the signed-in owner when `ALLOW_ORIGINAL_DOWNLOAD` is enabled. [Security and privacy](../SECURITY.md)
-
-## Scan and trace library issues
-
-**Scan library now** starts a scan from an empty gallery. When a folder is
-selected, the button scans that folder. **Dashboard → Scan activity** shows
-active work. **Server logs** are at the bottom of Dashboard.
-
-The Dashboard **Notifications** button shows slow operations, import
-warnings, storage warnings and app errors. Entries have a stable ID and,
-when tied to media, a path relative to the library mount. Use **Open media**
-when available or **Copy path** to locate a file on the host. Repeated
-occurrences of the same issue update its count. Notifications are stored in
-the server catalog. Fatal startup failures still appear in the container logs.
-
-## Adjust previews and playback load
-
-The optimized gallery preview is a muted, short loop at the source frame rate up to 60 fps. Actual playback depends on the browser, codec, device, storage and connection. The gallery releases media elements for distant tiles as you scroll. A large library still needs processing time and disk space for the catalog and derivatives.
-
-- Pause or enable **Autoplay previews** in **View**. Use **View → Video previews → Lightweight gallery** for smaller posters and fewer effects while preview autoplay stays available. In the same **Video previews** card, reduce **Concurrent previews**, choose **Optimized** or **Original**, or enable **Data saver**. Data saver reloads the page to apply lighter loading behavior.
-- Use **Check playback smoothness** under **Playback** to measure the current browser. In the viewer, use **Stats for nerds** to inspect an individual clip.
-- If initial import competes with browsing, set **Settings → Library tools → Background work** to **Browse comfortably** and check queued and failed tasks. The dashboard reports resources visible to the process or container. [Hardware and container limits](HARDWARE.md)
-- The optional [RAM cache](RAM_CACHE.md) changes where generated derivatives are kept while the server runs. Allocate memory for both the cache and the application, and allow a graceful stop to save its snapshot.
-
-## Use Quick edit
-
-Open **Quick edit** in the viewer for temporary rotation, brightness and video volume. These controls reset when you change media.
-
-The owner can also enter crop position and dimensions, set a maximum width, and choose start and end times for a video. Use **Preview crop / trim**, then **Save edit & keep original** when ready. Saving replaces the source file with the edited version, rebuilds derivatives and saves the original under a hidden `.vidstream-originals` directory beside the media. It requires write access to that source, so an ordinary read-only Docker mount can only use the viewing controls and preview. Back up the hidden originals directory with the collection.
-
-## Maintain a library as owner
-
-| Feature | How to use it |
+| Option | What it does |
 | --- | --- |
-| Import and troubleshoot files | Use **Scan** beside a folder to scan only that folder. Its **ⓘ** shows the last outcome and file, directory, and media counts. Open **Dashboard → Scan activity** for the current phase, active files and recent messages. The same dashboard contains scan history, import issues and indexed files. In **Settings → Library tools**, use **Retry / reconcile library** after fixing a path or permission. **View → Video previews → Refresh metadata & previews** forces a more expensive refresh. |
-| Explore the library map | In **Dashboard**, choose area by storage size or file count, and show artists/folders or individual files. Select a region or item to open it. |
-| Benchmark a deployment | Use **Dashboard → Benchmark** on the device you watch from. The report includes cache and preview suggestions and can be downloaded as JSON. [Benchmark guide](BENCHMARK.md) |
-| Check server resources | Open **Dashboard** and review the resource readings. A container's memory limit can be lower than its host's physical RAM. [Resource guide](HARDWARE.md) |
-| Use local recognition | The scanning configuration controls face/pet presence, OCR and perceptual duplicate grouping separately. Inspect or adjust the relevant `ENABLE_…` fields in [the sample configuration](../.env.example). General object tags require the optional object-recognition stack. In **Dashboard**, choose a preset model and device, download trusted weights if needed, save the enabled setting and rescan. [Hardware and recognition setup](HARDWARE.md) |
-| Manage viewing history | Toggle **Record media activity** under **Settings → Preferences → Library**. **Settings → History** lists recent recorded activity. To delete older raw events, use **Settings → Library tools → Activity retention**, enter a retention period and confirm. Cumulative counts and viewing positions are retained. |
-| Back up the catalog | Choose **Settings → Library tools → Create catalog backup** and download the consistent SQLite snapshot. Back up the original media, hidden edit archives, private configuration and complete persistent data separately for recovery. |
-| Relink a moved file | Copy its permanent media ID from **Info**. In **Settings → Library tools → Relink or label media**, enter that ID and its new path relative to the media root. VidStream checks the file's bytes and that the path belongs to no other item before linking it to the existing history. |
-| Change an artist label | In the same panel, enter the media ID and save an **Artist display label**. Clear that value to restore the folder label. This changes the catalog label without renaming the source. |
-| Move to another machine | Stop the old server before copying its complete data, source mapping and original archives. Keep the live SQLite data on local storage and run a single copy of that identity. Set up separate state for a new independent library. [Nodes and migration](NODES.md) |
+| Media size | Changes the tile size |
+| Whole frame / Fill tiles | Shows the full frame or fills the tile by cropping |
+| A video's resize control | Makes that individual preview larger |
+| Randomly enlarge videos / Reshuffle | Adds a mixed-size arrangement across the grid |
+| Artist outlines | Adds fine artist-colored borders, hover outlines, or shuffled colors |
+| Sort order | Chooses newest, oldest, filename order, shuffle, and other available views |
+| Favorites, Pinned, Bookmarks | Filters to the flags you saved |
+| Faces, Pets, Text | Filters to available local recognition results |
+| Dates and resolution | Filters by media/import dates, date range, or minimum resolution |
+| Saved views | Saves the current filter and sort choices in this browser |
+| Pin to toolbar | Adds a quick action such as shuffle, favorites, or preview pause |
 
-Create any upscaled or interpolated versions in your media tools first, then add those files to a mounted folder. VidStream's preview and compatibility work supports viewing.
+The artist sort opens all media in artist order and clears other gallery
+filters. **Recently opened**, **Continue watching**, and **Less-seen shuffle**
+use recorded activity. In Continue watching, an opened video seeks to its
+saved position.
 
-## Common problems
+Open a tile and use **Best**, **Pin**, or **Bookmark** in the viewer. To see
+those picks again, open **View** and select the matching filter. Search can
+include extracted text and object tags
+when those optional features have been enabled and processed.
 
-| Symptom | Check |
+For themes and visual effects, open **Settings → Preferences → Appearance**.
+Reduced-motion preferences apply. Several visual and playback choices are
+browser-specific, so your phone can have a different setup from your desktop.
+
+## Preview a video before opening it
+
+**View → Video previews → Preview source → Optimized** uses the server's
+prepared clips. For a short video, the opening preview loops. For a video
+longer than one minute, the preview plays the opening and then up to five
+seconds at 1:00, 2:00, and every following minute. The badge shows the sample's
+timestamp in the original video.
+
+Later minute samples are generated when you view them. The first visit can
+pause while a clip is prepared, then the host cache keeps it for reuse.
+Original preview mode streams the source directly.
+
+| Control | When to use it |
 | --- | --- |
-| The gallery is empty | Confirm that the source exists on the Docker host, the engine can read it and the mount targets the configured media root. Start-Here mounts selected subfolders under `/media/collections`. The manual single-root example uses `/media/original`. Check the dashboard for failures and allow the first scan to finish. |
-| A newly added folder is absent | Recreate the container with the edited Compose file. An ordinary restart uses the prior mount configuration. In mounted mode, use a distinct direct child path and select a folder the Docker host can see. |
-| The browser cannot reach another node | Open that node's LAN address directly from the device you are using. Check the published port and firewall. A loopback address works only on the server itself. Manual addresses work without multicast discovery. |
-| The image cannot be pulled | Check the exact registry tag and access. Start-Here's default image can fall back to a source build from the checkout. If you explicitly configured an image, correct its tag or access and retry. [Docker Hub guide](DOCKER_HUB.md) |
-| You see a port conflict | Change the starter's `VIDSTREAM_PORT` before its first run, or change the published port and `URL` in its existing `compose.yaml`. For manual Docker, set `STREAM_HTTP_PORT` and update `URL` in `.env`. |
-| Your data looks missing after an update | Check the Compose file, project name and data volume. If you previously ran under a different checkout name, specify the original project with `-p`. Restore the correct mappings before starting again. [Commands and storage](COMMANDS.md#compose-files-and-persistent-data) |
-| A video will not play or previews are sluggish | Try the optimized preview, fewer simultaneous previews or Data saver. For a single video, check compatible-copy preparation, the dashboard's failed items and the source file's codec and permissions. |
+| Autoplay previews | Start or pause gallery motion |
+| Concurrent previews | Choose how many visible videos can play together |
+| Lightweight gallery | Use smaller existing posters and fewer visual effects |
+| Data saver | Reduce autoplay and delay image loading. The page reloads to apply it. |
+| Browser preview memory | Keep recent optimized clips in the current tab, with Off through 2 GiB choices |
+| Check playback smoothness | Measure what the current browser is doing |
 
-[Requirements and command reference](COMMANDS.md) · [Start-Here](STARTER.md) · [Security](../SECURITY.md)
+New browsers start with a 1 GiB preview-memory budget. Previously enabled
+memory caching also starts at 1 GiB, while an existing Off preference stays
+off. The budget fills as you browse. Browser memory is on the device you're
+watching from. Closing the tab releases it. The server has a separate cache
+on its own SSD or optional RAM storage. [Cache guide](PORTABLE_CACHE.md)
+
+Optimized clips can play at the source frame rate up to 60 fps. The server
+prepares the media, and the viewing device decodes and displays it. Network,
+storage, and decoder load can affect playback. The gallery releases distant
+media elements as you scroll. [Performance guide](PERFORMANCE.md)
+
+## Open the full viewer
+
+Select a tile to open a photo or video. **Previous** and **Next** switch items.
+**Escape** closes the viewer. **Play slideshow** advances photos and continues
+after a video ends. Double-click to zoom or pinch on touch screens, then drag
+to pan.
+
+For a video, **←** and **→**, or **−10s** and **+10s**, seek within the current
+file. The outside chevrons switch media. Use the player's audio, seeking,
+and playback-speed controls as usual. VidStream saves the playback position
+with its server catalog, independently of viewing-history recording.
+
+The full player tries the original source. If the browser rejects it,
+VidStream can prepare a compatible copy in the host cache. A failed copy
+appears in **Dashboard → Media repairs** for review and retry.
+
+Open **Info** for metadata, technical details, and the permanent media ID.
+**Stats for nerds** shows available resolution, frame, buffering, and playback
+source details. You can enable it by default and set the viewer's background
+blur under **Settings → Preferences → Video player**.
+
+**Download original** retrieves the source when original downloads are enabled.
+Media addresses use the owner session for that instance.
+
+## Scan at your own pace
+
+An empty gallery offers **Scan library now**. The folder menu has **Scan**
+buttons for individual folders. Its **ⓘ** control shows the last scan time,
+outcome, and counts.
+
+**Dashboard → Scan activity** shows the current phase, worker limits, active
+paths, elapsed times, and recent operations. **Pause indexing** lets current
+operations finish and stops starting new scan operations. **Resume indexing**
+continues that scan while the app remains running. A container restart ends
+the live scan and retains completed work already saved to the catalog and
+cache. Server logs are at the bottom of Dashboard.
+
+Open **Settings → Scan scheduling** to choose the behavior for this server.
+
+| Setting | Choices and timing |
+| --- | --- |
+| When VidStream starts | Scan media, open the saved catalog, or follow deployment configuration. Applies on the next launch. |
+| Watch folders for changes | On, Off, or follow deployment configuration. Applies while running after startup scanning finishes. |
+| Scheduled rescans | Off, a preset interval, a custom interval, or follow deployment configuration |
+
+Each saved choice lives in the server database. **Use deployment setting**
+returns that control to the value supplied by Compose or the environment.
+Turning watching on may walk the media folders to register watchers. With
+watching and scheduled scans off, start a scan after adding or changing media.
+
+A completed catalog opens after an update when its media roots still match.
+New mounts or an older scan signature that cannot be verified can require a
+reconciliation pass. Matching files can reuse prior completed processing.
+**Refresh metadata & previews** in View forces a more expensive refresh.
+[Large-library details](PERFORMANCE.md)
+
+## Fix the files that need attention
+
+**Dashboard → Media repairs** lists failed imports and compatible-copy jobs.
+Select a file to open **Repair details**. Use Back, Escape, or your browser's
+Back action to return through the pages. General storage and app notifications
+stay in Dashboard's Notifications panel.
+
+| Action | What happens |
+| --- | --- |
+| Repair media | Rechecks one supported source and rebuilds its metadata and cached derivatives |
+| Retry playback copy | Retries a failed compatible-copy job |
+| Open media | Opens the indexed item when it is available |
+| Copy path | Copies the path relative to the library mount |
+| Export recovery list | Downloads a list of unresolved original files for recovery elsewhere |
+
+Repair results stay with the issue. A source that still cannot be read or
+decoded reports the failure. You can export those originals with the
+[one-command recovery downloader](MEDIA_AUDIT.md#export-unresolved-media-failures)
+and use your preferred recovery tools.
+
+For a whole-library decode audit, use the separate media-audit tool. Its
+optional conversion mode validates a viewing copy before archiving the
+original beside it. Read the [audit and repair guide](MEDIA_AUDIT.md) before
+running it on a large source collection.
+
+## Explore Dashboard
+
+| Area | Use it for |
+| --- | --- |
+| Folder storage map | Explore nested folders with rectangles sized by indexed media bytes or file count. Click through folders or use the accessible list and breadcrumbs. |
+| Artist map | Compare creator groups and explore their media. |
+| Benchmark | Measure this browser's connection, available server resources, and cache storage. Download JSON to compare machines. |
+| Resource readings | Inspect server CPU, memory, and available I/O or GPU readings. Docker and VM limits can reduce visible resources. |
+| Indexed files | Page through cataloged media. |
+| Recent scans and Server logs | Review outcomes and find current operations or issue paths. |
+
+Storage maps use the catalog. Their totals represent indexed media, so empty
+folders, unindexed documents, and cache files fall outside those media totals.
+The benchmark recommends starting points for previews and cache capacity.
+Run it on the network and viewing device you normally use.
+[Benchmark guide](BENCHMARK.md) · [Hardware](HARDWARE.md)
+
+## Connect another machine
+
+Set the main starting instance to **Server** under **Settings → Nodes**.
+Enter the other machine's reachable address, choose **Check library**, review
+its name and identity, then add it to the switcher. Use **Node** at the top
+center to open that machine.
+
+Each instance keeps its own media, catalog, sign-in, history, and cache. Your
+browser connects directly to the selected machine. A Node can serve its
+existing library and announce itself when optional discovery is enabled.
+Change its role to Server if it should add other machines or folders.
+
+Manual addresses work when the network blocks discovery. Each destination
+needs to be reachable from your viewing device. [Nodes guide](NODES.md)
+
+## Quick edits, backups, and library tools
+
+**Quick edit** in the viewer provides temporary rotation, brightness, and video
+volume. These reset when you change media.
+
+The saved crop/trim workflow needs write access to the source. Preview your
+edit, then choose **Save edit & keep original**. It replaces the source with
+the edited version, rebuilds derivatives, and keeps the original in
+`.vidstream-originals` beside the media. Guided mounts begin read-only, so
+those mounts can use temporary viewing controls and edit previews. Include
+hidden edit archives in your media backups.
+
+Other maintenance actions are under **Settings → Library tools**.
+
+| Tool | How to use it |
+| --- | --- |
+| Background work | Choose Browse comfortably, Balanced, or Process faster to set the background processing budget. |
+| Refresh status / Retry or reconcile library | Inspect active and queued jobs, or ask the server to scan again. Use Media repairs to retry a single file. |
+| Measure storage | See how much disk space the indexed originals, database, thumbnails, video clips, and compatible copies occupy, plus the free space on the cache disk. |
+| Create catalog backup | Download a consistent SQLite snapshot. Back up source media and complete persistent state separately. |
+| Relink or label media | Enter the permanent media ID from Info and a new relative path. VidStream verifies the source before attaching the existing history. |
+| Artist display label | Change the catalog label without renaming the source folder. Clear it to restore the folder label. |
+| Activity retention | Choose a cutoff in days and confirm to delete older individual activity events. Cumulative counts and playback positions are retained. |
+
+**Settings → Preferences → Library → Record media activity** controls optional
+viewing-history recording. **Settings → History** shows recent recorded events.
+
+Optional local recognition can add face/pet presence, OCR text, and duplicate
+suggestions. General object tags need the optional recognition stack and
+weights. Review [hardware and recognition setup](HARDWARE.md) before enabling
+it for a large import. Prepare upscaling or frame interpolation in your own
+media tools, then mount the finished files.
+
+For a move to a new host, use **Start-Here → Prepare storage to move**, stop
+the old instance, and copy the complete saved state and configuration. Keep
+the media's container-relative paths consistent. A separate new node gets its
+own state. [Migration guide](PORTABLE_CACHE.md)
+
+## Keep the app current
+
+1. On the machine you want to update, open **Settings → Updates → Check for
+   updates**. It compares the running build's commit with the official GitHub
+   `main` commit. When they match, your current session carries on.
+2. If there's a newer build, choose **Install update**. You can keep browsing
+   during the image build. Playback may briefly pause when the server switches
+   over. The saved folders, catalog, and cache stay with this installation.
+3. When the update finishes, reload your gallery. To do the same update over
+   SSH, choose **Update VidStream** in Start-Here on that host.
+
+If Settings can't connect to the update helper, choose **Start existing
+VidStream** in the launcher on that machine. Do this once after a host
+reboot too. For an older installation without the Updates tab, start with
+the one-time upgrade instructions. The browser install option is for guided
+Git checkouts using the local starter image. [Update and reconnection guide](STARTER.md#update-an-existing-installation)
+
+## Something feels off
+
+| What you see | Try this |
+| --- | --- |
+| Empty gallery | Check the host's folder path and Docker mount, then use Scan library now. Check Scan activity for failures. |
+| New folder missing | Apply the updated Compose file. Recreating the service loads changed mounts. |
+| New media missing | Scan the selected folder, or check your scan schedule. |
+| Long preview pauses at a minute change | Let the new sample finish generating. Later visits can reuse its cached clip. |
+| Slow grid or stuttering | Use Optimized previews, reduce Concurrent previews, try Lightweight gallery, and benchmark from that device. |
+| Original will not play | Check Media repairs and compatible-copy preparation, then inspect the source codec and permissions. |
+| Server hostname refuses the connection | Check the published port, LAN binding, hostname resolution, and host firewall. A loopback listener accepts local connections. |
+| Node unreachable | Open its address directly from the same browser/device. Check that machine's port and sign-in. |
+| Catalog appears missing after an update | Check the Compose file, project name, and data mounts before starting a fresh import. [Storage reference](COMMANDS.md#compose-files-and-persistent-data) |
+| Image pull fails | Check the configured tag and registry access. The default starter can build from its source checkout. |
+
+[Start-Here](STARTER.md) · [Commands](COMMANDS.md) · [Media recovery](MEDIA_AUDIT.md) · [Security](../SECURITY.md)

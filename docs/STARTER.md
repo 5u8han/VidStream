@@ -118,23 +118,63 @@ installation, the same option first copies its three named volumes to
 `vidstream-local/`. It retains the old volumes and saves the old Compose
 file for rollback. [Portable storage and migration](PORTABLE_CACHE.md)
 
-## Test an update on your existing installation
+<a id="test-an-update-on-your-existing-installation"></a>
 
-Use your normal generated `compose.yaml`. If it uses `vidstream-starter:local`,
-run these commands from the updated checkout.
+## Update an existing installation
+
+Update the host that owns the library you want to change. Both options below
+work with an official Git checkout on `main` and a guided installation that
+uses the local image `vidstream-starter:local`. Each node updates separately.
+
+**Coming from a version with no Updates option?** Go to the original Git
+checkout used for that installation. If you have local source edits, save
+them before you update. On its clean `main` branch, run this once.
 
 ```sh
-docker build --pull -t vidstream-starter:local .
-docker compose up -d --pull never --wait stream
+git pull --ff-only origin main
 ```
 
-The first command refreshes the configured base image and builds the current
-checkout as the local image referenced by the starter. It writes Docker image
-layers. The second applies the image and
-waits for VidStream to be healthy. It can briefly interrupt playback and
-reuses the existing configuration and volumes. Check the first library, the
-folder dropdown, and playback in the browser. Automated checks use generated
-media and temporary configurations.
+This downloads the new launcher and source and advances the checkout when Git
+can do so without a merge. Your running service still uses its existing image.
+Open the updated launcher and choose **Update VidStream** to build and start
+the release with your saved folders. Keep the generated `compose.yaml` and
+persistent storage. An older image without a recorded commit needs one build
+to establish its revision.
+
+| Where you are | What to do |
+| --- | --- |
+| Watching in the browser | Sign in as the owner, open **Settings → Updates**, and choose **Check for updates**. If an update is available, choose **Install update**. When the service returns, reload the gallery. |
+| On the host or connected over SSH | Open Start-Here and choose **Update VidStream**. The launcher checks for a newer commit and applies it if needed. |
+| On a manual, registry-image, native, or source ZIP installation | Use the [update procedure for your deployment](COMMANDS.md#update-and-verify-the-existing-installation). |
+
+Both guided paths compare the **running image revision** with the official
+GitHub `main` commit. Two builds can have the same version number and different
+commits. If the latest build is already running, checking finishes without
+a rebuild or restart. When an update is available, the launcher builds the
+image before replacing the running container. A build failure leaves the
+current container serving your gallery. If the new container fails its
+startup check, read the service logs on the host. The saved Compose file,
+media mounts, catalog, and cache remain available.
+
+**How the browser reaches Docker.** Start-Here starts a background helper
+under your host account. The web app puts a check or install request in
+`.vidstream-updater/`, a private directory next to the generated Compose
+file. The helper checks the official repository and applies the update on
+that host. The browser can close after submission. The helper requires
+Python 3.8 or newer, Git access to the repository, and permission to use
+Docker under the host account. On a Linux machine that needs an interactive
+sudo prompt for Docker, use the launcher update.
+
+If Settings reports a disconnected helper after a host reboot, open
+Start-Here on that host and choose **Start existing VidStream**. The account,
+folders, and cache come from the saved installation. Without a helper,
+Settings can still check GitHub when reachable. It needs a known build
+revision to tell you whether you're current.
+
+After upgrading, open the folder you usually browse, play a video, and check
+**Settings → Updates** for its revision. By default a completed catalog with
+matching media roots reopens from disk. **Settings → Scan scheduling**
+controls whether this host also scans on startup. [Scan behavior](PERFORMANCE.md)
 
 ## Add a folder to an existing setup
 
@@ -190,11 +230,16 @@ deployment, configure the address and mounts in the
 
 ## Where the image comes from
 
-The starter first pulls `docker.io/5u8han/vidstream:latest`. If that image is
-unavailable, it builds from the checkout. `VIDSTREAM_IMAGE` selects another
-compatible published image. The image must include the starter's Compose
-generator. A failed pull of an explicitly selected image stops setup so the
-user can check the image name or registry access.
+With the project Dockerfile present, Start-Here builds `vidstream-starter:local`
+from the checkout by default. A fresh clone can use its checked-out code even
+when a matching Docker Hub image hasn't been published yet. The initial build
+still needs access to its base image and system packages.
+
+Set `VIDSTREAM_IMAGE` to a published image reference before first-time setup
+if you want the launcher to pull that image. Without a source Dockerfile,
+the default registry reference is `docker.io/5u8han/vidstream:latest`.
+The pull must succeed for registry setup to continue. The generated
+`compose.yaml` records which image the installation uses.
 
 See [Docker Hub publishing](DOCKER_HUB.md) for GitHub credentials, platform
 checks, and verifying the registry image. For a setup that already uses a

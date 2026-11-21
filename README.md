@@ -1,34 +1,43 @@
 # VidStream
 
-**A self-hosted photo and video gallery for the files you already have.** Run
-VidStream on your computer, NAS, or home server. Open it in a browser to
-browse your folders, play videos, and review what you want to keep. Your
-files stay on storage you control.
+**Launch Edition · v3.1.0** is the first public launch of VidStream, a photo
+and video gallery you run on your own machine. Pick a few folders from your
+camera roll, NAS, or external drive. Open the gallery and muted clips are
+already playing. For a two-hour video, you can skim five seconds from each
+minute right in the grid.
 
-[Quick start](#quick-start) · [User guide](docs/USAGE.md) · [Requirements and commands](docs/COMMANDS.md) · [Docker Hub publishing](docs/DOCKER_HUB.md)
+[Get started](#get-started) · [How to use everything](docs/USAGE.md) · [Update an existing install](docs/STARTER.md#update-an-existing-installation) · [Troubleshooting](docs/USAGE.md#something-feels-off)
 
-**Version 3.0** adds the Dashboard benchmark, portable cache and
-migration, and improved large-library scanning and node switching.
-[Benchmark guide](docs/BENCHMARK.md) · [Large-library performance](docs/PERFORMANCE.md)
+## The short version
 
-## What you can do
+- **Browse first.** A dense grid, live previews, adjustable tile sizes, and
+  quick playback controls keep the media front and center.
+- **Bring your folders.** Choose the directories you want to see in setup.
+  Switch between them from the folder name at the top left.
+- **Pick up where you left off.** Refresh your tab and return to the same
+  folder, gallery position, or open media item. Video playback positions stay
+  with the server catalog.
+- **Give your storage a break.** Generated previews and recently viewed
+  source ranges live on the host cache. Optional browser memory keeps clips
+  nearby as you scroll back.
+- **Make a large library manageable.** See scan progress, pause indexing,
+  explore a folder storage map, and review failed files in a dedicated repair
+  page.
+- **Use the machines you have.** Run independent libraries on a NAS, desktop,
+  or laptop and add them to a Server's Node switcher. Each machine owns its
+  media, catalog, and sign-in.
 
-| Feature | How it works |
-| --- | --- |
-| Browse and play | A dense gallery with muted video previews, adjustable tiles, filters, and a responsive lightbox. Playback includes seeking, speed control, and optional statistics. |
-| Organize several folders | Mount only the folders you want to serve. Switch between them in the top-left menu, with the first selected folder opening by default. |
-| Keep track of media | Save favorites, pins, and bookmarks, resume playback, and review viewing history. The SQLite catalog retains these across container rebuilds. |
-| Keep the library private | Catalogs, playback, and downloads require owner sign-in. Guided setup mounts source media read-only. |
-| Connect independent servers | Save the addresses of other VidStream installations and switch libraries from the top-center menu. Each server manages its own media, catalog, and sign-in. |
-| Inspect and maintain | Benchmark the host and browser, inspect storage and resources, and create catalog backups. Optional local recognition makes images and videos easier to find. |
+Your original media lives on storage you choose. You download VidStream and
+host it yourself. The browser connects to your installation.
 
-## Quick start
+## Get started
 
-You need a Docker host with Compose, access to at least one local media
-folder, and a current browser. The launcher supports macOS, Linux, and
-Windows with Linux containers.
+Have a media folder and a machine that can run Docker. The starter supports
+macOS, Linux, and Windows using Linux containers. An SSD for the catalog and
+cache makes a difference, especially when your originals live on an HDD,
+DAS, or NAS.
 
-From a terminal on macOS or Linux, run the following for a new checkout.
+For a new checkout on macOS or Linux, open a terminal and run these in order.
 
 ```sh
 git clone https://github.com/5u8han/VidStream.git
@@ -36,75 +45,118 @@ cd VidStream
 bash ./Start-Here.sh
 ```
 
-- `git clone` downloads the source into a new `VidStream` directory.
-- `cd VidStream` enters that directory.
-- `bash ./Start-Here.sh` opens the guided setup. It creates a private
-  `compose.yaml`, creates `vidstream-local/` for durable application state, and starts the service after you
-  select folders and a theme.
+1. `git clone` downloads the app into a new `VidStream` folder.
+2. `cd VidStream` moves the terminal into that folder.
+3. `bash ./Start-Here.sh` opens the setup menu. Choose **First-time setup**.
+   It checks Docker, asks for folders, memory, network access, and a theme,
+   then saves your configuration and starts VidStream. Media mounts are
+   read-only.
 
-On Windows, open [Start-Here.bat](Start-Here.bat) from the downloaded checkout.
-Choose **First-time setup**. Select the folder that should open first, add
-any others, and choose a theme. Open the address the launcher prints, usually
-`http://127.0.0.1/`. Enter its one-time setup code to create your owner
-account. [Complete setup and update guide](docs/STARTER.md)
+On Windows, download or clone the repo and double-click
+[Start-Here.bat](Start-Here.bat). On a server without a desktop, the starter
+lets you type folder paths with Tab completion.
 
-For an existing guided install, use **Add a media folder** to update its
-private configuration. Apply the change with the launcher’s printed Compose
-command. The container is recreated with its existing app volumes and the
-new read-only media mount.
+Open the address the starter prints. Use its one-time owner setup code,
+choose a passphrase, and let the first import run. A good first check is to
+open the folder name at the top left, pick another folder, and play one of
+its videos. You can browse items as previews become ready. Choose LAN
+access and port 80 if you want an address
+like `http://subuntu.local/` from another device. That hostname needs to
+resolve on your network.
 
-On a headless Linux server, run Start-Here in your SSH session and press
-**Tab** to complete a folder path. Select the mounted directory that contains
-the media. Then use an SSH port forward from your browsing machine to open
-the gallery. [Headless and NAS setup](docs/STARTER.md#headless-linux-over-ssh)
+On a new installation, the starter keeps its private `compose.yaml` and
+`vidstream-local/` in the checkout. Keep both when updating.
+[Step-by-step setup](docs/STARTER.md)
 
-## Choose a deployment
+## Find your way around
 
-| Setup | When to use it | Guide |
-| --- | --- | --- |
-| Start-Here | One server, one or more folders, and guided Docker setup | [Start-Here](docs/STARTER.md) |
-| Manual Compose | Explicit mounts, a NAS share, custom ports, or existing Docker storage | [Requirements and commands](docs/COMMANDS.md) · [Mounted folders](docs/MOUNTED_FOLDERS.md) |
-| Independent servers | Switch between separate libraries on multiple machines | [Connect library nodes](docs/NODES.md) |
-| Native Node.js | Run on the host using its media tools and resources | [Native setup](docs/COMMANDS.md#native-commands) · [Hardware](docs/HARDWARE.md) |
-
-Start-Here publishes to the setup machine by default. For LAN access, use a
-reachable host address and complete owner setup. Keep the generated Compose
-file, credentials, and media private.
-[Security and privacy](SECURITY.md)
-
-## Tech stack
-
-- **Application:** Node.js with an embedded SQLite catalog and zero runtime
-  npm dependencies.
-- **Browser:** HTML, CSS, and JavaScript. Browser-native media controls and
-  HTTP range requests support seeking. The gallery releases distant media
-  elements as you scroll.
-- **Media:** FFmpeg and FFprobe for video, ImageMagick and libheif for images,
-  and ExifTool for metadata. Optional Python/OpenCV and Tesseract support
-  local recognition and text search.
-- **Deployment:** Docker Compose on Linux containers, with an optional
-  native server. Media sources, catalog data, and preview cache have
-  separate storage.
-
-VidStream prepares previews and compatible playback copies. Prepare video
-enhancements such as upscaling and frame interpolation in your own media
-workflow, then mount the finished files.
-
-## Guides
-
-| I want to… | Read |
+| Control | What you get |
 | --- | --- |
-| Use the gallery, player, collections, and dashboard | [User guide](docs/USAGE.md) |
-| Install, start, stop, update, back up, or test the app | [Requirements and commands](docs/COMMANDS.md) |
-| Choose folder shortcuts or mount specific source directories | [Folder shortcuts](docs/FOLDERS.md) · [Mounted folders](docs/MOUNTED_FOLDERS.md) |
-| Configure GPU access, a RAM cache, or connected servers | [Hardware](docs/HARDWARE.md) · [RAM cache](docs/RAM_CACHE.md) · [Nodes](docs/NODES.md) |
-| Benchmark a machine or compare viewing devices | [Deployment benchmark](docs/BENCHMARK.md) |
-| Put the cache beside your checkout or move to another machine | [Portable cache and migration](docs/PORTABLE_CACHE.md) |
-| Tune a large library or troubleshoot preview stalls | [Large-library performance](docs/PERFORMANCE.md) |
-| Check source videos, create compatible copies, and archive originals | [Standalone media audit](docs/MEDIA_AUDIT.md) |
-| Publish and verify the Docker Hub image | [Docker Hub publishing](docs/DOCKER_HUB.md) |
-| Upgrade an older installation or review changes | [Storage migration](docs/BRANCHES.md#retain-existing-storage-before-rebuilding) · [Changelog](CHANGELOG.md) |
+| **Folder name**, top left | Your chosen folders and their scan controls |
+| **Node**, top center | Other saved VidStream machines |
+| **View** | Tile size, sorting, filters, outlines, autoplay, and browser preview memory |
+| **Settings** | Themes, player blur, scan schedules, library tools, and machine roles |
+| **Dashboard** | Scan activity, resources, storage maps, benchmark, repairs, and logs |
+| Any media tile | The full viewer, metadata, playback controls, and saved flags |
+
+For a long video, use **Optimized** previews to skim its timeline. VidStream
+plays the opening and then up to five seconds at 1:00, 2:00, and each following
+minute. Later samples are generated as you watch and cached for next time.
+The first uncached sample can take a moment to prepare.
+
+Want to keep more ready clips? **View → Video previews → Browser preview
+memory** offers up to 2 GiB per tab. New browsers start at 1 GiB. You can set
+it to Off on any device. [Gallery and player guide](docs/USAGE.md)
+
+## Keep your progress through updates
+
+In a guided Git installation, open **Settings → Updates → Check for updates**.
+Choose **Install update** if one is available. On the host, **Start-Here →
+Update VidStream** does the check and applies an available update in one step.
+Both compare the running build with GitHub's `main` commit. When you're
+current, you can keep watching without a rebuild or restart.
+
+Moving up from an older version? Start with the [one-time upgrade
+steps](docs/STARTER.md#update-an-existing-installation). In-app installation
+uses a small helper that Start-Here runs on the Docker host. After a host
+reboot, choose **Start existing VidStream** to reconnect it.
+
+The catalog, account, cache, and playback positions belong to persistent
+storage. Keep the same Compose project and mounts when upgrading. A completed
+catalog can reopen without walking the whole library. You decide when to
+scan again in **Settings → Scan scheduling**. [Updates](docs/STARTER.md#update-an-existing-installation) · [Persistent storage](docs/PORTABLE_CACHE.md)
+
+## A few things to know
+
+- **The first import does real work.** Reading files, checking metadata, and
+  creating previews for a huge library takes time. Dashboard shows what is
+  running and lets you pause indexing.
+- **Preview speed has several moving parts.** Storage, server encoding,
+  network delivery, and browser decoding all matter. Run the built-in
+  benchmark from the device you normally watch on.
+- **The media mounts start read-only.** Saved crop or trim edits need write
+  access and keep an original archive beside the source. Review that workflow
+  before enabling it.
+- **Repairs have limits.** A failed import can be retried and a compatible
+  playback copy can be rebuilt. Missing source data needs recovery from an
+  original, a backup, or a specialist tool.
+- **Your installation has its own sign-in.** Each connected machine checks
+  its own owner session. Keep the private configuration and catalog backed up.
+
+[Performance guide](docs/PERFORMANCE.md) · [Repair and recovery](docs/MEDIA_AUDIT.md) · [Security and privacy](SECURITY.md)
+
+## What runs underneath
+
+| Layer | Tools |
+| --- | --- |
+| Server and catalog | Node.js, embedded SQLite, no runtime npm dependencies |
+| Browser | HTML, CSS, JavaScript, native video playback, HTTP range requests |
+| Media preparation | FFmpeg, FFprobe, ImageMagick, libheif, ExifTool |
+| Optional search tags | Python, OpenCV, Tesseract, and the optional object-recognition stack |
+| Deployment | Docker Compose with Linux amd64/arm64 support, or native Node.js |
+
+Prepare upscaled or interpolated media in your own tools, then add the
+finished files to a selected folder. VidStream handles gallery previews and
+compatible playback copies.
+
+## The guide shelf
+
+| You want to… | Start here |
+| --- | --- |
+| Set up your first library or manage the launcher | [Start-Here](docs/STARTER.md) |
+| Use each gallery, playback, and Dashboard feature | [User guide](docs/USAGE.md) |
+| Find requirements, manual installs, and explained commands | [Command reference](docs/COMMANDS.md) |
+| Choose folder mounts | [Mounted folders](docs/MOUNTED_FOLDERS.md) |
+| Connect more machines | [Nodes](docs/NODES.md) |
+| Tune a huge library | [Performance](docs/PERFORMANCE.md) |
+| Compare servers and viewing devices | [Benchmark](docs/BENCHMARK.md) |
+| Move your catalog and cache | [Portable storage](docs/PORTABLE_CACHE.md) |
+| Try a server RAM cache | [RAM cache](docs/RAM_CACHE.md) |
+| Enable hardware encoding or recognition | [Hardware](docs/HARDWARE.md) |
+| Review media failures or export originals for recovery | [Media audit and repair](docs/MEDIA_AUDIT.md) |
+| Check publishing or deployment details | [Docker Hub](docs/DOCKER_HUB.md) · [Security](SECURITY.md) |
+| See what changed | [Changelog](CHANGELOG.md) |
 
 VidStream began as a video-first successor to
-[photo-stream](https://github.com/waschinski/photo-stream). It is available
-under the [MIT License](LICENSE).
+[photo-stream](https://github.com/waschinski/photo-stream).
+Available under the [MIT License](LICENSE).

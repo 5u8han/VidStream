@@ -14,6 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+ARG VIDSTREAM_REVISION=unknown
+ENV VIDSTREAM_REVISION=$VIDSTREAM_REVISION
+LABEL org.opencontainers.image.revision=$VIDSTREAM_REVISION
+
 ARG INSTALL_INTEL_VIDEO_DRIVER=false
 RUN if [ "$INSTALL_INTEL_VIDEO_DRIVER" = "true" ]; then \
       apt-get update && apt-get install -y --no-install-recommends intel-media-va-driver i965-va-driver && \

@@ -11,6 +11,9 @@ rclone.conf
 /.compose-*
 /.compose.yaml.*
 /.vidstream-edit.lock
+/.vidstream-updater/
+/.vidstream-update-helper.lock
+/.vidstream-request-*
 /docker-compose.libraries.local.yml
 /docker-compose.media.local.yml
 *.pem

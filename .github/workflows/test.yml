@@ -43,8 +43,10 @@ jobs:
       - name: Container startup
         run: |
           docker build --pull --tag vidstream-ci:local .
+          mailbox=$(mktemp -d "$RUNNER_TEMP/vidstream-mailbox.XXXXXXXX")
           container=$(docker run --detach --security-opt no-new-privileges:true \
             --env ADMIN_PASSWORD=benchmark-ci-only-passphrase \
+            --env VIDSTREAM_UPDATE_DIR=/app/updater --mount "type=bind,source=$mailbox,target=/app/updater" \
             --publish 127.0.0.1::4000 vidstream-ci:local)
           trap 'docker rm -f "$container" > /dev/null' EXIT
           port=$(docker port "$container" 4000/tcp)
@@ -54,3 +56,5 @@ jobs:
             exit 1
           fi
           VIDSTREAM_TEST_URL="http://$port" VIDSTREAM_TEST_PASSWORD=benchmark-ci-only-passphrase node scripts/check-benchmark.js
+          VIDSTREAM_TEST_URL="http://$port" VIDSTREAM_TEST_PASSWORD=benchmark-ci-only-passphrase \
+            VIDSTREAM_TEST_MAILBOX="$mailbox" node scripts/check-updates.js

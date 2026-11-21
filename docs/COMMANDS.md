@@ -10,7 +10,12 @@
 
 Use a current browser. Video codec support varies by browser and device. Basic hosting needs no GPU. Allow space for the media and a local, writable disk for SQLite and generated previews. Import load and derivative size depend on the collection and enabled recognition. See [hardware and resource settings](HARDWARE.md).
 
-Install Git only if you use the clone and pull commands. The Docker image already includes Node.js and the standard media tools. A source build or image pull needs internet access. Once the application and any optional weights are present, you can browse a locally available library without a Docker Hub account.
+Git is required to clone the source and to use the guided update feature.
+For in-app installation, the host also needs Python 3.8 or newer and access
+to Docker as the host user. The Docker image includes Node.js and the
+standard media tools. A source build or image pull needs internet access.
+Once the application and any optional weights are present, you can browse
+your local library without a Docker Hub account.
 
 ## Get the source and start
 
@@ -53,6 +58,7 @@ When using the manual setup, include `-f docker-compose.yml` and every existing 
 | Storage | Contents |
 | --- | --- |
 | `vidstream-local/{data,cache,originals}` | Default private host storage for new guided setups. [Portable storage and migration](PORTABLE_CACHE.md) |
+| `.vidstream-updater/` next to the starter's `compose.yaml` | The local helper exchanges update requests and status with this installation here. Start-Here sets this up separately on each supported host. |
 | Host media bind or mounted share | Source photos and videos. Default example binds are read-only. |
 | `stream-data` at `/app/data` | SQLite catalog, owner settings, account state, preferences, scan reports, playback positions and history. |
 | `stream-cache` at `/app/.cache` | Rebuildable derivatives, compatibility copies and optional recognition weights. With the RAM overlay, this volume holds snapshots. |
@@ -83,26 +89,42 @@ A disposable test reset uses `docker compose down --rmi all --volumes`. It addit
 
 ## Update and verify the existing installation
 
+For a supported guided Git checkout, use **Settings → Updates** in the app,
+or choose **Update VidStream** in Start-Here. Both check the official `main`
+revision and skip a current running build. Browser installation needs the
+host helper connected by Start-Here and Python 3.8 or newer on that host. Choose
+**Start existing VidStream** in the launcher after a host reboot to reconnect
+it. [Guided updates](STARTER.md#update-an-existing-installation)
+
+The commands below cover manual source updates and older guided installations
+receiving the updater for the first time. Use the Git checkout for the
+installation you want to change.
+
 ```sh
-git status --short
+git status --short --branch
 git pull --ff-only origin main
 ```
 
-- `git status --short` shows uncommitted source changes. Check these before updating.
+- `git status --short --branch` shows the branch and local changes. Continue on a clean `main` branch.
 - `git pull --ff-only origin main` downloads and advances your checkout to the remote main branch when it can do so without creating a merge. Preserve your private configuration and resolve any conflicting local edits first. This updates source files without rebuilding Docker.
 
-**If Start-Here references `vidstream-starter:local`**, build the current checkout and apply it to the existing service.
-
-```sh
-docker build --pull -t vidstream-starter:local .
-docker compose up -d --pull never --wait stream
-```
-
-The build refreshes the configured base image and writes local image layers under the starter's tag. The second command applies the image and waits for health. It can briefly interrupt access and reuses the configured mounts and volumes.
+**If Start-Here references `vidstream-starter:local`**, open the launcher
+from this freshly updated checkout and choose **Update VidStream**. That
+builds the fetched commit if needed, records its revision in the image, and
+starts the service with its saved storage. Keep using either the launcher or
+**Settings → Updates** for future releases.
 
 **If Start-Here references a published image**, run `docker compose pull stream` to fetch that tag, then `docker compose up -d --pull never --wait stream` to apply it. A private image may require Docker Hub authentication. A commit-specific tag remains on that commit until you change the tag in the generated configuration. [Docker Hub guide](DOCKER_HUB.md)
 
 **For a manual build**, run `docker compose -f docker-compose.yml up -d --build --wait stream` with your existing overlays. It rebuilds and applies the current checkout while reusing persistent state. Reload the gallery and verify the default folder, switching and video playback. See the [usage guide](USAGE.md).
+
+**For native Node.js**, stop the active server cleanly before updating the
+source. Restart it through its existing service manager or your original
+native start command with the same data, cache and media paths. **For a ZIP
+installation**, obtain the new release source in a separate folder first.
+Keep the persistent state and generated configuration from the original
+installation, including relative paths that depend on their location.
+[Storage guide](PORTABLE_CACHE.md)
 
 ## Optional Docker configuration
 

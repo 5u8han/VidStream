@@ -56,7 +56,8 @@
         video._previewAttempt = null;
         video.pause();
         if (!inView.has(tile)) {
-          if (tile.isConnected && video.readyState >= 2 && (video._previewMemoryKey || video.getAttribute('src')) === tile._item.urls.preview) {
+          if (tile.isConnected && video.readyState >= 2 &&
+              (video._previewMemoryKey || video.getAttribute('src')) === (video._previewClipUrl || tile._item.urls.preview)) {
             warm.delete(tile);
             warm.add(tile);
             trimWarm();

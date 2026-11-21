@@ -7,8 +7,8 @@
   'use strict';
 
   function create({
-    budget = 64 * 1024 * 1024,
-    maximumClip = 4 * 1024 * 1024,
+    budget = 1024 ** 3,
+    maximumClip = 16 * 1024 * 1024,
     maximumTransfers = 4,
     timeout = 2500,
     request = fetch,
@@ -43,7 +43,7 @@
         var length = Number(response.headers.get('Content-Length'));
         var type = response.headers.get('Content-Type');
         if (response.status !== 200 || type !== 'video/mp4' ||
-            !Number.isSafeInteger(length) || length <= 0 || length > maximumClip || !response.body) {
+            !Number.isSafeInteger(length) || length <= 0 || length > Math.min(maximumClip, budget) || !response.body) {
           controller.abort();
           return null;
         }
@@ -69,6 +69,7 @@
     }
 
     async function acquire(key) {
+      if (!budget) return null;
       var entry = clips.get(key), transfer = downloads.get(key);
       if (entry) hits++;
       else {
@@ -110,11 +111,18 @@
       for (var [key, entry] of clips) remove(key, entry);
     }
 
+    function setBudget(next) {
+      if (!Number.isSafeInteger(next) || next < 0) throw new RangeError('Invalid preview memory budget');
+      budget = next;
+      if (!budget || bytes > budget) clear();
+    }
+
     return {
       acquire,
       discard,
       clear,
-      stats: () => ({ clips: clips.size, bytes, hits, downloads: downloads.size })
+      setBudget,
+      stats: () => ({ clips: clips.size, bytes, limitBytes: budget, hits, downloads: downloads.size })
     };
   }
 

@@ -7,7 +7,7 @@ Keep application storage outside the media folders.
 
 | Path | Contents |
 | --- | --- |
-| `vidstream-local/data/` | Library database, passphrase, settings, node identity, favorites, viewing history and playback positions |
+| `vidstream-local/data/` | Library database, hashed local passphrase and session secret, settings, node identity, favorites, viewing history and playback positions |
 | `vidstream-local/cache/` | Ready thumbnails, posters, optimized video previews, compatible playback copies and viewed source ranges |
 | `vidstream-local/originals/` | The app's configured archive volume |
 | Your selected media folders | Source media and any originals archived beside the sources by editing or the audit |
@@ -32,6 +32,12 @@ and outside the source library.
 An optimized preview can be fetched from the host cache even after a browser
 drops its local copy. With **Original** preview mode or the full player,
 uncached portions of a source still have to be read from the attached drive.
+For long-video timelines, later clips are encoded one at a time as viewers
+reach them. The opening preview and existing catalog can be reused across the
+update. Timeline clips have their own retention target of 8 GiB on disk or
+2 GiB in RAM snapshot mode. Set `VIDEO_TIMELINE_CACHE_MIB` to change this
+target (up to 64 GiB). A smaller overall disk-cache limit or half of the
+runtime tmpfs capacity can reduce the effective target.
 VidStream remembers viewed source blocks on the host. It opens and checks the
 source before reusing blocks, so the drive may still show metadata activity.
 The cache stops adding viewed blocks when about 1 GiB of disk space remains.
@@ -40,11 +46,13 @@ An import or rescan reads the source independently of playback. To distinguish
 these, check **Dashboard → Scan activity** and compare the browser's network
 requests for `/preview` and `/original`.
 
-**View → Video previews → Keep recent previews in memory** is
-an optional browser setting. It keeps up to 64 MiB of optimized clips in the
-current tab, so scrolling back can reuse their bytes without a LAN request.
-It first downloads the complete short clip. Busy transfers and larger clips
-fall back to ordinary streaming. Closing the tab releases these copies.
+**View → Video previews → Browser preview memory** lets you choose Off,
+256 MiB, 512 MiB, 1 GiB or 2 GiB for recent clips in the current tab.
+This can avoid another LAN request when scrolling back. A previously
+enabled memory cache and a new browser start at 1 GiB. An existing Off
+choice stays off. The tab downloads a complete clip
+when it fits, with up to 16 MiB per clip. Busy or slower transfers can use
+ordinary streaming. Closing the tab releases these copies.
 
 ## Move to another host
 
@@ -70,6 +78,11 @@ fall back to ordinary streaming. Closing the tab releases these copies.
    can invalidate cached blocks and trigger a new scan. Catalog records and
    derivatives for files with unchanged sizes and modification times can
    still be reused.
+
+On a guided Git installation, the destination launcher also connects the
+update helper for that host. Its private `.vidstream-updater/` holds pending
+requests and status for the local Docker engine. Leave that directory on
+the old machine when transferring the library.
 
 ## Manual Compose
 

@@ -1,4 +1,5 @@
 #Requires -Version 5.1
+param([switch]$UpdateOnly)
 
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -ge 7) { $PSNativeCommandUseErrorActionPreference = $false }
@@ -67,6 +68,7 @@ function Assert-LocalDockerContext {
         $endpoint = & $script:docker context inspect --format '{{.Endpoints.docker.Host}}' $context
         if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the current Docker context.' }
     }
+    $script:selectedDockerEndpoint = [string]$endpoint
     if ([string]$endpoint -notmatch '^npipe:/+\./pipe/[^/\\]+$') {
         throw 'Select a local Docker Desktop context before using folders on this computer.'
     }
@@ -240,6 +242,32 @@ function Read-DeploymentSettings([int]$memory, [int]$swap, [string]$bind, [strin
     return @{ memory = "$memory"; swap = "$swap"; bind = $bind; address = $address; port = "$port"; url = $url }
 }
 
+function Build-RevisionImage([string]$image, [string]$revision, [string]$gitPath) {
+    $archive = [IO.Path]::GetTempFileName()
+    try {
+        & $gitPath -C $PSScriptRoot archive --format=tar "--output=$archive" $revision
+        if ($LASTEXITCODE -ne 0) { throw 'Could not export the selected commit for Docker.' }
+        $arguments = @('build', '--pull', '--build-arg', "VIDSTREAM_REVISION=$revision",
+            '--label', "org.opencontainers.image.revision=$revision", '--tag', $image, '-')
+        $null = Invoke-StorageDocker $arguments ([IO.File]::ReadAllBytes($archive)) -1
+    } finally { Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue }
+}
+
+function Build-CheckoutImage([string]$image) {
+    $git = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($git -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.git'))) {
+        $changes = @(& $git.Source -C $PSScriptRoot status --porcelain)
+        if ($LASTEXITCODE -eq 0 -and -not $changes.Count) {
+            $revision = & $git.Source -C $PSScriptRoot rev-parse --verify 'HEAD^{commit}'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not identify the source revision.' }
+            Build-RevisionImage $image $revision $git.Source
+            return
+        }
+    }
+    & $script:docker build --pull --tag $image $PSScriptRoot
+    if ($LASTEXITCODE -ne 0) { throw 'The VidStream image build failed.' }
+}
+
 function Start-FirstTimeSetup {
     $shippedCompose = Join-Path $PSScriptRoot 'docker-compose.yml'
     foreach ($name in @('compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml')) {
@@ -286,8 +314,7 @@ function Start-FirstTimeSetup {
     if (-not $env:VIDSTREAM_IMAGE -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'Dockerfile') -PathType Leaf)) {
         $image = 'vidstream-starter:local'
         Write-Host 'Building VidStream from this checkout.'
-        & $script:docker build --pull --tag $image $PSScriptRoot
-        if ($LASTEXITCODE -ne 0) { throw 'The VidStream image build failed.' }
+        Build-CheckoutImage $image
     } else {
         Write-Host "Fetching $image..."
         & $script:docker pull $image
@@ -330,6 +357,7 @@ function Start-FirstTimeSetup {
     } finally { Remove-Item -LiteralPath $draft -Force -ErrorAction SilentlyContinue }
 
     Assert-LocalDockerContext
+    Enable-HostUpdater $image
     Write-Host "Starting VidStream at $url"
     Invoke-StarterCompose $composeFile @('up', '-d', '--pull', 'never')
     if ($LASTEXITCODE -ne 0) {
@@ -574,13 +602,135 @@ function Start-ExistingVidStream {
                 throw 'Build or load the VidStream image before starting the saved project.'
             }
             Write-Host 'Building the missing local image from this checkout.'
-            & $script:docker build --pull --tag $images[0] $PSScriptRoot
-            if ($LASTEXITCODE -ne 0) { throw 'The VidStream image build failed.' }
+            Build-CheckoutImage $images[0]
         }
     }
+    Enable-HostUpdater $images[0]
     Invoke-StarterCompose $composeFile @('up', '-d', '--pull', 'never', '--wait', 'stream') | Out-Host
     if ($LASTEXITCODE -ne 0) { throw 'Could not start the saved project. Make sure its image and media mount paths are available.' }
     Write-Host "Started VidStream with its saved settings at $composeFile."
+}
+
+function Enable-HostUpdater([string]$image) {
+    if ($env:VIDSTREAM_HELPER_CHILD -eq '1' -or $image -ne 'vidstream-starter:local' -or
+        -not (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.git'))) { return }
+    $python = $null
+    foreach ($name in @('py.exe', 'python.exe')) {
+        $launcher = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $launcher) { continue }
+        $pythonArgs = @('-c', 'import sys; print(sys.executable) if sys.version_info >= (3, 8) else sys.exit(1)')
+        if ($name -eq 'py.exe') { $pythonArgs = @('-3') + $pythonArgs }
+        try { $found = & $launcher.Source @pythonArgs 2>$null } catch { continue }
+        if ($LASTEXITCODE -eq 0 -and $found -and [IO.File]::Exists($found)) { $python = $found; break }
+    }
+    if (-not $python) {
+        Write-Host 'In-app updates need Python 3.8+ on this host. Start-Here updates remain available.'
+        return
+    }
+    $mailbox = Join-Path $setupDirectory '.vidstream-updater'
+    [IO.Directory]::CreateDirectory($mailbox) | Out-Null
+    if ((Get-Item -LiteralPath $mailbox -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw 'The updater folder must be a real directory.'
+    }
+    $acl = [Security.AccessControl.DirectorySecurity]::new()
+    $acl.SetAccessRuleProtection($true, $false)
+    $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $acl.SetOwner($owner)
+    foreach ($sid in @($owner, [Security.Principal.SecurityIdentifier]::new('S-1-5-18'))) {
+        $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid, 'FullControl',
+            'ContainerInherit, ObjectInherit', 'None', 'Allow'))
+    }
+    Set-Acl -LiteralPath $mailbox -AclObject $acl
+    Assert-PlainComposeFile
+    $fingerprint = (Get-FileHash -LiteralPath $composeFile -Algorithm SHA256).Hash
+    $original = [IO.File]::ReadAllBytes($composeFile)
+    $editor = Join-Path $PSScriptRoot 'scripts\setup-compose.js'
+    $yaml = Invoke-ComposeEditor $image $editor @('--enable-updater') $original
+    if ($yaml -cne $utf8.GetString($original)) {
+        $draft = Write-ValidatedDraft $yaml
+        try {
+            Assert-PlainComposeFile
+            if ((Get-FileHash -LiteralPath $composeFile -Algorithm SHA256).Hash -ne $fingerprint) {
+                throw 'The Compose file changed while attaching in-app updates. Reopen Start-Here.'
+            }
+            [IO.File]::Replace($draft, $composeFile, [NullString]::Value)
+        } finally { Remove-Item -LiteralPath $draft -Force -ErrorAction SilentlyContinue }
+    }
+    $helper = Join-Path $PSScriptRoot 'scripts\update-helper.py'
+    & $python $helper --source $PSScriptRoot --install $setupDirectory --docker $script:docker --endpoint $script:selectedDockerEndpoint --detach
+    if ($LASTEXITCODE -ne 0) { Write-Warning 'Could not start the host helper. Start-Here updates remain available.' }
+}
+
+function Update-ExistingVidStream {
+    $git = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $git) { throw 'Install Git to update a VidStream checkout.' }
+    $top = & $git.Source -C $PSScriptRoot rev-parse --show-toplevel
+    if ($LASTEXITCODE -ne 0 -or [IO.Path]::GetFullPath($top) -ne [IO.Path]::GetFullPath($PSScriptRoot)) {
+        throw 'Open Start-Here from the root of your VidStream Git checkout.'
+    }
+    $branch = & $git.Source -C $PSScriptRoot symbolic-ref --quiet --short HEAD
+    if ($LASTEXITCODE -ne 0 -or $branch -cne 'main') { throw 'Switch this checkout to main before updating.' }
+    $remote = & $git.Source -C $PSScriptRoot remote get-url origin
+    if ($LASTEXITCODE -ne 0 -or $remote -notmatch '^(https://github\.com/|git@github\.com:|ssh://git@github\.com/)5u8han/VidStream(\.git)?$') {
+        throw 'Automatic updates require the official 5u8han/VidStream GitHub origin.'
+    }
+    $changes = @(& $git.Source -C $PSScriptRoot status --porcelain --untracked-files=no)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not check the checkout for local changes.' }
+    if ($changes.Count) { throw 'Save your tracked source edits before using the updater.' }
+    Initialize-ExistingProject
+    $fingerprint = (Get-FileHash -LiteralPath $composeFile -Algorithm SHA256).Hash
+    $images = @(Invoke-StarterCompose $composeFile @('config', '--images', 'stream'))
+    if ($LASTEXITCODE -ne 0 -or $images.Count -ne 1 -or $images[0] -ne 'vidstream-starter:local') {
+        throw 'The updater supports starter installations built from this checkout. Update your saved registry or custom image separately.'
+    }
+    $image = $images[0]
+    Write-Host 'Checking GitHub main for updates.'
+    & $git.Source -C $PSScriptRoot fetch --no-tags --no-recurse-submodules origin '+refs/heads/main:refs/remotes/origin/main'
+    if ($LASTEXITCODE -ne 0) { throw 'Could not fetch GitHub main. The existing service is still available.' }
+    $branch = & $git.Source -C $PSScriptRoot symbolic-ref --quiet --short HEAD
+    if ($LASTEXITCODE -ne 0 -or $branch -cne 'main') {
+        throw 'The checked-out branch changed during the update. Switch to main and try again.'
+    }
+    $current = & $git.Source -C $PSScriptRoot rev-parse HEAD
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read the current commit.' }
+    $target = & $git.Source -C $PSScriptRoot rev-parse --verify 'refs/remotes/origin/main^{commit}'
+    if ($LASTEXITCODE -ne 0) { throw 'Could not verify the fetched GitHub commit.' }
+    & $git.Source -C $PSScriptRoot merge-base --is-ancestor $current $target
+    if ($LASTEXITCODE -ne 0) { throw 'Local main is ahead of or has diverged from GitHub main. Resolve it before updating.' }
+    if ($target -ne $current) {
+        & $git.Source -C $PSScriptRoot -c merge.autostash=false merge --ff-only --no-overwrite-ignore $target
+        if ($LASTEXITCODE -ne 0) { throw 'Could not fast-forward safely. Review the Git error above.' }
+    }
+
+    $short = $target.Substring(0, 12)
+    $running = @(Invoke-StarterCompose $composeFile @('ps', '-q', '--status', 'running', 'stream'))
+    if ($LASTEXITCODE -ne 0 -or $running.Count -gt 1) { throw 'Could not identify the running service.' }
+    if ($running.Count -eq 1) {
+        $state = & $script:docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' $running[0]
+        if ($LASTEXITCODE -ne 0) { throw 'Could not verify the running service.' }
+        if ($state -in @("$target healthy", "$target running")) {
+            Write-Host "VidStream is already running the latest build ($short). To reconnect in-app updates, choose Start existing VidStream."
+            return
+        }
+    }
+    try {
+        $revision = (Invoke-StorageDocker @('image', 'inspect', '--format', '{{index .Config.Labels "org.opencontainers.image.revision"}}', $image) ([byte[]]@())).Trim()
+    } catch { $revision = '' }
+    if ($revision -ne $target) {
+        Write-Host "Building VidStream $short. The running service stays up during the build."
+        try { Build-RevisionImage $image $target $git.Source }
+        catch { throw "The new image did not build. The running container was kept. Retry Update VidStream to build the fetched version again.`n$($_.Exception.Message)" }
+    }
+
+    Assert-PlainComposeFile
+    if ((Get-FileHash -LiteralPath $composeFile -Algorithm SHA256).Hash -ne $fingerprint) {
+        throw 'The Compose file changed during the update. Reopen Start-Here to apply the current settings.'
+    }
+    Enable-HostUpdater $image
+    Write-Host 'Applying the update with your saved Compose file and media mounts.'
+    Invoke-StarterCompose $composeFile @('up', '-d', '--pull', 'never', '--wait', 'stream') | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw 'The image built, but the updated service did not become healthy. Check its logs in Docker. Your saved configuration and storage remain in place.' }
+    Write-Host "Updated VidStream to $short."
 }
 
 function Prepare-PortableMove {
@@ -670,6 +820,7 @@ try {
     }
     $composeFile = Join-Path $setupDirectory 'compose.yaml'
     $portableDirectory = Join-Path $setupDirectory 'vidstream-local'
+    if ($UpdateOnly) { Invoke-LockedLifecycle { Update-ExistingVidStream }; exit 0 }
     Write-Host 'VidStream'
     Write-Host '  1. First-time setup'
     Write-Host '  2. Add a media folder (server only)'
@@ -677,14 +828,16 @@ try {
     Write-Host '  4. Stop VidStream'
     Write-Host '  5. Prepare storage to move'
     Write-Host '  6. Configure memory and access'
+    Write-Host '  7. Update VidStream'
     Write-Host '  Q. Quit'
-    do { $action = Read-Host 'Choose an option [1-6/Q]' } until ($action -match '^[1-6q]$')
+    do { $action = Read-Host 'Choose an option [1-7/Q]' } until ($action -match '^[1-7q]$')
     if ($action -eq '1') { Start-FirstTimeSetup }
     if ($action -eq '2') { Add-MediaFolder }
     if ($action -eq '3') { Invoke-LockedLifecycle { Start-ExistingVidStream } }
     if ($action -eq '4') { Invoke-LockedLifecycle { Initialize-ExistingProject -RequireRunning; Stop-ExistingVidStream } }
     if ($action -eq '5') { Invoke-LockedLifecycle { Prepare-PortableMove } }
     if ($action -eq '6') { Invoke-LockedLifecycle { Set-ExistingDeployment } }
+    if ($action -eq '7') { Invoke-LockedLifecycle { Update-ExistingVidStream } }
 } catch {
     [Console]::Error.WriteLine($_.Exception.Message)
     exit 1

@@ -56,6 +56,7 @@ jobs:
             platform="linux/$arch"
             image="vidstream-image-check:$arch"
             docker buildx build --pull --platform "$platform" --load --tag "$image" \
+              --build-arg "VIDSTREAM_REVISION=$TESTED_SHA" \
               --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
               --label "org.opencontainers.image.revision=$TESTED_SHA" .
 

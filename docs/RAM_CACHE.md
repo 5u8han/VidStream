@@ -33,6 +33,14 @@ STREAM_CACHE_STOP_GRACE=5m
 STREAM_CACHE_COLD_START=0
 ```
 
+For a large host, `STREAM_RAM_CACHE_SIZE=34359738368` sets a 32 GiB
+runtime cache. For example, a 128 GiB host could pair that with
+`STREAM_MEM_LIMIT=80g` and `VIDEO_TIMELINE_CACHE_MIB=8192`. Pass the timeline value
+in the service environment for guided Compose. Manual Compose already takes
+values from its `.env` file. Allow space for the cache snapshot on the SSD.
+VidStream subtracts the mounted tmpfs capacity from its scan worker memory
+budget, leaving the remainder for catalog work and encoders.
+
 The overlay defaults to these values. Its equal memory/swap limits prevent container swap allowance, but Docker Desktop's VM or the host itself can still swap. It is therefore an in-memory filesystem, not a guarantee that every byte always stays in physical RAM. `tmpfs` usage counts toward the container memory limit. The tmpfs limit is a ceiling, not memory reserved at startup. See [Docker tmpfs mounts](https://docs.docker.com/engine/storage/tmpfs/) and [Docker memory limits](https://docs.docker.com/engine/containers/resource_constraints/#memory).
 
 If the saved cache cannot fit in available runtime storage, startup fails before partially restoring it, leaving the disk snapshot intact. Increase the cache/container/VM allocation together, or use a deliberate cold start. If cache generation later fills tmpfs, derivative writes can fail; existing usable media and durable catalog records remain. A cold start does not make an oversized full library fit indefinitely. Use disk mode for collections larger than the available cache budget.
