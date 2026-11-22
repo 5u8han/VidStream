@@ -197,21 +197,23 @@
     bar.setAttribute('aria-label', 'Settings sections');
     var sections = new Map(), active;
     function select(name, focus) {
-      var section = sections.get(name) || sections.get('preferences');
+      var section = sections.get(name) || sections.get('gallery');
       if (!section) return;
       if (active === section) return;
-      if (active?.initialize) {
+      if (active?.initialize && !active.keep) {
         active.pane.replaceChildren();
         active.loaded = false;
       }
       active = section;
+      current.scrollTop = 0;
       sections.forEach(function (entry) {
         var selected = entry === active;
         entry.pane.hidden = !selected;
         entry.tab.tabIndex = selected ? 0 : -1;
         entry.tab.setAttribute('aria-selected', String(selected));
       });
-      if (focus) section.tab.focus();
+      if (focus) section.tab.focus({ preventScroll: true });
+      if (bar.scrollWidth > bar.clientWidth) bar.scrollLeft += section.tab.getBoundingClientRect().left - bar.getBoundingClientRect().left - (bar.clientWidth - section.tab.offsetWidth) / 2;
       if (!section.loaded && section.initialize) {
         section.loaded = true;
         var pane = node('div', undefined, section.pane, 'settings-tool-body');
@@ -224,7 +226,7 @@
         });
       }
     }
-    function add(id, label, initialize) {
+    function add(id, label, initialize, keep) {
       var tab = button(label, bar, function () { select(id, true); });
       tab.id = 'settings-tab-' + id;
       tab.setAttribute('role', 'tab');
@@ -236,7 +238,7 @@
       pane.setAttribute('role', 'tabpanel');
       pane.setAttribute('aria-labelledby', tab.id);
       pane.hidden = true;
-      sections.set(id, { tab: tab, pane: pane, initialize: initialize });
+      sections.set(id, { tab: tab, pane: pane, initialize: initialize, keep: keep });
       return pane;
     }
     bar.addEventListener('keydown', function (event) {
@@ -249,8 +251,48 @@
       event.preventDefault();
       select(names[index], true);
     });
+    function categoryGesture(target) {
+      return target.closest('[role="tabpanel"]') &&
+        !target.closest('input, select, textarea, button, a, pre, [contenteditable], [data-no-swipe]');
+    }
+    function step(direction) {
+      var entries = Array.from(sections.entries());
+      var index = entries.findIndex(function (entry) { return entry[1] === active; });
+      var next = entries[index + direction];
+      if (next) select(next[0], true);
+    }
+    var touch;
+    parent.addEventListener('touchstart', function (event) {
+      touch = null;
+      if (event.touches.length !== 1 || !categoryGesture(event.target)) return;
+      var point = event.touches[0];
+      if (point.clientX < 20 || point.clientX > innerWidth - 20) return;
+      touch = { x: point.clientX, y: point.clientY, id: point.identifier };
+    }, { passive: true });
+    parent.addEventListener('touchcancel', function () { touch = null; }, { passive: true });
+    parent.addEventListener('touchend', function (event) {
+      var start = touch;
+      touch = null;
+      if (!start || event.touches.length) return;
+      var point = Array.from(event.changedTouches).find(function (item) { return item.identifier === start.id; });
+      if (!point) return;
+      var dx = point.clientX - start.x, dy = point.clientY - start.y;
+      if (Math.abs(dx) >= 65 && Math.abs(dx) > Math.abs(dy) * 2) step(dx < 0 ? 1 : -1);
+    }, { passive: true });
+    var wheelTime = 0, travel = 0, stepped = false;
+    parent.addEventListener('wheel', function (event) {
+      if (event.ctrlKey || !categoryGesture(event.target) || !event.deltaX ||
+          Math.abs(event.deltaX) <= Math.abs(event.deltaY) * 2) return;
+      var now = performance.now();
+      if (now - wheelTime > 240) { travel = 0; stepped = false; }
+      wheelTime = now;
+      if (event.cancelable) event.preventDefault();
+      if (stepped) return;
+      travel += event.deltaX * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? parent.clientWidth : 1);
+      if (Math.abs(travel) >= 80) { stepped = true; step(travel > 0 ? 1 : -1); }
+    }, { passive: false });
     function refresh() {
-      if (!active?.initialize) return;
+      if (!active?.initialize || active.keep) return;
       var name = Array.from(sections.keys()).find(function (id) { return sections.get(id) === active; });
       active.pane.replaceChildren();
       active.loaded = false;
@@ -428,11 +470,12 @@
     owner.addEventListener('close', function () { clearTimeout(timer); }, { once: true });
     await refresh();
   }
-  async function open(section) {
+  async function open(section, origin) {
     if (!config.isAdmin) return;
     var event = typeof section === 'object' ? section : null;
-    var anchor = event?.currentTarget?.closest('button') || settingsTrigger();
-    var requested = typeof section === 'string' ? section : 'preferences';
+    var anchor = origin || event?.currentTarget?.closest('button') || settingsTrigger();
+    var requested = typeof section === 'string' ? section : 'gallery';
+    if (requested === 'preferences') requested = 'gallery';
     if (dialog?.open) {
       if (typeof section === 'string') dialog._tabs.select(requested, true);
       else closeSettings(dialog);
@@ -442,16 +485,18 @@
     if (!body) return;
     var current = dialog;
     var tabsMenu = current._tabs = tabs(body);
-    var preferences = tabsMenu.add('preferences', 'Preferences');
-    var grid = node('div', undefined, preferences, 'settings-card-grid');
-    var appearance = card(grid, 'Appearance');
+    var gallery = tabsMenu.add('gallery', 'Gallery');
+    var playback = tabsMenu.add('playback', 'Playback');
+    var playerCards = node('div', undefined, playback, 'settings-card-grid view-panel');
+    adapter.mountGalleryControls(gallery, playerCards);
+    var appearance = card(gallery, 'Appearance');
     choices(appearance, 'Theme', [
       ['system', 'System'], ['light-table', 'Light', '#a83831'], ['darkroom', 'Dark', '#c1443c'],
       ['golden-hour', 'Warm', '#d68c33'], ['contact-sheet', 'Cool', '#2f4c6b']
     ], read('stream-theme', config.defaultTheme || 'system'), function (value) { adapter.theme?.(value); }, 'settings-theme-choices');
     choices(appearance, 'Animations and effects', [['off', 'Off'], ['subtle', 'Subtle'], ['full', 'Full']], read('stream-effects', document.documentElement.dataset.effects || 'full'), function (value) { adapter.effects?.(value); });
     node('p', 'Choose Off to disable interface animations and visual effects on this browser.', appearance, 'settings-footnote');
-    var player = card(grid, 'Video player');
+    var player = card(playerCards, 'Video player');
     var blurLabel = node('label', undefined, player, 'settings-slider-label');
     node('span', 'Viewer background blur', blurLabel);
     var blurValue = node('output', '', blurLabel);
@@ -464,37 +509,19 @@
     blur.oninput = function () { paintBlur(); adapter.viewerBlur?.(blur.value); };
     toggle(player, 'Show Stats for nerds in video player', 'Resolution, frame rate and playback details.', read('stream-video-stats', '0') === '1', function (value) { adapter.videoStats?.(value); });
 
-    var library = card(grid, 'Library');
-    var tracking = toggle(library, 'Record media activity', 'Save intentional hovers, opens, and viewing activity. Playback position is saved separately.', config.tracking !== false, async function (value) {
-      await api('/api/settings', { tracking: value }, current);
-      window.StreamActivity?.setEnabled(value);
-      message(value ? 'Viewing history is on.' : 'Viewing history is off.', false, current);
-    });
-    tracking.disabled = true;
-    var pending = window.StreamActivity?.pending() || 0;
-    var loadNote = node('p', 'Loading library settings…', library, 'settings-footnote');
-    if (pending) node('p', pending + ' activity records waiting to sync from this browser.', library, 'settings-footnote');
-    var retry = button('Retry library settings', library, function () { return hydrate(); }, 'settings-small-button'); retry.hidden = true;
-    var access = card(grid, 'Account');
-    var account = node('p', 'Loading account…', access, 'settings-footnote');
-    button('Sign out', access, function () { return window.StreamSignOut(); }, 'settings-signout');
-    tabsMenu.add('folders', 'Folders', function (pane) {
-      if (window.StreamFolders) return window.StreamFolders.settings(pane);
-      node('p', 'Folder controls could not load. Reload the page to try again.', pane);
-    });
-    tabsMenu.add('scanning', 'Scan scheduling', function (pane) { return scanning(pane, current); });
-    tabsMenu.add('updates', 'Updates', function (pane) { return updates(pane, current); });
-    if (config.features?.nodes || window.StreamNodes) {
-      tabsMenu.add('nodes', 'Nodes', function (pane) {
-        if (window.StreamNodes) return window.StreamNodes.settings(pane);
-        node('p', 'Library connections could not load. Reload the page to try again.', pane);
-      });
+    tabsMenu.add('folders', 'Host & folders', function (pane) {
+      var hostArea = node('div', undefined, pane);
+      var mountArea = node('div', undefined, pane);
+      window.StreamHostSettings.mount(hostArea, current);
+      return window.StreamFolders.settings(mountArea);
+    }, true);
+    if (window.StreamNodes) {
+      tabsMenu.add('nodes', 'Nodes', function (pane) { return window.StreamNodes.settings(pane); });
     }
-    tabsMenu.add('maintenance', 'Library tools', function (pane) {
-      if (window.StreamLibraryTools?.maintenance) return window.StreamLibraryTools.maintenance(pane);
-      node('p', 'Library tools could not load. Reload the page to try again.', pane);
-    });
-    tabsMenu.add('history', 'History', function (pane) {
+    tabsMenu.add('scanning', 'Indexing', function (pane) { return scanning(pane, current); }, true);
+    tabsMenu.add('maintenance', 'Storage & backup', function (pane) { return window.StreamLibraryTools.maintenance(pane); });
+    tabsMenu.add('updates', 'Updates', function (pane) { return updates(pane, current); });
+    var activity = tabsMenu.add('history', 'Account & history', function (pane) {
       var list = node('div', undefined, pane, 'settings-activity-list'), cursor = null, loaded = false;
       var more = button('Load more activity', pane, async function () {
         var page = await api('/api/activity' + (cursor ? '?before=' + encodeURIComponent(cursor) : ''), undefined, current);
@@ -508,7 +535,22 @@
         loaded = true; cursor = page.next; more.disabled = !cursor; more.hidden = !cursor;
       }, 'settings-small-button');
       more.click();
+    }, true);
+    var accountGrid = node('div', undefined, activity, 'settings-card-grid');
+    var library = card(accountGrid, 'Viewing history');
+    var tracking = toggle(library, 'Record media activity', 'Save intentional hovers, opens, and viewing activity. Playback position is saved separately.', config.tracking !== false, async function (value) {
+      await api('/api/settings', { tracking: value }, current);
+      window.StreamActivity?.setEnabled(value);
+      message(value ? 'Viewing history is on.' : 'Viewing history is off.', false, current);
     });
+    tracking.disabled = true;
+    var pending = window.StreamActivity?.pending() || 0;
+    var loadNote = node('p', 'Loading library settings…', library, 'settings-footnote');
+    if (pending) node('p', pending + ' activity records waiting to sync from this browser.', library, 'settings-footnote');
+    var retry = button('Retry library settings', library, function () { return hydrate(); }, 'settings-small-button'); retry.hidden = true;
+    var access = card(accountGrid, 'Sign-in');
+    var account = node('p', 'Loading account…', access, 'settings-footnote');
+    button('Sign out', access, function () { return window.StreamSignOut(); }, 'settings-signout');
     var loaded = false, loading = false;
     async function hydrate() {
       if (loading || loaded) return;
@@ -520,7 +562,7 @@
         tracking.checked = data.tracking !== false; tracking.disabled = false;
         window.StreamActivity?.setEnabled(data.tracking !== false);
         account.textContent = data.security?.mode || 'Passphrase sign-in';
-        loadNote.textContent = 'History stays with this server, across devices and updates.';
+        loadNote.textContent = 'History stays with this server across devices and updates.';
       } catch (error) {
         if (error.name !== 'AbortError') {
           loadNote.textContent = 'Library settings could not load. Your browser controls still work.';
@@ -534,7 +576,7 @@
       void hydrate();
       tabsMenu.refresh();
     };
-    tabsMenu.select(requested, requested !== 'preferences');
+    tabsMenu.select(requested, requested !== 'gallery');
     await hydrate();
   }
   function savePending() { try { localStorage.setItem('stream-ui-pending', JSON.stringify(pendingUI)); } catch (_) {} }
@@ -565,7 +607,12 @@
     }
   }, true);
   window.StreamSettings = {
-    open: function (section) { void open(section).catch(function (error) { message(error.message, true); }); },
+    dismissThen: function (action) {
+      if (!dialog?.open) return action();
+      dialog.addEventListener('close', action, { once: true });
+      closeSettings(dialog);
+    },
+    open: function (section, origin) { void open(section, origin).catch(function (error) { message(error.message, true); }); },
     preference: preference,
     init: function (value) { adapter = value; }
   };

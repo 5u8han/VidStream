@@ -67,7 +67,12 @@ ordinary streaming. Closing the tab releases these copies.
    stopped while copying. On Linux, the directory may contain files owned
    by the container user and require administrator access to copy. On Windows,
    use a checkout in a private user directory so its inherited permissions
-   protect the cache and passphrase data.
+   protect the cache and passphrase data. Leave the host control mailbox
+   (`.vidstream-updater/`), its locks and the host folder grants
+   (`.vidstream-media-roots.json`) on the source. Start-Here creates a private
+   mailbox at the destination even when Python is unavailable or Docker needs
+   sudo. The gallery works in that mode. Use option 8 on the destination to
+   grant any additional folders to its web picker when host controls are enabled.
 3. Mount or move your original media separately. In the copied Compose file,
    adjust media bind **sources** to the new host paths. Keep the container
    paths and mount names unchanged so the transferred catalog and derivatives

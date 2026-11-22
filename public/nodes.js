@@ -3,7 +3,7 @@
   var app = document.getElementById('app');
   if (!app) return;
   var config = JSON.parse(app.dataset.config || '{}');
-  var snapshot = null, lastError = '', loading = null, subscribers = new Set(), observation = 0;
+  var snapshot = null, subscribers = new Set();
   var homeKey = 'stream-node-home', returnKey = 'stream-node-return';
   var home = '', confirmedHome = '', homeConfirmed = false;
   var fetches = new Set();
@@ -72,7 +72,7 @@
   function notify() { subscribers.forEach(function (fn) { fn(snapshot); }); }
   function accept(value) {
     if (!value || !value.self || !Array.isArray(value.peers) || !Array.isArray(value.nearby)) throw Error('Invalid library directory response');
-    observation++; snapshot = value; lastError = ''; notify(); return value;
+    snapshot = value; notify(); return value;
   }
   async function api(path, body, owner) {
     var controller = new AbortController();
@@ -97,17 +97,6 @@
       if (dialog) dialog.removeEventListener('close', closed);
     }
   }
-  async function readDirectory() {
-    if (!config.isAdmin) return null;
-    if (loading) return loading;
-    var expected = observation;
-    loading = api('/api/nodes').then(function (data) { return expected === observation ? accept(data) : snapshot; })
-      .catch(function (error) {
-        if (expected === observation && error.name !== 'AbortError') { lastError = error.message; notify(); }
-        return null;
-      }).finally(function () { loading = null; });
-    return loading;
-  }
   function returnLink(parent, className) {
     if (!home || home === location.origin) return null;
     var link = text('a', null, parent, className || 'node-return');
@@ -130,111 +119,19 @@
     if (!header || header.querySelector('.node-switcher')) return;
     header.classList.add('has-node-switcher');
     var wrap = text('div', null, header, 'node-switcher');
-    var trigger = action('', wrap, toggle, 'node-trigger');
-    trigger.setAttribute('aria-label', 'Switch node');
+    var trigger = action('', wrap, function () { window.StreamSettings.open('nodes', trigger); }, 'node-trigger');
+    trigger.setAttribute('aria-haspopup', 'dialog');
+    trigger.setAttribute('aria-controls', 'stream-settings');
     trigger.setAttribute('aria-expanded', 'false');
-    trigger.setAttribute('aria-controls', 'node-library-list');
-    var dot = text('span', '●', trigger, 'node-presence'); dot.setAttribute('aria-hidden', 'true');
-    text('span', 'Node', trigger, 'node-trigger-label');
-    var arrow = text('span', '⌄', trigger, 'node-trigger-arrow'); arrow.setAttribute('aria-hidden', 'true');
-    var panel = text('nav', null, wrap, 'node-popover');
-    panel.id = 'node-library-list'; panel.setAttribute('aria-label', 'Libraries');
-    panel.hidden = true; panel.inert = true;
-    var afterClose = null, timer = null;
-    function pollDirectory() {
-      clearTimeout(timer);
-      if (panel.hidden || document.hidden || !wrap.isConnected || !config.isAdmin) return;
-      timer = setTimeout(async function () {
-        await readDirectory();
-        pollDirectory();
-      }, snapshot?.refreshing ? 1500 : 15000);
-    }
-    function close() {
-      clearTimeout(timer);
-      panel.hidden = true; panel.inert = true; trigger.setAttribute('aria-expanded', 'false');
-      document.removeEventListener('click', outside, true);
-      document.removeEventListener('keydown', keydown, true);
-      trigger.focus({ preventScroll: true });
-      if (afterClose) { var next = afterClose; afterClose = null; setTimeout(next, 0); }
-    }
-    function back() { if (window.StreamNavigation?.has('nodes')) window.StreamNavigation.back(); else close(); }
-    function show() {
-      if (!wrap.isConnected) return false;
-      panel.hidden = false; panel.inert = false; trigger.setAttribute('aria-expanded', 'true');
-      panel.style.setProperty('--nodes-top', Math.max(8, header.getBoundingClientRect().bottom + 6) + 'px');
-      document.addEventListener('click', outside, true);
-      document.addEventListener('keydown', keydown, true);
-      render(); panel.querySelector('a,button')?.focus({ preventScroll: true });
-      void readDirectory().finally(pollDirectory);
-    }
-    function toggle(event) {
-      event.stopPropagation();
-      if (!panel.hidden) return back();
-      if (window.StreamNavigation && !window.StreamNavigation.enter('nodes', { back: close, forward: show })) return;
-      show();
-    }
-    function outside(event) {
-      if (wrap.contains(event.target)) return;
-      var next = event.target.closest('.header button');
-      if (next) afterClose = function () {
-        if (!next.isConnected) return;
-        next.focus({ preventScroll: true }); next.click();
-      };
-      event.preventDefault(); event.stopImmediatePropagation(); back();
-    }
-    function keydown(event) {
-      if (event.key === 'Escape' && !document.querySelector('dialog[open]')) {
-        event.preventDefault(); event.stopImmediatePropagation(); back();
-      }
-    }
+    text('span', 'Node', trigger, 'node-kind');
+    var label = text('strong', currentName(), trigger, 'node-trigger-label');
+    text('span', '⌄', trigger, 'node-trigger-arrow').setAttribute('aria-hidden', 'true');
     function render() {
-      if (!wrap.isConnected) { subscribers.delete(render); clearInterval(timer); return; }
-      trigger.title = 'Switch node · ' + currentName();
-      if (panel.hidden) return;
-      var focused = panel.contains(document.activeElement) ? document.activeElement.getAttribute('aria-label') || document.activeElement.textContent : null;
-      panel.replaceChildren();
-      text('p', 'LIBRARIES', panel, 'node-eyebrow');
-      var current = text('div', null, panel, 'node-menu-current');
-      current.setAttribute('aria-current', 'page');
-      text('strong', currentName(), current);
-      text('small', 'This library · ' + location.host, current);
-      var peers = snapshot?.peers || [];
-      peers.forEach(function (peer) {
-        var href = destination(peer.url);
-        if (!href || peer.id === snapshot?.self.id) return;
-        var state = connectionState(peer);
-        var link = text(state.blocked ? 'div' : 'a', null, panel, 'node-menu-link' + (state.blocked ? ' is-blocked' : ''));
-        if (state.blocked) link.setAttribute('aria-disabled', 'true');
-        else { link.href = href; link.rel = 'noopener'; link.setAttribute('aria-label', 'Open ' + peer.name); }
-        text('strong', peer.name, link);
-        text('small', new URL(peer.url).host, link);
-        text('span', state.label, link, 'node-state ' + state.className);
-      });
-      if (!peers.length && config.isAdmin) text('p', snapshot ? 'No other libraries saved yet.' : lastError || 'Loading your libraries…', panel, 'node-help');
-      if (snapshot?.self.role !== 'node' && snapshot?.nearby.length) text('p', snapshot.nearby.length + ' nearby ' + (snapshot.nearby.length === 1 ? 'library' : 'libraries') + ' found. Review them in Settings → Nodes.', panel, 'node-help');
-      returnLink(panel);
-      if (config.isAdmin) {
-        action('Refresh library status', panel, async function (event) {
-          var button = event.currentTarget; button.disabled = true;
-          try { accept(await api('/api/nodes/refresh', {})); pollDirectory(); }
-          catch (error) { if (error.name !== 'AbortError') { lastError = error.message; render(); } }
-          finally { if (button.isConnected) button.disabled = false; }
-        });
-        action('Manage libraries in Settings', panel, function () {
-          afterClose = function () { window.StreamSettings?.open('nodes'); }; back();
-        });
-      }
-      if (home && home !== location.origin && !homeConfirmed) action('Remember this return address', panel, function () {
-        saveHome(home); render(); panel.querySelector('.node-return')?.focus({ preventScroll: true });
-      });
-      action('Make this my starting library', panel, function () { saveHome(location.origin); render(); });
-      if (lastError && peers.length) text('p', lastError, panel, 'node-error');
-      if (focused) Array.from(panel.querySelectorAll('a,button')).find(function (item) { return (item.getAttribute('aria-label') || item.textContent) === focused; })?.focus({ preventScroll: true });
+      label.textContent = currentName();
+      trigger.setAttribute('aria-label', 'Switch node · ' + currentName());
     }
+    render();
     subscribers.add(render);
-    document.addEventListener('visibilitychange', pollDirectory);
-    window.addEventListener('pageshow', pollDirectory);
-    window.addEventListener('pagehide', function () { clearTimeout(timer); });
   }
 
   function mountLocked(parent) {
@@ -289,7 +186,9 @@
         if (url && !rootAddress(url)) throw Error('Enter a complete http:// or https:// address without a path, password, query or fragment.');
         var data = await api('/api/nodes/settings', { name: name.value.trim(), url: url, discoveryEnabled: discovery.checked, role: role.value }, pane);
         if (!alive()) return;
-        accept(data); message('Library settings saved.');
+        accept(data);
+        dialog?.dispatchEvent(new CustomEvent('stream:node-role', { detail: data.self.role }));
+        message('Library settings saved.');
       });
     });
     var manual = text('section', null, pane, 'node-settings-section');
@@ -331,7 +230,16 @@
     }
     addForm.addEventListener('submit', function (event) { event.preventDefault(); void run(check, function () { return checkPeer(otherAddress.value.trim()); }); });
     var savedSection = text('section', null, pane, 'node-settings-section');
-    text('h3', 'Saved libraries', savedSection);
+    pane.prepend(savedSection);
+    text('h3', 'Switch node', savedSection);
+    var homeRow = text('div', null, savedSection, 'node-home-actions');
+    function paintHome() {
+      homeRow.replaceChildren();
+      returnLink(homeRow);
+      if (home && home !== location.origin && !homeConfirmed) action('Remember return address', homeRow, function () { saveHome(home); paintHome(); });
+      if (home !== location.origin || !homeConfirmed) action('Set this as my starting node', homeRow, function () { saveHome(location.origin); paintHome(); });
+    }
+    paintHome();
     text('p', 'Removing a connection keeps all media and data on both machines. Offline libraries stay saved.', savedSection, 'node-help');
     var savedList = text('div', null, savedSection, 'node-peer-list');
     var refresh = action('Refresh library status', savedSection, function () {

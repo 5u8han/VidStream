@@ -60,6 +60,12 @@ New guided installs keep the account, catalog and cache in `vidstream-local/`
 beside the Compose file. Existing installs can move from Docker volumes using
 Start-Here. [Portable storage and migration](PORTABLE_CACHE.md) [Docker bind mount reference](https://docs.docker.com/engine/storage/bind-mounts/)
 
+## Manage a running installation from the browser
+
+Choose **Settings → Host & folders** in the running app. On a guided install, the folder picker shows approved directories on the Docker host. Choose **Allow a directory in the web folder picker** in Start-Here to grant access to another media tree. **Save to compose.yaml** records folder order, memory and network settings, then **Apply and restart** makes them active. The same screen can stop this instance, schedule its next start, or prepare its portable storage for a move. [Host controls and migration](USAGE.md#manage-the-docker-host)
+
+Web controls use a host companion that needs Python and permission to use the local Docker engine. Choose **Start existing VidStream** on the host to connect it after upgrading. You can continue using the launcher directly on machines where the companion is unavailable.
+
 ## Choose memory and network access
 
 For an existing guided installation, choose **Configure memory and access**.
@@ -173,7 +179,7 @@ revision to tell you whether you're current.
 
 After upgrading, open the folder you usually browse, play a video, and check
 **Settings → Updates** for its revision. By default a completed catalog with
-matching media roots reopens from disk. **Settings → Scan scheduling**
+matching media roots reopens from disk. **Settings → Indexing**
 controls whether this host also scans on startup. [Scan behavior](PERFORMANCE.md)
 
 ## Add a folder to an existing setup

@@ -1,5 +1,5 @@
 #Requires -Version 5.1
-param([switch]$UpdateOnly)
+param([switch]$UpdateOnly, [switch]$StopOnly, [switch]$PrepareMove)
 
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -ge 7) { $PSNativeCommandUseErrorActionPreference = $false }
@@ -593,6 +593,27 @@ function Stop-ExistingVidStream {
 
 function Start-ExistingVidStream {
     Initialize-ExistingProject
+    $saved = [IO.File]::ReadAllText($composeFile)
+    if ($saved -match '(?m)^x-vidstream-bootstrap: true\r?$') {
+        if (-not (Test-Path -LiteralPath $portableDirectory)) {
+            $stage = Join-Path $setupDirectory ('.vidstream-portable.' + [guid]::NewGuid().ToString('N'))
+            [IO.Directory]::CreateDirectory($stage) | Out-Null
+            foreach ($name in @('data', 'cache', 'originals')) {
+                [IO.Directory]::CreateDirectory((Join-Path $stage $name)) | Out-Null
+            }
+            [IO.Directory]::Move($stage, $portableDirectory)
+        }
+        foreach ($part in @($portableDirectory, (Join-Path $portableDirectory 'data'), (Join-Path $portableDirectory 'cache'), (Join-Path $portableDirectory 'originals'))) {
+            if (-not [IO.Directory]::Exists($part) -or ((Get-Item -LiteralPath $part -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw 'Restore complete portable storage before starting this exported configuration.'
+            }
+        }
+        $draft = Write-ValidatedDraft ($saved -replace '(?m)^x-vidstream-bootstrap: true\r?\n', '')
+        try {
+            if ([IO.File]::ReadAllText($composeFile) -cne $saved) { throw 'The Compose file changed. Reopen Start-Here.' }
+            [IO.File]::Replace($draft, $composeFile, [NullString]::Value)
+        } finally { Remove-Item -LiteralPath $draft -Force -ErrorAction SilentlyContinue }
+    }
     $images = @(Invoke-StarterCompose $composeFile @('config', '--images', 'stream'))
     if ($LASTEXITCODE -ne 0) { throw 'Could not read the saved image from Docker Compose.' }
     if ($images.Count -eq 1 -and $images[0] -eq 'vidstream-starter:local') {
@@ -611,22 +632,29 @@ function Start-ExistingVidStream {
     Write-Host "Started VidStream with its saved settings at $composeFile."
 }
 
-function Enable-HostUpdater([string]$image) {
-    if ($env:VIDSTREAM_HELPER_CHILD -eq '1' -or $image -ne 'vidstream-starter:local' -or
-        -not (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.git'))) { return }
-    $python = $null
+function Find-HostPython {
     foreach ($name in @('py.exe', 'python.exe')) {
         $launcher = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
         if (-not $launcher) { continue }
         $pythonArgs = @('-c', 'import sys; print(sys.executable) if sys.version_info >= (3, 8) else sys.exit(1)')
         if ($name -eq 'py.exe') { $pythonArgs = @('-3') + $pythonArgs }
         try { $found = & $launcher.Source @pythonArgs 2>$null } catch { continue }
-        if ($LASTEXITCODE -eq 0 -and $found -and [IO.File]::Exists($found)) { $python = $found; break }
+        if ($LASTEXITCODE -eq 0 -and $found -and [IO.File]::Exists($found)) { return $found }
     }
-    if (-not $python) {
-        Write-Host 'In-app updates need Python 3.8+ on this host. Start-Here updates remain available.'
-        return
-    }
+}
+function Grant-WebMediaFolder {
+    Assert-PlainComposeFile
+    $python = Find-HostPython
+    if (-not $python) { throw 'Web installation controls require Python 3.8 or newer.' }
+    Initialize-FolderPicker
+    $folder = Get-ExistingFolder 'Choose a media directory whose subdirectories the signed-in owner may browse and mount'
+    if (-not $folder) { return }
+    & $python (Join-Path $PSScriptRoot 'scripts\host_management.py') --install $setupDirectory --approve $folder
+    if ($LASTEXITCODE -ne 0) { throw 'The folder was not approved.' }
+    Write-Host "Available in the web folder picker: $folder"
+}
+
+function Enable-HostUpdater([string]$image) {
     $mailbox = Join-Path $setupDirectory '.vidstream-updater'
     [IO.Directory]::CreateDirectory($mailbox) | Out-Null
     if ((Get-Item -LiteralPath $mailbox -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
@@ -641,6 +669,12 @@ function Enable-HostUpdater([string]$image) {
             'ContainerInherit, ObjectInherit', 'None', 'Allow'))
     }
     Set-Acl -LiteralPath $mailbox -AclObject $acl
+    if ($image -ne 'vidstream-starter:local' -and $image -notmatch '^(?:docker\.io/)?5u8han/vidstream:[a-zA-Z0-9_.-]+$') { return }
+    $python = Find-HostPython
+    if (-not $python) {
+        Write-Host 'Web installation controls need Python 3.8+ on this host. Start-Here remains available.'
+        return
+    }
     Assert-PlainComposeFile
     $fingerprint = (Get-FileHash -LiteralPath $composeFile -Algorithm SHA256).Hash
     $original = [IO.File]::ReadAllBytes($composeFile)
@@ -657,7 +691,11 @@ function Enable-HostUpdater([string]$image) {
         } finally { Remove-Item -LiteralPath $draft -Force -ErrorAction SilentlyContinue }
     }
     $helper = Join-Path $PSScriptRoot 'scripts\update-helper.py'
-    & $python $helper --source $PSScriptRoot --install $setupDirectory --docker $script:docker --endpoint $script:selectedDockerEndpoint --detach
+    $helperArgs = @('--source', $PSScriptRoot, '--install', $setupDirectory, '--docker', $script:docker, '--endpoint', $script:selectedDockerEndpoint, '--detach')
+    if ($env:VIDSTREAM_HELPER_CHILD -ne '1' -and $image -eq 'vidstream-starter:local' -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.git'))) {
+        & $python $helper @helperArgs
+    }
+    & $python $helper @helperArgs --manage
     if ($LASTEXITCODE -ne 0) { Write-Warning 'Could not start the host helper. Start-Here updates remain available.' }
 }
 
@@ -754,7 +792,7 @@ function Prepare-PortableMove {
     if ([IO.Directory]::Exists($portableDirectory) -or [IO.File]::Exists($portableDirectory)) {
         throw "Storage already exists at $portableDirectory. Move it out of the way before migrating."
     }
-    if ((Read-Host 'Stop VidStream and copy its Docker volumes to the local disk? The old volumes will be kept [y/N]') -notmatch '^(y|yes)$') { return }
+    if (-not $PrepareMove -and (Read-Host 'Stop VidStream and copy its Docker volumes to the local disk? The old volumes will be kept [y/N]') -notmatch '^(y|yes)$') { return }
     $draft = $null
     $stage = $null
     try {
@@ -820,6 +858,8 @@ try {
     }
     $composeFile = Join-Path $setupDirectory 'compose.yaml'
     $portableDirectory = Join-Path $setupDirectory 'vidstream-local'
+    if ($PrepareMove) { Invoke-LockedLifecycle { Prepare-PortableMove }; exit 0 }
+    if ($StopOnly) { Invoke-LockedLifecycle { Initialize-ExistingProject -RequireRunning; Stop-ExistingVidStream }; exit 0 }
     if ($UpdateOnly) { Invoke-LockedLifecycle { Update-ExistingVidStream }; exit 0 }
     Write-Host 'VidStream'
     Write-Host '  1. First-time setup'
@@ -829,14 +869,16 @@ try {
     Write-Host '  5. Prepare storage to move'
     Write-Host '  6. Configure memory and access'
     Write-Host '  7. Update VidStream'
+    Write-Host '  8. Allow a directory in the web folder picker'
     Write-Host '  Q. Quit'
-    do { $action = Read-Host 'Choose an option [1-7/Q]' } until ($action -match '^[1-7q]$')
+    do { $action = Read-Host 'Choose an option [1-8/Q]' } until ($action -match '^[1-8q]$')
     if ($action -eq '1') { Start-FirstTimeSetup }
     if ($action -eq '2') { Add-MediaFolder }
     if ($action -eq '3') { Invoke-LockedLifecycle { Start-ExistingVidStream } }
     if ($action -eq '4') { Invoke-LockedLifecycle { Initialize-ExistingProject -RequireRunning; Stop-ExistingVidStream } }
     if ($action -eq '5') { Invoke-LockedLifecycle { Prepare-PortableMove } }
     if ($action -eq '6') { Invoke-LockedLifecycle { Set-ExistingDeployment } }
+    if ($action -eq '8') { Grant-WebMediaFolder }
     if ($action -eq '7') { Invoke-LockedLifecycle { Update-ExistingVidStream } }
 } catch {
     [Console]::Error.WriteLine($_.Exception.Message)

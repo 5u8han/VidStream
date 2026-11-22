@@ -1,5 +1,6 @@
 'use strict';
 const fs = require('node:fs');
+const { createHash } = require('node:crypto');
 const { isIPv4 } = require('node:net');
 const { posix, win32 } = require('node:path');
 
@@ -31,17 +32,37 @@ function sourceKey(source) {
   return hostPath === win32 ? key.replace(/\\+$/, '').toLowerCase() : key.replace(/\/+$/, '');
 }
 
-function mediaMounts(folders, existing = []) {
+const historyField = 'x-vidstream-folder-names: ';
+
+function sourceHash(source) {
+  return createHash('sha256').update(sourceKey(source)).digest('hex');
+}
+
+function folderHistory(compose) {
+  const rows = compose.split(/\r?\n/).filter(line => line.startsWith(historyField));
+  if (!rows.length) return {};
+  if (rows.length !== 1) throw new Error('Duplicate VidStream folder history in Compose.');
+  const history = JSON.parse(rows[0].slice(historyField.length).replace(/\$\$/g, () => '$'));
+  if (!history || typeof history !== 'object' || Array.isArray(history) ||
+      !Object.entries(history).every(([key, name]) => /^[a-f0-9]{64}$/.test(key) &&
+        typeof name === 'string' && name && !name.startsWith('.') && !name.includes('/') && !/[\x00-\x1f\x7f]/.test(name)))
+    throw new Error('The saved VidStream folder name history is invalid.');
+  return history;
+}
+
+function mediaMounts(folders, existing = [], history = {}) {
   const sources = new Set(existing.map(mount => sourceKey(mount.source)));
   const names = new Set(existing.map(mount => posix.basename(mount.target).toLowerCase()));
+  const reserved = new Set(Object.values(history).map(name => name.toLowerCase()));
   return folders.map(source => {
     const key = sourceKey(source);
     if (sources.has(key)) throw new Error('That media folder is already in the list.');
     sources.add(key);
 
     const folderName = hostPathFor(source).basename(source).replace(/^\.+/, '') || 'Media';
-    let name = folderName;
-    for (let suffix = 2; names.has(name.toLowerCase()); suffix++) name = `${folderName} (${suffix})`;
+    const prior = history[sourceHash(source)];
+    let name = prior || folderName;
+    for (let suffix = 2; names.has(name.toLowerCase()) || (name !== prior && reserved.has(name.toLowerCase())); suffix++) name = `${folderName} (${suffix})`;
     names.add(name.toLowerCase());
     return { source, target: `${MEDIA_ROOT}/${name}` };
   });
@@ -114,7 +135,8 @@ function createCompose({ image, port, theme = 'light-table', folders, storageDir
   if (role === 'node' && folders.length !== 1) throw new Error('Choose one media folder for a node.');
 
   for (const source of folders) avoidStorageOverlap(source, storageDirectory);
-  const mounts = mediaMounts(folders).flatMap((mount, index) => bindLines(mount, index === 0)).join('\n');
+  const libraryMounts = mediaMounts(folders);
+  const mounts = libraryMounts.flatMap((mount, index) => bindLines(mount, index === 0)).join('\n');
   const storage = [...STORAGE].flatMap(([name, target]) => storageBind(name, target)).join('\n');
 
   return `name: vidstream-starter
@@ -138,6 +160,7 @@ ${mounts}
       URL: ${yamlString(deployment.url)}
       MEDIA_DIR: ${MEDIA_ROOT}
       MEDIA_FOLDER_MODE: mounted
+      MEDIA_FOLDER_ORDER: ${yamlString(JSON.stringify(libraryMounts.map(m => posix.basename(m.target))))}
       MEDIA_PRIMARY_MOUNT: *primary_media
       DATA_DIR: /app/data
       CACHE_DIR: /app/.cache
@@ -304,7 +327,7 @@ function addFolderToCompose(compose, source, storageDirectory, effectiveRole) {
   }
   if (!existing.length) throw new Error('Keep at least one starter media mount before adding another.');
 
-  const [mount] = mediaMounts([source], existing);
+  const [mount] = mediaMounts([source], existing, folderHistory(compose));
   let insertion = end;
   while (insertion > start && (!lines[insertion - 1].trim() || lines[insertion - 1].trimStart().startsWith('#'))) insertion--;
   const suffix = lines[insertion - 1].endsWith('\r') ? '\r' : '';
@@ -338,6 +361,100 @@ function storageStatus(compose) {
     throw new Error('This installation mixes storage layouts. It needs a manual migration.');
   }
   return { lines, stream, legacy, kind: legacy.length ? 'legacy' : 'portable' };
+}
+
+function guidedMedia(compose) {
+  const lines = compose.split(/\r?\n/);
+  const { stream, environment } = starterDeploymentSections(lines);
+  if (!lines.slice(...environment).some(line => line.trim() === 'MEDIA_PRIMARY_MOUNT: *primary_media')) {
+    throw new Error('This Compose file uses a custom primary folder. Edit it on the host.');
+  }
+  const [start, end] = section(lines, 'volumes', 4, stream);
+  const mounts = [];
+  for (let index = start; index < end;) {
+    if (!lines[index].startsWith('      - ')) { index++; continue; }
+    let next = index + 1;
+    while (next < end && !lines[next].startsWith('      - ')) next++;
+    const entry = lines.slice(index, next);
+    if (entry.some(line => !line.trimStart().startsWith('#') && line.includes(MEDIA_ROOT))) {
+      const target = bindField(entry, 'target');
+      if (posix.dirname(target) === MEDIA_ROOT) {
+        const source = bindField(entry, 'source');
+        const primary = entry.some(line => /^        target:\s*&primary_media\s/.test(line));
+        if (!/^      - type: bind\s*$/.test(entry[0]) ||
+            !entry.some(line => /^        read_only:\s*true\s*(?:#.*)?$/.test(line))) {
+          throw new Error('The web picker can edit read-only long-form media mounts. Keep custom mounts in your own Compose file.');
+        }
+        let stop = next;
+        while (stop > index && (!lines[stop-1].trim() || lines[stop-1].trimStart().startsWith('#'))) stop--;
+        mounts.push({ source, target, primary, start: index, end: stop, lines: lines.slice(index, stop) });
+      } else if (target === MEDIA_ROOT || target.startsWith(MEDIA_ROOT + '/')) {
+        throw new Error('Keep each top-level library mounted directly under /media/collections.');
+      }
+    }
+    index = next;
+  }
+  if (mounts.filter(m => m.primary).length !== 1 || new Set(mounts.map(m => sourceKey(m.source))).size !== mounts.length ||
+      new Set(mounts.map(m => m.target.toLowerCase())).size !== mounts.length) {
+    throw new Error('The web picker requires unique library mounts and one primary folder.');
+  }
+  return { lines, mounts };
+}
+
+function inspectGuided(compose) {
+  const { mounts } = guidedMedia(compose);
+  return {
+    folders: [...mounts].sort((a,b) => Number(b.primary) - Number(a.primary))
+      .map(m => ({ path: m.source, name: posix.basename(m.target) })),
+    deployment: inspectDeployment(compose).settings,
+    storage: storageStatus(compose).kind,
+    role: starterRole(compose),
+  };
+}
+
+function editGuided({ compose, folders, deployment, storageDirectory, role }) {
+  if (!Array.isArray(folders) || folders.length < 1 || folders.length > 256 ||
+      new Set(folders.map(sourceKey)).size !== folders.length) throw new Error('Choose 1–256 distinct media folders.');
+  const { lines, mounts } = guidedMedia(compose);
+  const existing = new Map(mounts.map(m => [sourceKey(m.source), m]));
+  const history = folderHistory(compose);
+  for (const mount of mounts) history[sourceHash(mount.source)] = posix.basename(mount.target);
+  if ((role || starterRole(compose)) === 'node' && folders.length > 1 && folders.some(f => !existing.has(sourceKey(f)))) {
+    throw new Error('Switch to Server to add multiple libraries.');
+  }
+  const replacements = [];
+  const order = [];
+  const assigned = [...mounts];
+  for (const [index, folder] of folders.entries()) {
+    avoidStorageOverlap(folder, storageDirectory);
+    let mount = existing.get(sourceKey(folder));
+    if (!mount) {
+      [mount] = mediaMounts([folder], assigned, history);
+      assigned.push(mount);
+    }
+    order.push(posix.basename(mount.target));
+    if (mount.lines) {
+      replacements.push(...mount.lines.map(line => /^        target:/.test(line) ?
+        line.replace(/^(        target:\s*)(?:&primary_media\s+)?/, (_, prefix) => prefix + (index ? '' : '&primary_media ')) : line));
+    } else {
+      replacements.push(...bindLines(mount, index === 0));
+    }
+  }
+  for (let i = mounts.length - 1; i >= 0; i--) {
+    const mount = mounts[i];
+    lines.splice(mount.start, mount.end - mount.start, ...(i === 0 ? replacements : []));
+  }
+  const { environment } = starterDeploymentSections(lines);
+  const setting = '      MEDIA_FOLDER_ORDER: ' + yamlString(JSON.stringify(order));
+  const matches = lines.slice(...environment).map((line, i) => line.startsWith('      MEDIA_FOLDER_ORDER:') ? environment[0] + i : -1).filter(i => i >= 0);
+  if (matches.length > 1) throw new Error('The Compose file contains duplicate folder orders.');
+  if (matches.length) lines[matches[0]] = setting;
+  else lines.splice(environment[0], 0, setting);
+  const record = historyField + JSON.stringify(history).replace(/\$/g, () => '$$');
+  const extension = lines.findIndex(line => line.startsWith(historyField));
+  if (extension >= 0) lines[extension] = record;
+  else lines.unshift(record);
+  return configureCompose(lines.join(compose.includes('\r\n') ? '\r\n' : '\n'), deployment);
 }
 
 function makePortable(compose) {
@@ -382,7 +499,11 @@ function verifyLegacyVolumes(model, storageDirectory) {
 if (require.main === module) {
   const args = process.argv.slice(2);
   try {
-    if (args[0] === '--add-folder') {
+    if (args[0] === '--host-inspect') {
+      process.stdout.write(JSON.stringify(inspectGuided(fs.readFileSync(0, 'utf8'))));
+    } else if (args[0] === '--host-edit') {
+      process.stdout.write(editGuided(JSON.parse(fs.readFileSync(0, 'utf8'))));
+    } else if (args[0] === '--add-folder') {
       if (args.length < 2 || args.length > 4 || (args[3] && !['server', 'node'].includes(args[3]))) {
         throw new Error('Choose one folder to add.');
       }

@@ -24,6 +24,11 @@ def now():
 
 
 class Helper:
+    status_file = "status.json"
+    request_file = "request.json"
+    lock_file = ".vidstream-update-helper.lock"
+    max_request = 4096
+
     def __init__(self, source, install, docker):
         self.source = Path(source).resolve()
         self.install = Path(install).resolve()
@@ -34,6 +39,7 @@ class Helper:
         self.state = {"state": "idle", "message": "Ready to check for updates.", "currentRevision": None,
                       "targetRevision": None, "updatedAt": now()}
         self.stop = threading.Event()
+        self.code = self.script_stamp()
         self.compose_args = [docker, "compose", "--project-name", "vidstream-starter",
                              "--project-directory", str(self.install),
                              "--file", str(self.compose)]
@@ -58,9 +64,12 @@ class Helper:
             raise RuntimeError("Updates need the official VidStream GitHub origin.")
         if self.git("status", "--porcelain", "--untracked-files=no"):
             raise RuntimeError("Save tracked source edits before updating.")
+        self.validate_install()
+
+    def validate_install(self):
         if not self.compose.is_file() or self.compose.is_symlink():
             raise RuntimeError("Open Start-Here with the existing guided Compose file.")
-        if self.run(self.compose_args + ["config", "--images", "stream"]) != "vidstream-starter:local":
+        if not self.supports_image(self.run(self.compose_args + ["config", "--images", "stream"])):
             raise RuntimeError("This updater supports guided installations using vidstream-starter:local.")
         containers = self.run([self.docker, "ps", "-aq", "--filter", "label=com.docker.compose.project=vidstream-starter",
                                "--filter", "label=com.docker.compose.service=stream",
@@ -70,6 +79,9 @@ class Helper:
                               '{{index .Config.Labels "com.docker.compose.project.config_files"}}', container])
             if Path(saved).resolve() != self.compose:
                 raise RuntimeError("The running installation uses a different Compose file. Open its original Start-Here.")
+
+    def supports_image(self, image):
+        return image == "vidstream-starter:local"
 
     def installed_revision(self):
         containers = self.run(self.compose_args + ["ps", "-q", "--status", "running", "stream"]).splitlines()
@@ -87,7 +99,7 @@ class Helper:
             temporary = self.mailbox / (".status-" + uuid.uuid4().hex)
             with open(temporary, "x", encoding="utf-8") as handle:
                 json.dump(output, handle)
-            os.replace(temporary, self.mailbox / "status.json")
+            os.replace(temporary, self.mailbox / self.status_file)
 
     def heartbeat(self):
         while not self.stop.wait(5):
@@ -129,8 +141,11 @@ class Helper:
             raise RuntimeError("The update finished without confirming the new running version. Check Start-Here.")
         self.write(state="completed", currentRevision=installed, targetRevision=deployed, message="Update complete. Reload VidStream.")
 
+    def valid_request(self, data):
+        return set(data) == {"id", "action"} and data["action"] in ("check", "update")
+
     def request(self):
-        pending = self.mailbox / "request.json"
+        pending = self.mailbox / self.request_file
         try:
             if not stat.S_ISREG(pending.lstat().st_mode):
                 try:
@@ -144,13 +159,13 @@ class Helper:
             return None
         try:
             info = claimed.lstat()
-            if not stat.S_ISREG(info.st_mode) or info.st_size > 4096 or abs(time.time() - info.st_mtime) > 60:
+            if not stat.S_ISREG(info.st_mode) or info.st_size > self.max_request or abs(time.time() - info.st_mtime) > 60:
                 return None
             with claimed.open("rb") as handle:
-                data = json.loads(handle.read(4097).decode("utf-8"))
-            if not isinstance(data, dict) or set(data) != {"id", "action"}:
+                data = json.loads(handle.read(self.max_request + 1).decode("utf-8"))
+            if not isinstance(data, dict) or not self.valid_request(data):
                 return None
-            if data["action"] not in ("check", "update") or not isinstance(data["id"], str):
+            if not isinstance(data.get("id"), str):
                 return None
             if str(uuid.UUID(data["id"])) != data["id"]:
                 return None
@@ -163,11 +178,32 @@ class Helper:
             except IsADirectoryError:
                 pass
 
+    def perform(self, data):
+        self.write(id=data["id"], state="checking", message="Checking GitHub for updates.")
+        try:
+            self.update() if data["action"] == "update" else self.check()
+        except Exception as error:
+            print("Update failed:", error, file=sys.stderr, flush=True)
+            message = str(error) if isinstance(error, RuntimeError) else "The host could not finish. Check .vidstream-update-helper.log."
+            self.write(state="failed", targetRevision=None, message=message)
+
+    def tick(self):
+        pass
+
+    def script_stamp(self):
+        files = [self.source / "scripts" / "update-helper.py"]
+        if self.request_file == "host-request.json":
+            files.append(self.source / "scripts" / "host_management.py")
+        try:
+            return tuple((f.stat().st_mtime_ns, f.stat().st_size) for f in files)
+        except OSError:
+            return None
+
     def serve(self):
         self.mailbox.mkdir(mode=0o700, exist_ok=True)
         if self.mailbox.is_symlink() or not self.mailbox.is_dir():
             raise RuntimeError("The updater folder must be a real directory.")
-        lock = open(self.install / ".vidstream-update-helper.lock", "a+b")
+        lock = open(self.install / self.lock_file, "a+b")
         try:
             if os.name == "nt":
                 import msvcrt
@@ -179,22 +215,32 @@ class Helper:
         except OSError:
             lock.close()
             return
+        # Only requests received during this host helper's lifetime may run.
+        # A copied mailbox or interrupted previous session can contain a pending command.
+        try:
+            (self.mailbox / self.request_file).unlink(missing_ok=True)
+        except IsADirectoryError:
+            raise RuntimeError("The host mailbox contains an invalid request directory.")
         try:
             self.state["currentRevision"] = self.installed_revision()
         except Exception:
             pass
         self.write()
         threading.Thread(target=self.heartbeat, daemon=True).start()
+        last_action = time.monotonic() - 60
         while True:
             data = self.request()
             if data:
-                self.write(id=data["id"], state="checking", message="Checking GitHub for updates.")
-                try:
-                    self.update() if data["action"] == "update" else self.check()
-                except Exception as error:
-                    print("Update failed:", error, file=sys.stderr, flush=True)
-                    message = str(error) if isinstance(error, RuntimeError) else "The host could not finish. Check .vidstream-update-helper.log."
-                    self.write(state="failed", targetRevision=None, message=message)
+                self.perform(data)
+                last_action = time.monotonic()
+            self.tick()
+            if (time.monotonic() - last_action >= 30 and getattr(self, "wake_at", None) is None
+                    and not (self.install / ".vidstream-edit.lock").exists()):
+                current_code = self.script_stamp()
+                if current_code and current_code != self.code:
+                    self.stop.set()
+                    lock.close()
+                    os.execv(sys.executable, [sys.executable, *sys.argv])
             time.sleep(1)
 
 
@@ -205,6 +251,7 @@ if __name__ == "__main__":
     parser.add_argument("--docker", required=True)
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--detach", action="store_true")
+    parser.add_argument("--manage", action="store_true")
     args = parser.parse_args()
     os.umask(0o077)
     os.environ.update(DOCKER_HOST=args.endpoint, COMPOSE_DISABLE_ENV_FILE="1", COMPOSE_REMOVE_ORPHANS="0")
@@ -213,9 +260,17 @@ if __name__ == "__main__":
     if args.detach:
         command = [sys.executable, os.path.abspath(__file__), "--source", args.source, "--install", args.install,
                    "--docker", args.docker, "--endpoint", args.endpoint]
+        if args.manage:
+            command.append("--manage")
         with open(Path(args.install) / ".vidstream-update-helper.log", "ab") as log:
             subprocess.Popen(command, cwd=args.source, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                              start_new_session=os.name != "nt", close_fds=True,
                              creationflags=subprocess.DETACHED_PROCESS if os.name == "nt" else 0)
     else:
-        Helper(args.source, args.install, args.docker).serve()
+        service = Helper
+        if args.manage:
+            from host_management import Management
+            class HostManager(Management, Helper):
+                pass
+            service = HostManager
+        service(args.source, args.install, args.docker).serve()

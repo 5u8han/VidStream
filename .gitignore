@@ -13,6 +13,8 @@ rclone.conf
 /.vidstream-edit.lock
 /.vidstream-updater/
 /.vidstream-update-helper.lock
+/.vidstream-host-helper.lock
+/.vidstream-media-roots.json
 /.vidstream-request-*
 /docker-compose.libraries.local.yml
 /docker-compose.media.local.yml

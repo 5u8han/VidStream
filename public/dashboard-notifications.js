@@ -3,6 +3,7 @@
 
   var unread = 0, summaryRequest;
   var names = {
+    MEDIA_REPAIR_REQUESTED: 'Manual media repair',
     SCAN_UNSUPPORTED_FORMAT: 'Unsupported file',
     SCAN_FILE_FAILED: 'Media could not be imported',
     SCAN_DIRECTORY_UNREADABLE: 'Directory could not be read',
@@ -42,17 +43,17 @@
     var response = await fetch('/api/notifications?' + query, { signal: signal });
     if (!response.ok) throw Error('Notifications could not load.');
     var data = await response.json();
-    if (data.unread !== undefined) setCount(data.unread);
+    if (!data.id && data.unread !== undefined) setCount(data.unread);
     return data;
   }
 
   function poll() {
     if (document.hidden || summaryRequest) return;
-    summaryRequest = request('view=general&limit=1').catch(function () {}).finally(function () { summaryRequest = null; });
+    summaryRequest = request('view=summary').catch(function () {}).finally(function () { summaryRequest = null; });
   }
 
-  function repairAction(id, parent, initial, kind, onUpdate) {
-    var label = kind === 'playback' ? 'Retry playback copy' : 'Repair media';
+  function repairAction(id, parent, initial, kind, onUpdate, compact) {
+    var label = kind === 'playback' ? 'Retry playback copy' : 'Repair now';
     var button = node('button', label, parent, 'dashboard-next');
     button.type = 'button';
     var status = node('span', '', parent, 'modal-sub');
@@ -63,9 +64,11 @@
     var pathname = '/api/notifications/' + encodeURIComponent(id) + '/repair';
 
     function show(result) {
-      button.disabled = result?.state === 'running';
-      button.textContent = button.disabled ? 'Repairing…' : label;
+      button.dataset.state = result?.state || 'idle';
+      button.disabled = result?.state === 'running' || result?.state === 'queued';
+      button.textContent = result?.state === 'queued' ? 'Queued' : button.disabled ? 'Working…' : result?.state === 'completed' ? 'Repair again' : label;
       status.textContent = result?.message || '';
+      status.hidden = compact && result?.state !== 'failed' && Boolean(result?.state);
       link.hidden = !result?.playbackUrl;
       if (result?.playbackUrl) link.href = result.playbackUrl;
       else link.removeAttribute('href');
@@ -75,13 +78,16 @@
     async function check() {
       while (button.isConnected && button.disabled) {
         await new Promise(function (resolve) { setTimeout(resolve, 2000); });
-        if (!button.isConnected) return;
+        if (!button.isConnected || button.closest('[hidden]')) return;
+        if (document.hidden) continue;
         try {
           var response = await fetch(pathname);
           if (!response.ok) throw Error('Could not check repair status.');
           show(await response.json());
         } catch (error) {
-          show({ message: error.message });
+          status.hidden = false;
+          status.textContent = error.message;
+          if (button.disabled) await new Promise(function (resolve) { setTimeout(resolve, 4000); });
         }
       }
     }
@@ -103,6 +109,7 @@
   }
 
   function issueTitle(issue) {
+    if (issue.code === 'MEDIA_REPAIR_REQUESTED' && issue.stage === 'playback') return 'Playback copy requested';
     if (issue.code === 'BACKGROUND_TASK_FAILED' && issue.stage === 'playback') return 'Playback copy failed';
     return names[issue.code] || issue.code.toLowerCase().split('_').join(' ').replace(/^./, function (c) { return c.toUpperCase(); });
   }
@@ -142,23 +149,20 @@
     return actions;
   }
 
-  function mount(head, callbacks) {
-    var toggle = node('button', 'Notifications', head, 'dashboard-issues-toggle');
-    toggle.type = 'button';
-    toggle.setAttribute('aria-controls', 'dashboard-notifications');
-    toggle.setAttribute('aria-expanded', 'false');
-    var count = node('span', '', toggle, 'dashboard-issue-badge');
-    count.dataset.issueCount = '';
-    var pane = node('section', undefined, head, 'dashboard-notifications');
+  function mount(parent, callbacks) {
+    var pane = node('section', undefined, parent, 'dashboard-body dashboard-notifications');
     pane.id = 'dashboard-notifications';
-    pane.setAttribute('aria-label', 'Dashboard notifications');
+    pane.setAttribute('aria-label', 'Notifications');
     pane.hidden = true;
     var toolbar = node('div', undefined, pane, 'dashboard-notification-tools');
-    node('h3', 'Notifications', toolbar);
+    var category = node('select', undefined, toolbar, 'filter-select');
+    category.setAttribute('aria-label', 'Notification category');
+    [['operations','Operations'], ['all','All categories'], ['media','Media'], ['scanning','Scanning'], ['storage','Storage'],
+      ['nodes','Nodes'], ['system','System']].forEach(function (option) { category.add(new Option(option[1], option[0])); });
     var errors = node('button', 'Errors only', toolbar, 'dashboard-next');
     errors.type = 'button';
     errors.setAttribute('aria-pressed', 'false');
-    var mark = node('button', 'Mark all read', toolbar, 'dashboard-next');
+    var mark = node('button', 'Mark category read', toolbar, 'dashboard-next');
     mark.type = 'button';
     var message = node('p', '', pane, 'modal-sub');
     message.setAttribute('role', 'status');
@@ -172,14 +176,21 @@
       var id = ++seq;
       more.disabled = true;
       try {
-        var data = await request('view=general&offset=' + (append ? offset : 0) + (errorsOnly ? '&level=error' : ''));
+        var data = await request(filters() + '&offset=' + (append ? offset : 0));
         if (id !== seq || pane.hidden) return;
         if (!append) list.replaceChildren();
-        data.issues.forEach(function (issue) { issueRow(issue, list, 'li', callbacks.openItem, message); });
+        data.issues.forEach(function (issue) {
+          var actions = issueRow(issue, list, 'li', callbacks.openItem, message);
+          if (issue.repairable) {
+            var repair = node('button', 'Manage repair', actions, 'dashboard-next');
+            repair.type = 'button';
+            repair.onclick = function () { callbacks.openRepair(issue.id, repair); };
+          }
+        });
         offset = data.nextOffset;
         more.hidden = offset === null;
-        mark.disabled = data.unread === 0;
-        message.textContent = data.storageError ? 'Some notifications could not be saved.' : list.children.length ? '' : errorsOnly ? 'No errors recorded.' : 'No warnings or errors recorded.';
+        mark.disabled = !data.unread || !list.children.length;
+        message.textContent = data.storageError ? 'Some notifications could not be saved.' : list.children.length ? '' : 'No notifications match these filters.';
       } catch (error) {
         if (id === seq) message.textContent = error.message;
       } finally {
@@ -191,13 +202,12 @@
       seq++;
       clearInterval(interval);
       pane.hidden = true;
-      toggle.setAttribute('aria-expanded', 'false');
     }
 
     function show() {
       if (!pane.hidden) return;
       pane.hidden = false;
-      toggle.setAttribute('aria-expanded', 'true');
+
       message.textContent = 'Loading notifications…';
       load(false);
       interval = setInterval(function () {
@@ -205,7 +215,8 @@
       }, 5000);
     }
 
-    toggle.onclick = function () { if (pane.hidden) show(); else close(); };
+    function filters() { return 'category=' + encodeURIComponent(category.value) + (errorsOnly ? '&level=error' : ''); }
+    category.onchange = function () { void load(false); };
     errors.onclick = function () {
       errorsOnly = !errorsOnly;
       errors.setAttribute('aria-pressed', String(errorsOnly));
@@ -215,7 +226,7 @@
     mark.onclick = async function () {
       mark.disabled = true;
       try {
-        var response = await fetch('/api/notifications/read?view=general', {
+        var response = await fetch('/api/notifications/read?' + filters(), {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
         });
         if (!response.ok) throw Error('Could not mark notifications read.');
@@ -232,7 +243,19 @@
     var overview = node('section', undefined, root);
     var heading = node('h3', 'Media repairs', overview);
     heading.tabIndex = -1;
-    node('p', 'Retry a failed import or playback copy. Use recovery copies to troubleshoot files outside VidStream.', overview, 'modal-sub');
+    var form = node('form', undefined, overview, 'dashboard-repair-form');
+    var label = node('label', 'Repair a file by library path', form);
+    var pathInput = node('input', undefined, label);
+    pathInput.required = true;
+    pathInput.placeholder = 'Family/Trips/clip.mp4';
+    pathInput.maxLength = 4096;
+    var kind = node('select', undefined, form, 'filter-select');
+    kind.setAttribute('aria-label', 'Repair type');
+    kind.add(new Option('Preview and catalog entry', 'scan'));
+    kind.add(new Option('Compatible video copy', 'playback'));
+    var start = node('button', 'Repair now', form, 'dashboard-next');
+    start.type = 'submit';
+    node('p', 'Choose a preview rebuild for photos or videos, or a compatible playback copy for an indexed video. Indexing can keep running.', overview, 'modal-sub');
     var toolbar = node('div', undefined, overview, 'dashboard-repair-tools');
     var refresh = node('button', 'Refresh list', toolbar, 'dashboard-next');
     refresh.type = 'button';
@@ -250,9 +273,26 @@
     detail.hidden = true;
     var nextOffset = null, listScroll = 0, listRequest, detailRequest, visible = new Map();
 
+    form.onsubmit = async function (event) {
+      event.preventDefault();
+      start.disabled = true;
+      try {
+        var response = await fetch('/api/notifications/repair-path', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: pathInput.value, kind: kind.value }) });
+        var result = await response.json();
+        if (!response.ok) throw Error(result.error || 'Could not start repair.');
+        if (!root.hidden && !overview.hidden) {
+          void load(false);
+          callbacks.openRepair(result.id, start);
+        }
+      } catch (error) { message.textContent = error.message; }
+      finally { start.disabled = false; }
+    };
+
     function paintStatus(row, result) {
       var state = result?.state;
-      row.textContent = { running: 'Repairing', completed: 'Repaired', failed: 'Needs review', interrupted: 'Interrupted' }[state] || 'Ready to review';
+      row.dataset.state = state || 'idle';
+      row.textContent = { queued: 'Queued', running: 'Repairing', completed: 'Repaired', failed: 'Needs review', interrupted: 'Interrupted' }[state] || 'Ready to review';
     }
 
     async function load(append) {
@@ -266,7 +306,7 @@
         if (!append) { list.replaceChildren(); visible.clear(); }
         data.issues.forEach(function (issue) {
           if (visible.has(issue.id)) return;
-          var row = node('li', undefined, list);
+          var row = node('li', undefined, list, 'dashboard-repair-entry');
           var button = node('button', undefined, row, 'dashboard-repair-row');
           button.type = 'button';
           var contents = node('span', undefined, button);
@@ -275,6 +315,12 @@
           var status = node('span', undefined, button, 'dashboard-repair-state');
           paintStatus(status, issue.repair);
           visible.set(issue.id, status);
+          if (issue.repairable) {
+            var quick = node('div', undefined, row, 'dashboard-repair-quick');
+            repairAction(issue.id, quick, issue.repair, issue.repairKind, function (update) {
+              if (update?.state) paintStatus(status, update);
+            }, true);
+          }
           button.onclick = function () { callbacks.openRepair(issue.id, button); };
         });
         nextOffset = data.nextOffset;
@@ -317,10 +363,16 @@
         if (requestRef !== detailRequest) return;
         result.textContent = '';
         var actions = issueRow(issue, detail, 'div', callbacks.openItem, result);
-        if (issue.repairable) repairAction(issue.id, actions, issue.repair, issue.repairKind, function (update) {
-          var status = visible.get(id);
-          if (status && update?.state) paintStatus(status, update);
-        });
+        if (issue.repairable) {
+          var state = node('span', undefined, actions, 'dashboard-repair-state');
+          paintStatus(state, issue.repair);
+          repairAction(issue.id, actions, issue.repair, issue.repairKind, function (update) {
+            if (!update?.state) return;
+            paintStatus(state, update);
+            var row = visible.get(id);
+            if (row) paintStatus(row, update);
+          });
+        }
         else result.textContent = 'This media is no longer available for repair.';
       } catch (error) {
         if (error.name !== 'AbortError' && requestRef === detailRequest) result.textContent = 'The media issue could not be loaded.';
@@ -331,13 +383,14 @@
     more.onclick = function () { void load(true); };
     return {
       open: function () { root.hidden = false; listScroll = 0; showList(); void load(false); },
-      showList: showList,
+      showList: function (origin) { showList(origin); void load(false); },
       showDetail: showDetail,
       close: function () {
         listRequest?.abort();
         detailRequest?.abort();
         listRequest = detailRequest = null;
         detail.replaceChildren();
+        list.replaceChildren(); visible.clear();
         root.hidden = true;
       },
     };

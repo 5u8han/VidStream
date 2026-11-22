@@ -8,8 +8,7 @@ the menu in Docker Compose, use [mounted folders](MOUNTED_FOLDERS.md).
 ## Configure the menu
 
 1. Mount the existing parent media directory as described in the main README.
-2. Sign in as the owner. Open the title in the top-left corner, then **Choose
-   folders…**, or open **Settings → Folders**.
+2. Sign in as the owner. Open the title in the top-left corner, then **Manage folders…**, or open **Settings → Host & folders**.
 3. Select **Add folder**. Enter a short menu name and the folder's path relative
    to the mounted media directory. Save the folder menu.
 

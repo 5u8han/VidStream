@@ -71,11 +71,16 @@ const maintenance = new (require('./lib/maintenance').Maintenance)(cfg,db);
 const playback = new (require('./lib/playback-service').PlaybackService)(cfg,db,coordinator);
 const workbench = require('./lib/handlers/workbench').workbenchHandlers(cfg,db,{maintenance,coordinator,playback,scanner});
 const router = new Router();
+const host = require('./lib/host-management').hostHandlers(cfg);
+router.get('/api/host', host.status);
+router.post('/api/host', host.action);
+router.post('/api/host/compose', host.compose);
 const updates = require('./lib/app-update').updateHandlers(cfg);
 router.get('/api/updates', updates.status);
 router.post('/api/updates/check', updates.check);
 router.post('/api/updates/apply', updates.apply);
 router.get('/api/folders', folders.get);
+router.get('/api/folders/children', folders.children);
 router.post('/api/folders', folders.update);
 router.get('/api/node-info', nodeHandlers.info);
 router.get('/api/nodes', nodeHandlers.list);
@@ -120,6 +125,7 @@ const notifications = diagnosticsHandlers(cfg, db, diagnostics, scanner, playbac
 router.get('/api/notifications', notifications.get);
 router.get('/api/notifications/recovery', notifications.recoveryList);
 router.get('/api/notifications/:id/source', notifications.recoverySource);
+router.post('/api/notifications/repair-path', notifications.repairPath);
 router.post('/api/notifications/read', notifications.read);
 router.get('/api/notifications/:id/repair', notifications.repairStatus);
 router.post('/api/notifications/:id/repair', notifications.repair);
@@ -135,7 +141,7 @@ router.get('/media/:id/:variant', mediaHandler(cfg, db));
 router.get('/', pageHandler(cfg, db));
 router.get('/:id', pageHandler(cfg, db));
 
-const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/design.css', '/entrance.js', '/nodes.js', '/nodes.css', '/folders.js', '/folders.css', '/social-preview.png', '/settings.js', '/activity.js', '/resources.js', '/library-layout.js', '/artist-outlines.js', '/library-map.js', '/player-stats.js', '/navigation.js', '/preview-controller.js', '/preview-memory.js', '/diagnostics.js', '/benchmark.js', '/benchmark.css', '/dashboard-notifications.js', '/dashboard-notifications.css', '/library-tools.js', '/controls.css', '/options.css']);
+const STATIC_ASSETS = new Set(['/app.js', '/ambient.js', '/styles.css', '/design.css', '/entrance.js', '/nodes.js', '/nodes.css', '/folders.js', '/folders.css', '/social-preview.png', '/settings.js', '/host-settings.js', '/activity.js', '/resources.js', '/library-layout.js', '/library-map.js', '/player-stats.js', '/navigation.js', '/preview-controller.js', '/preview-memory.js', '/diagnostics.js', '/benchmark.js', '/benchmark.css', '/dashboard-notifications.js', '/dashboard-notifications.css', '/library-tools.js', '/controls.css', '/options.css']);
 const PUBLIC_DIR = path.join(ROOT, 'public');
 
 const requests = new Set();

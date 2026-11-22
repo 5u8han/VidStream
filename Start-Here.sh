@@ -22,6 +22,8 @@ snapshot=
 edit_lock=
 portable_stage=
 update_only=false
+prepare_only=false
+stop_only=false
 
 fail() { printf 'VidStream setup: %s\n' "$*" >&2; exit 1; }
 
@@ -268,6 +270,8 @@ on run argv
       set chosenFolders to {choose folder with prompt "Choose the folder VidStream should open first."}
     else if item 1 of argv is "add" then
       set chosenFolders to {choose folder with prompt "Choose a media folder to add to VidStream."}
+    else if item 1 of argv is "approve" then
+      set chosenFolders to {choose folder with prompt "Allow the signed-in owner to browse and mount folders under this media directory."}
     else
       set chosenFolders to choose folder with prompt "Choose another media folder, or select several." with multiple selections allowed
     end if
@@ -339,6 +343,7 @@ choose_folder() {
   case "$mode" in
     primary) prompt='Primary media folder' ;;
     add) prompt='Media folder to add' ;;
+    approve) prompt='Media directory to make available in the web picker' ;;
     *) prompt='Additional media folder' ;;
   esac
   if gui_session; then
@@ -688,6 +693,21 @@ prepare_existing() {
 
 start_existing() {
   prepare_existing start
+  if grep -qx 'x-vidstream-bootstrap: true' "$compose_file"; then
+    if [[ ! -e "$portable_dir" && ! -L "$portable_dir" ]]; then
+      portable_stage=$(mktemp -d "$install_dir/.vidstream-portable.XXXXXXXX")
+      mkdir -- "$portable_stage/data" "$portable_stage/cache" "$portable_stage/originals"
+      mv -- "$portable_stage" "$portable_dir"
+      portable_stage=
+    fi
+    for directory in "$portable_dir" "$portable_dir/data" "$portable_dir/cache" "$portable_dir/originals"; do
+      [[ -d "$directory" && ! -L "$directory" ]] || fail 'The exported configuration needs complete portable storage. Restore or move the partial folder before starting.'
+    done
+    snapshot_existing
+    draft=$(mktemp "$install_dir/.compose.yaml.XXXXXXXX")
+    sed '/^x-vidstream-bootstrap: true$/d' "$snapshot" > "$draft"
+    apply_compose_draft
+  fi
   local existing_image
   existing_image=$("${compose[@]}" config --images stream)
   if [[ "$existing_image" == vidstream-starter:local ]] && ! "${docker[@]}" image inspect "$existing_image" >/dev/null 2>&1; then
@@ -702,10 +722,13 @@ start_existing() {
 
 enable_host_updater() {
   local updater_image=$1 python updater_dir updater_draft updater_before
-  [[ "${VIDSTREAM_HELPER_CHILD:-}" != 1 ]] || return 0
-  [[ "$updater_image" == vidstream-starter:local && -e "$source_dir/.git" ]] || return 0
+  updater_dir=$install_dir/.vidstream-updater
+  [[ ! -L "$updater_dir" ]] || fail 'The updater directory must be a regular private directory.'
+  mkdir -p -- "$updater_dir"
+  chmod 700 "$updater_dir"
+  case "$updater_image" in vidstream-starter:local|docker.io/5u8han/vidstream:*|5u8han/vidstream:*) ;; *) return 0 ;; esac
   if [[ "$using_sudo" == true ]] || ! command -v python3 >/dev/null 2>&1; then
-    printf 'In-app updates need Python 3.8+ on this host and Docker access for your user. Start-Here updates remain available.\n'
+    printf 'Web installation controls need Python 3.8+ and access to the local Docker engine for your user. Start-Here remains available.\n'
     return 0
   fi
   python=$(command -v python3)
@@ -713,10 +736,6 @@ enable_host_updater() {
     printf 'In-app updates need Python 3.8 or newer. Start-Here updates remain available.\n'
     return 0
   }
-  updater_dir=$install_dir/.vidstream-updater
-  [[ ! -L "$updater_dir" ]] || fail 'The updater directory must be a regular private directory.'
-  mkdir -p -- "$updater_dir"
-  chmod 700 "$updater_dir"
   updater_draft=$(mktemp "$install_dir/.compose-updater.XXXXXXXX")
   updater_before=$(mktemp "$install_dir/.compose-updater-before.XXXXXXXX")
   cp -- "$compose_file" "$updater_before"
@@ -736,8 +755,11 @@ enable_host_updater() {
     mv -f -- "$updater_draft" "$compose_file"
   fi
   rm -f -- "$updater_draft" "$updater_before"
-  "$python" "$source_dir/scripts/update-helper.py" --source "$source_dir" --install "$install_dir" \
-    --docker "$docker_bin" --endpoint "$endpoint" --detach
+  local helper_args=(--source "$source_dir" --install "$install_dir" --docker "$docker_bin" --endpoint "$endpoint" --detach)
+  if [[ "${VIDSTREAM_HELPER_CHILD:-}" != 1 && "$updater_image" == vidstream-starter:local && -e "$source_dir/.git" ]]; then
+    "$python" "$source_dir/scripts/update-helper.py" "${helper_args[@]}"
+  fi
+  "$python" "$source_dir/scripts/update-helper.py" "${helper_args[@]}" --manage
 }
 
 update_existing() {
@@ -830,7 +852,7 @@ prepare_move() {
   fi
 
   [[ ! -e "$portable_dir" && ! -L "$portable_dir" ]] || fail "A directory already exists at $portable_dir. Move it out of the way before migrating; it will not be merged."
-  ask_yes 'Stop VidStream and copy its Docker volumes to the local disk? This can take time, and keeps the old volumes.' || return 0
+  [[ "$prepare_only" == true ]] || ask_yes 'Stop VidStream and copy its Docker volumes to the local disk? This can take time, and keeps the old volumes.' || return 0
   snapshot=$(mktemp "$install_dir/.compose-original.XXXXXXXX")
   cp -- "$compose_file" "$snapshot"
   local plan_compose=()
@@ -880,8 +902,22 @@ prepare_move() {
   printf 'VidStream is stopped. Copy %s and %s to your new installation. Your old Docker volumes are preserved for rollback.\n' "$portable_dir" "$compose_file"
 }
 
+approve_web_folders() {
+  [[ -f "$compose_file" && ! -L "$compose_file" ]] || fail 'Use first-time setup to create the guided installation first.'
+  command -v python3 >/dev/null || fail 'Web installation controls need Python 3.8 or newer.'
+  printf 'Choose a dedicated media directory. The signed-in owner will be able to browse and mount its subdirectories.\n'
+  choose_folder approve || return 0
+  local directory
+  for directory in "${folders[@]}"; do
+    python3 "$source_dir/scripts/host_management.py" --install "$install_dir" --approve "$directory"
+    printf 'Available in the web folder picker: %s\n' "$directory"
+  done
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --stop-only) stop_only=true ;;
+    --prepare-move) prepare_only=true ;;
     --terminal) terminal_only=true ;;
     --update-only) update_only=true ;;
     -h|--help)
@@ -899,9 +935,11 @@ portable_dir=$install_dir/vidstream-local
 platform=$(uname -s)
 case "$platform" in Darwin|Linux) ;; *) fail 'Use Start-Here.bat on Windows.' ;; esac
 folders=()
+if [[ "$stop_only" == true ]]; then prepare_existing edit; stop_existing; exit 0; fi
+if [[ "$prepare_only" == true ]]; then prepare_move; exit 0; fi
 if [[ "$update_only" == true ]]; then update_existing; exit 0; fi
 while :; do
-  printf '\nVidStream\n  1. First-time setup\n  2. Add a media folder (server only)\n  3. Start existing VidStream\n  4. Stop VidStream\n  5. Prepare storage to move\n  6. Configure memory and access\n  7. Update VidStream\n  Q. Exit\nChoose an option. ' >&2
+  printf '\nVidStream\n  1. First-time setup\n  2. Add a media folder (server only)\n  3. Start existing VidStream\n  4. Stop VidStream\n  5. Prepare storage to move\n  6. Configure memory and access\n  7. Update VidStream\n  8. Allow a directory in the web folder picker\n  Q. Exit\nChoose an option. ' >&2
   IFS= read -r action || exit 0
   case "$action" in
     1) first_setup; break ;;
@@ -911,6 +949,7 @@ while :; do
     5) prepare_move; break ;;
     6) configure_existing; break ;;
     7) update_existing; break ;;
+    8) approve_web_folders; break ;;
     q|Q) exit 0 ;;
   esac
 done

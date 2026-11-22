@@ -5,7 +5,7 @@
   var managedByMounts = false;
   var scanStatus = {}, scanRows = new Map(), expandedInfo = '';
   var statusLabels = { success: 'Successful', partial: 'Completed with issues', failed: 'Failed', interrupted: 'Interrupted' };
-  var mountHelp = 'The folder list comes from Docker mounts. Edit Compose and recreate the container to change it.';
+  var mountHelp = 'The first mounted folder opens by default.';
   var storageKey = 'stream-folder-' + (config.node?.id || 'local');
   try { remembered = localStorage.getItem(storageKey); } catch (_) {}
 
@@ -85,9 +85,9 @@
       element('p', mountHelp, panel, 'folder-menu-note');
     } else {
       if (!folders.length) element('p', 'Choose the folders you want here. Nested folders are included.', panel, 'folder-menu-note');
-      var manage = element('button', 'Choose folders…', panel, 'folder-manage'); manage.type = 'button';
-      manage.onclick = function () { close(function () { window.StreamSettings?.open('folders'); }); };
     }
+    var manage = element('button', 'Manage folders…', panel, 'folder-manage'); manage.type = 'button';
+    manage.onclick = function () { close(function () { window.StreamSettings?.open('folders', trigger); }); };
   }
   function rowNotice(id, message) {
     var row = scanRows.get(id);
@@ -242,7 +242,7 @@
     try { data = await request(); } catch (error) { status.textContent = error.message; return; }
     if (!pane.isConnected) return;
     if (data.managedByMounts) {
-      status.textContent = mountHelp;
+      status.textContent = 'Currently mounted in the gallery';
       if (!data.folders.length) {
         element('p', 'No media folders are mounted.', pane, 'settings-footnote');
         return;

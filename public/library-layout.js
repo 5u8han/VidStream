@@ -11,14 +11,5 @@
   function place(){if(!row.length)return;if(w>=h){const width=sum/h;let top=y;for(const i of row){const height=i.area/width;result.push({...i,x,y:top,w:width,h:height});top+=height;}x+=width;w=Math.max(0,w-width);}else{const height=sum/w;let left=x;for(const i of row){const width=i.area/height;result.push({...i,x:left,y,w:width,h:height});left+=width;}y+=height;h=Math.max(0,h-height);}row=[];sum=0;min=Infinity;max=0;}
   for(const item of scaled){const side=Math.min(w,h);if(row.length&&score(sum+item.area,Math.min(min,item.area),Math.max(max,item.area),side)>score(sum,min,max,side))place();row.push(item);sum+=item.area;min=Math.min(min,item.area);max=Math.max(max,item.area);}place();return result;
  }
- function outlines(rects){
-  const paths=new Map();
-  for(const r of rects){
-   if(r.w<=2||r.h<=2)continue;
-   const x=r.x+1,y=r.y+1,w=r.w-2,h=r.h-2;
-   paths.set(r.creator,(paths.get(r.creator)||'')+`M${x} ${y}h${w}v${h}h${-w}Z`);
-  }
-  return {paths:[...paths].map(([creator,d])=>({creator,d}))};
- }
- const api={color,treemap,outlines,PALETTE};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.StreamLayout=api;
+ const api={color,treemap,PALETTE};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.StreamLayout=api;
 })(typeof window==='undefined'?globalThis:window);

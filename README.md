@@ -74,8 +74,7 @@ On a new installation, the starter keeps its private `compose.yaml` and
 | --- | --- |
 | **Folder name**, top left | Your chosen folders and their scan controls |
 | **Node**, top center | Other saved VidStream machines |
-| **View** | Tile size, sorting, filters, outlines, autoplay, and browser preview memory |
-| **Settings** | Themes, player blur, scan schedules, library tools, and machine roles |
+| **Settings** | Gallery layout and subfolder browsing, playback, host folders, backups and updates |
 | **Dashboard** | Scan activity, resources, storage maps, benchmark, repairs, and logs |
 | Any media tile | The full viewer, metadata, playback controls, and saved flags |
 
@@ -84,7 +83,7 @@ plays the opening and then up to five seconds at 1:00, 2:00, and each following
 minute. Later samples are generated as you watch and cached for next time.
 The first uncached sample can take a moment to prepare.
 
-Want to keep more ready clips? **View → Video previews → Browser preview
+Want to keep more ready clips? **Settings → Playback → Video previews → Browser preview
 memory** offers up to 2 GiB per tab. New browsers start at 1 GiB. You can set
 it to Off on any device. [Gallery and player guide](docs/USAGE.md)
 
@@ -104,7 +103,7 @@ reboot, choose **Start existing VidStream** to reconnect it.
 The catalog, account, cache, and playback positions belong to persistent
 storage. Keep the same Compose project and mounts when upgrading. A completed
 catalog can reopen without walking the whole library. You decide when to
-scan again in **Settings → Scan scheduling**. [Updates](docs/STARTER.md#update-an-existing-installation) · [Persistent storage](docs/PORTABLE_CACHE.md)
+scan again in **Settings → Indexing**. [Updates](docs/STARTER.md#update-an-existing-installation) · [Persistent storage](docs/PORTABLE_CACHE.md)
 
 ## A few things to know
 

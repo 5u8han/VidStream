@@ -145,3 +145,44 @@
 
 @media (prefers-reduced-motion: reduce) { .menu-panel.view-panel { transition: none; } }
 :root[data-effects="off"] .menu-panel.view-panel { transition: none; }
+
+.stream-settings.settings-flat .settings-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scroll-padding-inline: 4px;
+  overscroll-behavior-inline: contain;
+}
+.stream-settings.settings-flat .settings-tabs button {
+  border-radius: 18px;
+  padding-inline: 12px;
+}
+.stream-settings #settings-gallery .view-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  padding: 0;
+}
+#settings-gallery > .settings-card { margin-top: 8px; }
+#settings-playback .view-preview-section { grid-column: auto; }
+#settings-scanning .settings-choice-field { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,210px),1fr)); gap: 12px; }
+.host-status { padding: 7px 10px; border-inline-start: 2px solid var(--accent); overflow-wrap: anywhere; }
+.host-status.is-error { font-weight: 650; }
+.host-editor { display: grid; gap: 8px; padding: 0; margin: 0; border: 0; min-width: 0; }
+.host-editor p { color: var(--text-muted); margin: 5px 0 9px; }
+.host-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%,150px),1fr)); gap: 9px; }
+.host-fields label, .host-field { display: grid; align-content: start; gap: 4px; }
+.host-fields input, .host-fields select, .host-actions input { min-width: 0; }
+.host-field input { max-width: 100%; }
+.host-actions, .host-row-actions { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-block: 5px; }
+.host-actions input { flex: 1 1 200px; }
+.host-source-list { margin: 0; padding: 0; list-style: none; }
+.host-source-list li { display: flex; gap: 8px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); padding: 5px 0; }
+.host-source-list li > span { min-width: 0; overflow-wrap: anywhere; }
+.host-source-list small { display: block; color: var(--text-muted); }
+.host-row-actions { flex-shrink: 0; }
+.stream-settings.settings-flat .host-editor button { margin: 2px; }
+.host-browser { max-height: 260px; overflow: auto; padding: 9px; border: 1px solid var(--border); border-radius: 8px; }
+.host-browser strong { display: block; overflow-wrap: anywhere; }
+@media (max-width: 500px) {
+  .host-source-list li { flex-wrap: wrap; }
+  .host-row-actions { margin: 0; }
+}

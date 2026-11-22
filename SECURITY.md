@@ -32,6 +32,17 @@ The helper uses the host user's Git and Docker access. The web container
 receives only the helper's request directory for this workflow. Each node
 updates through its own installation. [Updater setup and scope](docs/STARTER.md#update-an-existing-installation)
 
+The installation panel uses the same private mailbox for a separate set of
+host actions. The signed-in owner can browse locally approved media directories,
+save read-only library mounts and memory or network settings to the private
+Compose file, apply changes, stop the service, and prepare storage for migration.
+Start-Here option 8 grants access to another dedicated media directory. The
+additional grants live on the host in `.vidstream-media-roots.json`. Removing an
+entry there revokes browsing under that grant. Currently configured media folders
+also grant access to their own subdirectories. Keep this file, the Compose file,
+and the host checkout writable only by trusted host users. Review access before
+switching a service from loopback to a LAN address.
+
 ## Linux host access
 
 Manual and guided bridge-network installs publish to `127.0.0.1` by default.

@@ -64,6 +64,7 @@
     search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>',
     copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 00-1-1H5a1 1 0 00-1 1v10a1 1 0 001 1h3"/>',
     circle: '<circle cx="12" cy="12" r="9"/>',
+    folder: '<path d="M3 7V5a1.5 1.5 0 011.5-1.5h5L12 6h7.5A1.5 1.5 0 0121 7.5V9M3 8.5h18l-2.1 10a1.5 1.5 0 01-1.5 1.2H5.2a1.5 1.5 0 01-1.5-1.3z"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5" stroke-width="2.2"/><circle cx="12" cy="7.8" r="1.1" fill="currentColor" stroke="none"/>',
     edit: '<path d="M4 20l1-4.2L15.8 5 19 8.2 8.2 19 4 20z"/><path d="M13.2 6.6L17.4 10.8"/>',
     rotate: '<path d="M20 12a8 8 0 11-3-6.2"/><path d="M20 3v4h-4"/>',
@@ -103,7 +104,7 @@
   function refreshSizes() { document.querySelectorAll('[data-video-scale]').forEach(function(b){b.classList.toggle('selected',!randomEnabled&&b.dataset.videoScale===videoScale);});document.querySelectorAll('[data-random-size]').forEach(function(b){b.classList.toggle('selected',(b.dataset.randomSize==='on')===randomEnabled);});grid.querySelectorAll('.tile.video-tile').forEach(function(t){if(!t.dataset.manualScale)t.classList.toggle('tile-expanded',randomEnabled?randomLarge(t.dataset.itemId):videoScale==='2');});remeasureAndReflow(); }
   function randomize() { randomSeed=window.StreamActivity.uuid();randomEnabled=true;storageSet('stream-random-seed',randomSeed);storageSet('stream-random-enabled','1');refreshSizes(); }
   function uniform() {randomEnabled=false;storageSet('stream-random-enabled','0');refreshSizes();}
-  window.StreamSettings.init({randomize:randomize,uniform:uniform,theme:applyTheme,effects:applyEffects,density:function(value){applyDensity(value);remeasureAndReflow();},fit:function(value){document.documentElement.dataset.mediaFit=value;storageSet('stream-media-fit',value);},viewerBlur:applyViewerBlur,videoStats:setVideoStatsEnabled});
+  window.StreamSettings.init({mountGalleryControls:mountGalleryControls,randomize:randomize,uniform:uniform,theme:applyTheme,effects:applyEffects,density:function(value){applyDensity(value);remeasureAndReflow();},fit:function(value){document.documentElement.dataset.mediaFit=value;storageSet('stream-media-fit',value);},viewerBlur:applyViewerBlur,videoStats:setVideoStatsEnabled});
 
 
   var currentTheme = storageGet('stream-theme', CONFIG.defaultTheme || 'system');
@@ -153,6 +154,7 @@
 
   var state = {
     folder: null,
+    subfolder: '',
     type: null,
     album: null,
     creator: null,
@@ -196,13 +198,7 @@
   window.StreamAmbient?.bindHoverFx(linksBottom);
 
 
-  function buildMenu() {
-    var wrap = el('div', { class: 'menu-wrap' });
-    var trigger = el('button', { class: 'icon-btn control-launcher', title: 'View options', 'aria-label': 'View options', 'aria-haspopup': 'dialog', 'aria-controls': 'gallery-view-options' }, icon('sliders') + '<span>View</span>');
-    var panel = el('div', { id: 'gallery-view-options', class: 'menu-panel view-panel', role: 'dialog', 'aria-label': 'View options' });
-    var afterClose = null;
-    header._menuPanel = panel;
-
+  function buildGalleryControls() {
     function section(label, extraClass) {
       var group = el('section', { class: 'menu-section view-section ' + (extraClass || ''), 'aria-label': label });
       group.appendChild(el('h3', { class: 'menu-label' }, label));
@@ -229,13 +225,7 @@
       button.setAttribute('aria-pressed', String(selected));
     }
 
-    var heading = el('header', { class: 'view-heading' });
-    var title = el('div');
-    title.appendChild(el('strong', {}, 'View options'));
-    var close = choice('×', { class: 'view-close', 'aria-label': 'Close View options' }, function () { window.StreamNavigation.back(); });
-    heading.append(title, close);
-    var cards = el('div', { class: 'view-card-grid' });
-    panel.append(heading, cards);
+    var cards = el('div', { class: 'view-card-grid view-panel' });
 
     var layout = section('Layout');
     var sizeLabel = el('label', { class: 'view-size-label', for: 'view-media-size' });
@@ -274,27 +264,118 @@
     function paintRandom() { paintChoice(randomButton, randomEnabled); reshuffle.disabled = !randomEnabled; }
     paintRandom(); organicRow.append(randomButton, reshuffle); layout.appendChild(organicRow);
 
-    var outlines = section('Artist outlines');
-    var outlineChoices = el('div', { class: 'view-segmented', role: 'group', 'aria-label': 'Artist outlines' });
-    [['off', 'Off'], ['subtle', 'Fine borders'], ['hover', 'On hover']].forEach(function (option) {
-      var button = choice(option[1], { 'data-artist-outlines': option[0] }, function () {
-        storageSet('stream-artist-outlines', option[0]); artistOutlines.setMode(option[0]); updateArtistSpacing(option[0]);
-        outlineChoices.querySelectorAll('button').forEach(function (item) { paintChoice(item, item.dataset.artistOutlines === option[0]); });
-      });
-      paintChoice(button, storageGet('stream-artist-outlines', 'off') === option[0]); outlineChoices.appendChild(button);
+    var folderCard = section('Subfolders');
+    var previousSort = state.sort === 'folder' ? 'desc' : state.sort;
+    var grouping = choice('Browse by folder', {}, function () {
+      if (state.sort !== 'folder') previousSort = state.sort;
+      chooseSort(state.sort === 'folder' ? previousSort : 'folder');
     });
-    var recolor = choice('Shuffle colors', { class: 'view-text-action', 'aria-label': 'Shuffle artist colors' }, function () {
-      storageSet('stream-artist-palette', window.StreamActivity.uuid());
-      grid.querySelectorAll('.tile').forEach(function (tile) { tile.style.setProperty('--source-color', creatorColor(tile._item.creator)); }); artistOutlines.refresh();
+    var scopeLabel = el('label', { class: 'folder-scope-control' });
+    var scopePath = el('span', { class: 'folder-scope-path' });
+    var folderSelect = el('select', { class: 'filter-select', 'aria-label': 'Browse subfolders' });
+    scopeLabel.append(scopePath, folderSelect);
+    folderCard.append(grouping, scopeLabel);
+    cards.appendChild(folderCard);
+    var pickerScope = null, pickerVisible = false, pickerNext = '', pickerRequest = null;
+    function pickerOptions() {
+      folderSelect.replaceChildren(new Option('Choose a subfolder…', ''));
+      if (state.subfolder) {
+        folderSelect.add(new Option('↑ Parent folder', 'parent'));
+        folderSelect.add(new Option('↟ Entire library folder', 'root'));
+      }
+    }
+    async function loadChildren() {
+      if (pickerRequest || pickerNext === null || !pickerVisible || state.sort !== 'folder') return;
+      var request = new AbortController();
+      pickerRequest = request;
+      folderSelect.disabled = true;
+      var params = new URLSearchParams({ subfolder: state.subfolder });
+      if (state.folder) params.set('folder', state.folder);
+      if (pickerNext) params.set('after', pickerNext);
+      try {
+        var response = await fetch('/api/folders/children?' + params, { signal: request.signal });
+        if (!response.ok) throw Error('Could not load folders');
+        var result = await response.json();
+        if (pickerRequest !== request) return;
+        folderSelect.querySelector('[value="more"]')?.remove();
+        result.children.forEach(function (name) { folderSelect.add(new Option(name, 'child:' + name)); });
+        pickerNext = result.next;
+        if (pickerNext) folderSelect.add(new Option('Show more folders…', 'more'));
+        if (folderSelect.options.length === (state.subfolder ? 3 : 1)) folderSelect.options[0].text = 'No deeper folders indexed';
+      } catch (_) {
+        if (pickerRequest !== request) return;
+        folderSelect.querySelector('[value="more"]')?.remove();
+        folderSelect.add(new Option('Retry loading folders', 'more'));
+      } finally {
+        if (pickerRequest === request) { pickerRequest = null; folderSelect.disabled = false; }
+      }
+    }
+    function paintFolderControls() {
+      var grouped = state.sort === 'folder';
+      paintChoice(grouping, grouped);
+      scopeLabel.hidden = !grouped;
+      var scope = JSON.stringify([grouped, state.folder, state.subfolder]);
+      if (scope === pickerScope) return;
+      pickerScope = scope;
+      pickerRequest?.abort(); pickerRequest = null; pickerNext = '';
+      pickerOptions();
+      scopePath.textContent = state.subfolder || 'Entire library folder';
+      scopePath.title = scopePath.textContent;
+      loadChildren();
+    }
+    new IntersectionObserver(function (entries) {
+      pickerVisible = entries[0].isIntersecting;
+      if (pickerVisible && pickerNext === '') loadChildren();
+    }).observe(folderCard);
+    folderSelect.addEventListener('change', function () {
+      var value = folderSelect.value;
+      folderSelect.selectedIndex = 0;
+      if (value === 'more') { loadChildren(); return; }
+      if (value === 'parent') state.subfolder = state.subfolder.split('/').slice(0, -1).join('/');
+      else if (value === 'root') state.subfolder = '';
+      else if (value.startsWith('child:')) state.subfolder = [state.subfolder, value.slice(6)].filter(Boolean).join('/');
+      else return;
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      resetAndLoad();
     });
-    outlines.append(outlineChoices, recolor); cards.appendChild(outlines);
+    header._paintFolderControls = paintFolderControls;
+    paintFolderControls();
 
     var filters = section('Sorting and filters');
+    var typeSelect = el('select', { class: 'filter-select', 'aria-label': 'Filter by type' },
+      '<option value="">All</option><option value="photo">Photos</option><option value="video">Videos</option>');
+    typeSelect.addEventListener('change', function () {
+      state.type = typeSelect.value || null;
+      resetAndLoad();
+    });
+    header._typeSelect = typeSelect;
+    var typeField = el('label', { class: 'view-field' });
+    typeField.append(el('span', {}, 'Media type'), typeSelect);
+    filters.appendChild(typeField);
+
+    var albumSelect = el('select', { class: 'filter-select', 'aria-label': 'Filter by album', style: 'display:none' });
+    albumSelect.addEventListener('change', function () {
+      state.album = albumSelect.value || null;
+      resetAndLoad();
+    });
+    filters.appendChild(albumSelect);
+    header._albumSelect = albumSelect;
+
+    var creatorSelect = el('select', { class: 'filter-select', 'aria-label': 'Filter by creator', style: 'display:none' });
+    creatorSelect.addEventListener('change', function () {
+      state.creator = creatorSelect.value || null;
+      resetAndLoad();
+    });
+    filters.appendChild(creatorSelect);
+    header._creatorSelect = creatorSelect;
+
+
     var sortOptions = [['desc', 'Newest first'], ['asc', 'Oldest first'], ['name-asc', 'Name A–Z'], ['name-desc', 'Name Z–A'], ['random', 'Shuffle'], ['creator', 'All media · artist A–Z']];
+    sortOptions.push(['folder', 'Folder path']);
     if (isAdmin) sortOptions.push(['recent', 'Recently opened'], ['continue', 'Continue watching'], ['less-seen', 'Less-seen shuffle']);
     function chooseSort(value) {
       if (value === 'random' || value === 'less-seen') state.seed = String(Date.now());
-      if (value === 'continue') { state.type = 'video'; header.querySelector('[aria-label="Filter by type"]').value = 'video'; }
+      if (value === 'continue') { state.type = 'video'; header._typeSelect.value = 'video'; }
       if (value === 'creator') clearGalleryFilters();
       state.sort = value; markSortSelected(); resetAndLoad();
     }
@@ -376,8 +457,7 @@
     memory.control.setAttribute('aria-describedby', 'preview-memory-help');
     var memoryHelp = el('p', { id: 'preview-memory-help', class: 'menu-help' }, 'Keep recently played optimized clips in this tab. Choose a larger budget on devices with spare memory.');
     var diagnose = choice('Check playback smoothness', {}, function () {
-      window.StreamNavigation.leave('options');
-      window.StreamDiagnostics.open({
+      window.StreamSettings.dismissThen(function () { window.StreamDiagnostics.open({
         videos: function () { return Array.from(runningPreviews).map(function (tile) { return tile._video; }).filter(Boolean).slice(0, 4); },
         previewLimit: MAX_PREVIEWS,
         previewStats: function () {
@@ -386,7 +466,7 @@
         effects: document.documentElement.dataset.effects,
         lightweight: lightweightGallery,
         previewSource: currentPreviewSource()
-      });
+      }); });
     });
     var playbackControls = el('div', { class: 'view-date-range' });
     playbackControls.append(source.field, maxPreview.field, memory.field);
@@ -405,13 +485,14 @@
     var savedSelect = el('select', { class: 'filter-select', 'aria-label': 'Saved views' });
     var savedViews = []; try { savedViews = JSON.parse(storageGet('stream-saved-filters', '[]')); if (!Array.isArray(savedViews)) savedViews = []; } catch (_) {}
     savedViews = savedViews.slice(0, 20).filter(function (view) { return view && typeof view.name === 'string' && view.filters && typeof view.filters === 'object'; });
-    var savedKeys = ['type', 'album', 'creator', 'dateField', 'dateFrom', 'dateTo', 'resolution', 'has', 'q', 'sort', 'seed'];
+    var savedKeys = ['type', 'album', 'creator', 'dateField', 'dateFrom', 'dateTo', 'resolution', 'has', 'q', 'sort', 'seed', 'subfolder'];
     function paintSaved() { savedSelect.replaceChildren(new Option('Choose a saved view', '')); savedViews.forEach(function (view, index) { savedSelect.add(new Option(view.name, String(index))); }); }
     savedSelect.addEventListener('change', function () {
       if (savedSelect.value === '') return; var view = savedViews[Number(savedSelect.value)]; if (!view) return;
       savedKeys.forEach(function (key) { if (Object.hasOwn(view.filters, key)) state[key] = view.filters[key]; });
+      state.subfolder = (view.folder || '') === (state.folder || '') ? view.filters.subfolder || '' : '';
       header._albumSelect.value = state.album || ''; header._creatorSelect.value = state.creator || '';
-      header.querySelector('[aria-label="Filter by type"]').value = state.type || '';
+      header._typeSelect.value = state.type || '';
       var search = header.querySelector('input[type=search]'); if (search) search.value = state.q || '';
       from.value = state.dateFrom || ''; to.value = state.dateTo || ''; dateField.control.value = state.dateField || 'created'; resolution.control.value = String(state.resolution || 0);
       markSortSelected(); refreshContainsHighlight(); resetAndLoad(); showToast('Saved view applied');
@@ -419,7 +500,7 @@
     var saveView = choice('Save', {}, function () {
       var name = viewName.value.trim(); if (!name) { viewName.focus(); return; }
       var filters = {}; savedKeys.forEach(function (key) { filters[key] = state[key]; });
-      savedViews = savedViews.filter(function (view) { return view.name !== name; }); savedViews.unshift({ name: name, filters: filters }); savedViews = savedViews.slice(0, 20);
+      savedViews = savedViews.filter(function (view) { return view.name !== name; }); savedViews.unshift({ name: name, folder: state.folder, filters: filters }); savedViews = savedViews.slice(0, 20);
       storageSet('stream-saved-filters', JSON.stringify(savedViews)); paintSaved(); showToast('View saved on this browser');
     });
     var removeView = choice('Remove', { 'aria-label': 'Remove selected saved view' }, function () {
@@ -446,56 +527,23 @@
     }
     markSortSelected(); refreshContainsHighlight();
 
-    function positionPanel() {
-      var anchor = trigger.getBoundingClientRect();
-      var width = Math.min(innerWidth <= 900 ? 670 : 880, innerWidth - 16);
-      var left = Math.max(8, Math.min(anchor.left + anchor.width / 2 - width / 2, innerWidth - width - 8));
-      panel.style.setProperty('--controls-top', Math.max(8, header.getBoundingClientRect().bottom + 8) + 'px');
-      panel.style.setProperty('--controls-left', left + 'px');
-    }
-    function showMenu() {
-      panel.hidden = false; positionPanel(); panel.classList.add('open'); panel.inert = false;
-      trigger.setAttribute('aria-expanded', 'true'); markSortSelected(); paintPreviews(); paintRandom();
-      document.addEventListener('click', outsideClick, true);
-      window.addEventListener('resize', positionPanel);
-    }
-    function hideMenu() {
-      panel.classList.remove('open'); panel.hidden = true; panel.inert = true; trigger.setAttribute('aria-expanded', 'false'); document.removeEventListener('click', outsideClick, true);
-      window.removeEventListener('resize', positionPanel);
-      trigger.focus({ preventScroll: true });
-      if (afterClose) {
-        var next = afterClose; afterClose = null;
-        queueMicrotask(function () { if (next.isConnected) { next.focus({ preventScroll: true }); next.click(); } });
-      }
-    }
-    function openMenu() {
-      if (!window.StreamNavigation.enter('options', { back: hideMenu, forward: showMenu })) return;
-      showMenu(); sizeSlider.focus({ preventScroll: true });
-    }
-    function outsideClick(event) {
-      if (!wrap.contains(event.target)) {
-        afterClose = event.target.closest('.header button');
-        event.preventDefault(); event.stopImmediatePropagation(); window.StreamNavigation.back();
-      }
-    }
-    trigger.addEventListener('click', function (event) {
-      event.stopPropagation(); if (panel.classList.contains('open')) window.StreamNavigation.back(); else openMenu();
-    });
-    document.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape' && panel.classList.contains('open') && !document.querySelector('dialog[open]')) {
-        event.preventDefault(); event.stopImmediatePropagation(); window.StreamNavigation.back();
-      }
-    }, true);
-    panel.hidden = true; panel.inert = true; trigger.setAttribute('aria-expanded', 'false'); wrap.append(trigger, panel);
-    return wrap;
+    header._galleryCards = cards;
+    header._previewCard = previews;
+    header._paintGalleryControls = function () { markSortSelected(); paintPreviews(); paintRandom(); };
+  }
+
+  function mountGalleryControls(galleryPane, playbackPane) {
+    header._paintGalleryControls();
+    galleryPane.appendChild(header._galleryCards);
+    playbackPane.appendChild(header._previewCard);
   }
 
   function clearGalleryFilters(){
     state.type=state.album=state.creator=state.has=state.dateFrom=state.dateTo=null;state.q='';state.resolution=0;
     if(header._albumSelect)header._albumSelect.value='';if(header._creatorSelect)header._creatorSelect.value='';
-    header.querySelectorAll('input[type="date"]').forEach(function(input){input.value='';});
-    header.querySelector('[aria-label="Filter by type"]').value='';
-    header.querySelector('[aria-label="Minimum resolution"]').value='0';
+    header._galleryCards.querySelectorAll('input[type="date"]').forEach(function(input){input.value='';});
+    header._typeSelect.value='';
+    header._galleryCards.querySelector('[aria-label="Minimum resolution"]').value='0';
     var search=header.querySelector('input[type="search"]');if(search)search.value='';refreshContainsHighlight();
   }
   function remeasureAndReflow() {
@@ -503,7 +551,6 @@
     Array.prototype.forEach.call(grid.querySelectorAll('.tile'), function (tile) {
       if (tile._item) applySpan(tile, tile._item);
     });
-    if(artistOutlines)artistOutlines.refresh();
   }
 
 
@@ -552,40 +599,14 @@
     var controls = el('div', { class: 'header-controls' });
     header._quickActions=el('div',{class:'quick-actions','aria-label':'Pinned quick actions'});controls.appendChild(header._quickActions);renderQuickActions();
 
-    var typeSelect = el('select', { class: 'filter-select', 'aria-label': 'Filter by type' },
-      '<option value="">All</option><option value="photo">Photos</option><option value="video">Videos</option>');
-    typeSelect.addEventListener('change', function () {
-      state.type = typeSelect.value || null;
-      resetAndLoad();
-    });
-    controls.appendChild(typeSelect);
-
-    var albumSelect = el('select', { class: 'filter-select', 'aria-label': 'Filter by album', style: 'display:none' });
-    albumSelect.addEventListener('change', function () {
-      state.album = albumSelect.value || null;
-      resetAndLoad();
-    });
-    controls.appendChild(albumSelect);
-    header._albumSelect = albumSelect;
-
-    var creatorSelect = el('select', { class: 'filter-select', 'aria-label': 'Filter by creator', style: 'display:none' });
-    creatorSelect.addEventListener('change', function () {
-      state.creator = creatorSelect.value || null;
-      resetAndLoad();
-    });
-    controls.appendChild(creatorSelect);
-    header._creatorSelect = creatorSelect;
-
     controls.appendChild(buildSearch());
 
-    controls.appendChild(buildMenu());
+    buildGalleryControls();
     var settingsButton=el('button',{class:'icon-btn control-launcher',title:'Settings (/)', 'aria-label':'Settings', 'aria-haspopup':'dialog', 'aria-controls':'stream-settings', 'aria-expanded':'false'},icon('settings')+'<span>Settings</span>');settingsButton.onclick=window.StreamSettings.open;controls.appendChild(settingsButton);
 
-    var rescanBtn = el('button', { class: 'icon-btn', title: 'Rescan library', 'aria-label': 'Rescan library' }, icon('refresh'));
-    rescanBtn.addEventListener('click', function () { queueLibraryScan(rescanBtn, false); });
     if (isAdmin) {
-      controls.appendChild(rescanBtn);
-      var dashboardBtn = el('button', { class: 'icon-btn header-dashboard', title: 'Library dashboard', 'aria-label': 'Library dashboard' }, icon('chart'));
+      var dashboardBtn = el('button', { class: 'icon-btn control-launcher header-dashboard', title: 'Library dashboard', 'aria-label': 'Library dashboard' }, icon('chart'));
+      dashboardBtn.appendChild(el('span', {}, 'Dashboard'));
       dashboardBtn.appendChild(el('span', { class: 'dashboard-issue-badge', 'data-issue-count': '', hidden: '' }));
       dashboardBtn.addEventListener('click', function () { dashboardModal.open(); });
       controls.appendChild(dashboardBtn);
@@ -802,7 +823,6 @@
     var back = el('button', { type: 'button', class: 'dashboard-back', hidden: true });
     head.appendChild(back);
     head.appendChild(el('h2', {}, 'Dashboard'));
-    var notifications = window.StreamDashboardNotifications.mount(head, { openItem: openItem });
     function openItem(itemId) {
       dismiss(function () {
         fetch('/api/item/' + encodeURIComponent(itemId)).then(function (r) {
@@ -815,72 +835,91 @@
     var close = el('button', { class: 'icon-btn', 'aria-label': 'Close dashboard' }, icon('close'));
     head.appendChild(close);
     var body = el('div', { class: 'dashboard-body' });
-    card.appendChild(head); card.appendChild(body); scrim.appendChild(card);
+    var tabs = el('nav', { class: 'dashboard-sections', 'aria-label': 'Dashboard sections' });
+    var destinations = { overview: 'Overview', repairs: 'Media repairs', notifications: 'Notifications' };
+    var tabButtons = {};
+    Object.keys(destinations).forEach(function (name) {
+      var button = tabButtons[name] = el('button', { type: 'button' }, destinations[name]);
+      button.onclick = function () { visit(name, button); };
+      if (name === 'notifications') button.appendChild(el('span', { class: 'dashboard-issue-badge', 'data-issue-count': '', hidden: true }));
+      tabs.appendChild(button);
+    });
+    card.append(head, tabs, body); scrim.appendChild(card);
+    var notifications = window.StreamDashboardNotifications.mount(card, { openItem: openItem,
+      openRepair: function (id, origin) { openRepairs(origin, id); } });
     var repairs = window.StreamDashboardNotifications.mountRepairs(card, { openItem: openItem, openRepair: openRepair });
     var navigation = window.StreamNavigation;
-    var pendingDismiss;
-    var refreshTimer, openId = 0, returnFocus, benchmarkPanel, folderMapView;
+    var activePanel = 'overview', sectionDestination, afterDismiss;
+    var refreshTimer, openId = 0, returnFocus, benchmarkPanel, folderMapView, disposeResources;
     function setBackLabel(label) {
       back.hidden = !label;
       back.textContent = label ? '‹ ' + label : '';
-      head.querySelector('.dashboard-issues-toggle').hidden = Boolean(label);
-      head.classList.toggle('dashboard-head-nested', Boolean(label));
+      tabs.hidden = label === 'Media repairs';
+    }
+    function paint(name) {
+      activePanel = name;
+      Object.keys(tabButtons).forEach(function (key) {
+        tabButtons[key].setAttribute('aria-current', key === name ? 'page' : 'false');
+      });
+      body.hidden = name !== 'overview';
+      if (name === 'repairs') repairs.open(); else repairs.close();
+      if (name === 'notifications') notifications.open(); else notifications.close();
+      setBackLabel(name === 'overview' ? null : 'Dashboard');
+      if (!body.hidden && !body.childElementCount) loadOverview();
+    }
+    function visit(name, origin) {
+      if (activePanel === name) return;
+      if (name === 'overview') { navigation.leave('dashboard-section'); return; }
+      sectionDestination = name;
+      if (!navigation.has('dashboard-section')) {
+        if (!navigation.enter('dashboard-section', { back: function () {
+          if (!navigation.has('dashboard')) return;
+          paint('overview');
+          (origin?.isConnected ? origin : tabButtons.overview).focus({ preventScroll: true });
+        }, forward: function () {
+          if (!scrim.classList.contains('open')) return false;
+          paint(sectionDestination);
+        } })) return;
+      }
+      paint(name);
     }
     function openRepairs(origin, issueId) {
-      function show() {
-        if (!scrim.classList.contains('open')) return false;
-        notifications.close();
-        body.hidden = true;
-        setBackLabel('Dashboard');
-        repairs.open();
-        return true;
-      }
-      function hide() {
-        repairs.close();
-        body.hidden = false;
-        setBackLabel(null);
-        if (pendingDismiss) {
-          var finish = pendingDismiss;
-          pendingDismiss = null;
-          finish();
-        } else (origin?.isConnected ? origin : close).focus({ preventScroll: true });
-      }
-      if (!navigation.enter('dashboard-repairs', { back: hide, forward: show })) return;
-      show();
-      if (issueId) openRepair(issueId);
+      visit('repairs', origin);
+      if (issueId && activePanel === 'repairs') openRepair(issueId);
     }
     function openRepair(issueId, origin) {
       function show() {
-        if (!scrim.classList.contains('open')) return false;
+        if (!scrim.classList.contains('open') || activePanel !== 'repairs') return false;
         setBackLabel('Media repairs');
         void repairs.showDetail(issueId);
         return true;
       }
       function hide() {
-        if (pendingDismiss) return;
+        if (!navigation.has('dashboard-section')) return;
         setBackLabel('Dashboard');
         repairs.showList(origin);
       }
       if (navigation.enter('dashboard-repair', { back: hide, forward: show })) show();
     }
+    function finish() {
+      openId++;
+      clearTimeout(refreshTimer);
+      notifications.close();
+      repairs.close();
+      benchmarkPanel?.dispose();
+      folderMapView?.dispose();
+      disposeResources?.();
+      body.replaceChildren();
+      scrim.classList.remove('open');
+      scrim.inert = true;
+      scrim.setAttribute('aria-hidden', 'true');
+      returnFocus?.focus({ preventScroll: true });
+      var callback = afterDismiss;
+      afterDismiss = null;
+      callback?.();
+    }
     function dismiss(afterClose) {
-      if (!scrim.classList.contains('open')) return;
-      function finish() {
-        openId++;
-        clearTimeout(refreshTimer);
-        notifications.close();
-        repairs.close();
-        benchmarkPanel?.dispose();
-        folderMapView?.dispose();
-        scrim.classList.remove('open');
-        scrim.inert = true;
-        scrim.setAttribute('aria-hidden', 'true');
-        returnFocus?.focus({ preventScroll: true });
-        afterClose?.();
-      }
-      if (navigation.has('dashboard-repairs')) {
-        if (navigation.leave('dashboard-repairs')) pendingDismiss = finish;
-      } else finish();
+      if (navigation.leave('dashboard')) afterDismiss = afterClose;
     }
     close.addEventListener('click', function () { dismiss(); });
     back.addEventListener('click', function () { navigation.back(); });
@@ -897,18 +936,15 @@
       if (e.key !== 'Escape') return;
       e.stopPropagation();
       if (!back.hidden) navigation.back();
-      else if (notifications.isOpen()) {
-        notifications.close();
-        head.querySelector('.dashboard-issues-toggle').focus({ preventScroll: true });
-      } else dismiss();
+      else dismiss();
     });
 
-    function section(title) {
-      var wrap = el('section', { class: 'dashboard-section' });
-      wrap.appendChild(el('h3', {}, title)); body.appendChild(wrap); return wrap;
+    function section(title, collapsed) {
+      var wrap = el(collapsed ? 'details' : 'section', { class: 'dashboard-section' });
+      wrap.appendChild(el(collapsed ? 'summary' : 'h3', {}, title)); body.appendChild(wrap); return wrap;
     }
     function barChart(title, rows, getLabel, getValue) {
-      var wrap = section(title);
+      var wrap = section(title, true);
       var top = rows.slice(0, 25);
       var max = Math.max(1, ...top.map(getValue));
       top.forEach(function (row) {
@@ -924,7 +960,7 @@
       if (!rows.length) wrap.appendChild(el('p', {}, 'No entries yet'));
     }
     function showAiControls() {
-      var sectionEl = section('Optional object recognition');
+      var sectionEl = section('Object recognition', true);
       sectionEl.appendChild(el('p', { class: 'modal-sub' },
         'Only installed models run. Downloads are explicit and optional. Hardware details reflect the container, not necessarily the physical host.'));
       var aiBox = el('div', { class: 'dashboard-ai-controls' });
@@ -992,10 +1028,14 @@
           })
           .catch(function () { aiBox.textContent = 'Could not detect hardware or AI settings.'; });
       }
-      render();
+      sectionEl.addEventListener('toggle', function firstOpen() {
+        if (!sectionEl.open) return;
+        sectionEl.removeEventListener('toggle', firstOpen);
+        render();
+      });
     }
     function showFiles() {
-      var wrap = section('Indexed files (paged)');
+      var wrap = section('Indexed files', true);
       var list = el('div', { class: 'dashboard-files' });
       var next = el('button', { class: 'dashboard-next' }, 'Load indexed files');
       var offset = 0;
@@ -1019,13 +1059,11 @@
       wrap.appendChild(list); wrap.appendChild(next);
     }
     function showScanActivity(id, logSection) {
-      var pane = section('Scan activity');
+      var pane = section('Current workload');
       pane.classList.add('dashboard-scan');
       var current = el('p', { class: 'dashboard-lead' }, 'Loading scan activity…');
       var details = el('p', { class: 'modal-sub' });
       var pauseButton = el('button', { type: 'button', class: 'dashboard-next', hidden: true }, 'Pause indexing');
-      var repairButton = el('button', { type: 'button', class: 'dashboard-next' }, 'Media repairs');
-      repairButton.onclick = function () { openRepairs(repairButton); };
       var pauseStatus = el('p', { class: 'modal-sub', role: 'status', hidden: true });
       var skipStatus = el('p', { class: 'modal-sub', role: 'status', hidden: true });
       var message = el('p', { class: 'dashboard-scan-status', hidden: true });
@@ -1037,8 +1075,10 @@
       var logs = el('ol', { class: 'dashboard-scan-list dashboard-log', tabindex: '0', 'aria-label': 'Recent scan log', hidden: true });
       var logsEmpty = el('p', { class: 'modal-sub' }, 'No scan messages yet.');
       var scanActions = el('div', { class: 'dashboard-repair-tools' });
-      scanActions.append(repairButton, pauseButton);
-      pane.append(current, details, scanActions, pauseStatus, message, activeHeading, active, skipStatus, recentHeading, recent, recentEmpty);
+      scanActions.appendChild(pauseButton);
+      var recentActivity = el('details', { class: 'dashboard-operation-history' });
+      recentActivity.append(el('summary', {}, 'Operation history'), recentHeading, recent, recentEmpty);
+      pane.append(current, details, scanActions, pauseStatus, message, activeHeading, active, skipStatus, recentActivity);
       logSection.append(logs, logsEmpty);
       var signatures = new WeakMap();
       var indexingPaused = false;
@@ -1182,7 +1222,9 @@
             if (data.parallelism.metadataWorkers) status.push(data.parallelism.metadataWorkers + ' metadata workers');
             if (data.parallelism.directoryWorkers) status.push(data.parallelism.directoryWorkers + ' directory workers');
           }
-          if (data.queued?.length) status.push(data.queued.length + ' queued');
+          if (data.queued?.length) status.push(data.queued.length + ' scans queued');
+          if (data.repairWork?.activePath) status.push('Repairing ' + data.repairWork.activePath);
+          if (data.repairWork?.waiting) status.push(data.repairWork.waiting + ' repairs queued');
           if (data.pendingStorageReads) status.push(data.pendingStorageReads + ' storage operations still awaiting the OS');
           details.textContent = status.join(' · ');
           message.hidden = !(progress && progress.pauseState !== 'paused' && idleSeconds >= 45);
@@ -1225,35 +1267,46 @@
       return pane;
     }
     function open(target) {
-      returnFocus = document.activeElement || returnFocus;
-      clearTimeout(refreshTimer);
+      var name = target === 'repairs' ? 'repairs' : ['notifications', 'issues'].includes(target) ? 'notifications' : 'overview';
+      if (navigation.has('dashboard')) { visit(name); return; }
+      function show() {
+        returnFocus = document.activeElement;
+        scrim.inert = false;
+        scrim.setAttribute('aria-hidden', 'false');
+        scrim.classList.add('open');
+        close.focus({ preventScroll: true });
+        return true;
+      }
+      if (!navigation.enter('dashboard', { back: finish, forward: function () { show(); paint('overview'); } })) return;
+      show();
+      activePanel = 'overview';
+      if (name === 'overview') paint(name); else visit(name);
+    }
+    function loadOverview() {
       var id = ++openId;
-      benchmarkPanel?.dispose();
-      folderMapView?.dispose();
-      body.replaceChildren();
-      scrim.inert = false;
-      scrim.setAttribute('aria-hidden', 'false');
-      scrim.classList.add('open');
-      close.focus({ preventScroll: true });
       var logSection = el('section', { class: 'dashboard-section' });
       logSection.appendChild(el('h3', {}, 'Server logs'));
       logSection.id = 'dashboard-server-logs';
       showScanActivity(id, logSection);
-      benchmarkPanel = window.StreamBenchmark.mount(body, {
-        version: CONFIG.version,
-        videos: function () {
-          return Array.from(runningPreviews).map(function (tile) { return tile._video; }).filter(Boolean).slice(0, 8);
-        }
+      var benchmark = section('Machine benchmark', true);
+      benchmark.addEventListener('toggle', function firstBenchmark() {
+        if (!benchmark.open) return;
+        benchmark.removeEventListener('toggle', firstBenchmark);
+        benchmarkPanel = window.StreamBenchmark.mount(benchmark, {
+          version: CONFIG.version,
+          videos: function () {
+            return Array.from(runningPreviews).map(function (tile) { return tile._video; }).filter(Boolean).slice(0, 8);
+          }
+        });
       });
       var loading = el('p', { class: 'modal-sub' }, 'Loading library statistics…');
       body.append(loading, logSection);
-      if (target === 'notifications') notifications.open();
-      if (target === 'repairs') openRepairs();
       fetch('/api/dashboard').then(function (r) { if (!r.ok) throw Error('Dashboard unavailable'); return r.json(); })
         .then(function (d) {
           if (id !== openId) return;
           loading.remove();
-          var summary = section('Overview');
+          var summary = section('Library');
+          body.prepend(summary);
           summary.appendChild(el('p', { class: 'dashboard-lead' },
             d.totals.photos.toLocaleString() + ' photos · ' + d.totals.videos.toLocaleString() +
             ' videos · ' + (d.totals.bytes / (1024 ** 3)).toFixed(2) + ' GiB indexed'));
@@ -1270,18 +1323,14 @@
           barChart('Creators / folders', d.creators, function (x) { return x.name; }, function (x) { return x.photos + x.videos; });
           barChart('Formats', d.formats, function (x) { return x.name; }, function (x) { return x.count; });
           barChart('Resolution', d.resolutions, function (x) { return x.name; }, function (x) { return x.count; });
-          var pie = section('Photos vs videos');
-          var total = Math.max(1, d.totals.photos + d.totals.videos);
-          var circle = el('div', { class: 'dashboard-pie', role: 'img', 'aria-label': 'Photo/video split' });
-          circle.style.background = 'conic-gradient(var(--accent) 0 ' + (d.totals.photos / total * 100).toFixed(2) + '%, var(--text-muted) 0 100%)';
-          pie.appendChild(circle);
-          pie.appendChild(el('p', { class: 'mono' }, 'Photos ' + d.totals.photos + ' · Videos ' + d.totals.videos));
-          var scans = section('Recent scans');
+          var scans = section('Recent scans', true);
           (d.history || []).slice().reverse().forEach(function (scan) {
             scans.appendChild(el('div', { class: 'dashboard-file' }, scan.at + ' · ' + (scan.durationMs / 1000).toFixed(1) + 's · +' + scan.added + ' / ~' + scan.updated + ' / −' + scan.removed + ' · ' + scan.failed + ' failed'));
           });
           if (!d.history?.length) scans.appendChild(el('p', {}, 'No scan history yet'));
-          window.StreamResources.mount(body, function () { return id === openId; });
+          var resources = section('Server resources');
+          body.querySelector('.dashboard-scan').after(resources);
+          disposeResources = window.StreamResources.mount(resources, function () { return id === openId; }, function () { return !body.hidden; });
           var mapPanel = el('details', { class: 'dashboard-section' });
           mapPanel.appendChild(el('summary', {}, 'Artist map'));
           body.appendChild(mapPanel);
@@ -1291,23 +1340,23 @@
             window.StreamLibraryMap.mount(mapPanel, {
               color: creatorColor, isOpen: function () { return id === openId; },
               openArtist: function (name) {
-                dismiss(); clearGalleryFilters(); state.creator = name; state.sort = 'creator';
-                if (header._creatorSelect) header._creatorSelect.value = name;
-                resetAndLoad();
+                dismiss(function () {
+                  clearGalleryFilters(); state.creator = name; state.sort = 'creator';
+                  if (header._creatorSelect) header._creatorSelect.value = name;
+                  resetAndLoad();
+                });
               },
               openItem: function (itemId) {
-                dismiss(); clearGalleryFilters(); resetAndLoad();
-                fetch('/api/item/' + encodeURIComponent(itemId)).then(function (r) { return r.json(); })
-                  .then(function (data) { if (data.item) openLightbox(data.item, true); });
+                openItem(itemId);
               }
             });
           });
           showFiles();
           showAiControls();
           body.appendChild(logSection);
-          if (target === 'issues') notifications.open();
         }).catch(function () { if (id === openId) loading.textContent = 'Could not load library statistics.'; });
     }
+    window.StreamDashboard = { open: open };
     return { root: scrim, open: open };
   }
 
@@ -1333,10 +1382,7 @@
     });
   }
 
-  var artistOutlines=window.StreamArtistOutlines.install(grid,{mode:storageGet('stream-artist-outlines','off'),color:creatorColor});
-  artistOutlines.setMode(storageGet('stream-artist-outlines','off'));
-  grid.style.setProperty('--gap',storageGet('stream-artist-outlines','off')==='off'?'0px':'1px');
-  function updateArtistSpacing(mode) { grid.style.setProperty('--gap', mode === 'off' ? '0px' : '1px'); remeasureAndReflow(); }
+  var lastFolderGroup = null;
   var sentinel = el('li', { class: 'sentinel' });
   var statusEl = el('div', { class: 'grid-status', role: 'status', 'aria-live': 'polite' });
   var toGalleryStart = el('button', { class: 'load-retry', type: 'button', hidden: '' }, 'Start of folder');
@@ -1355,7 +1401,7 @@
     var cols = computed.gridTemplateColumns.split(' ').filter(Boolean);
     columnWidth = cols.length ? parseFloat(cols[0]) : grid.clientWidth;
     gridGap = parseFloat(computed.gap) || 0;
-    rowUnit = parseFloat(computed.gridAutoRows) || 1;
+    rowUnit = parseFloat(computed.getPropertyValue('--row')) || 1;
   }
 
   function applySpan(tile, item) {
@@ -1379,6 +1425,7 @@
   function apiUrl(cursor) {
     var params = new URLSearchParams();
     if (state.folder) params.set('folder', state.folder);
+    if (state.sort === 'folder' && state.subfolder) params.set('subfolder', state.subfolder);
     if (window.StreamFolders?.configured()) params.set('metadata', '0');
     if (state.type) params.set('type', state.type);
     if (state.album) params.set('album', state.album);
@@ -1398,7 +1445,7 @@
   }
 
   var galleryPlaceKey = 'stream-gallery-place-' + (CONFIG.node?.id || 'local');
-  var placeFields = ['type', 'album', 'creator', 'dateField', 'dateFrom', 'dateTo', 'resolution', 'has', 'q', 'sort', 'seed'];
+  var placeFields = ['type', 'album', 'creator', 'dateField', 'dateFrom', 'dateTo', 'resolution', 'has', 'q', 'sort', 'seed', 'subfolder'];
   var initialView = galleryView();
   var recentPlaces = [];
   var pagesLoaded = 0, priorPageCursor = null, restoreTask = null, scrollCheckpointTimer;
@@ -1415,6 +1462,8 @@
   function applyGalleryPlace(place) {
     var view = place?.view;
     placeFields.forEach(function (key) { state[key] = view?.[key] ?? initialView[key]; });
+    grid.classList.toggle('by-folder', state.sort === 'folder');
+    header._paintFolderControls();
     header._albumSelect.value = state.album || '';
     header._creatorSelect.value = state.creator || '';
     var inputs = [
@@ -1423,7 +1472,8 @@
       ['Minimum resolution', String(state.resolution)], ['Sort order', state.sort]
     ];
     inputs.forEach(function (entry) {
-      var input = header.querySelector('[aria-label="' + entry[0] + '"]');
+      var selector = '[aria-label="' + entry[0] + '"]';
+      var input = header.querySelector(selector) || header._galleryCards.querySelector(selector);
       if (input) input.value = entry[1];
     });
     var search = header.querySelector('input[type=search]');
@@ -1552,7 +1602,7 @@
           var batch = document.createDocumentFragment();
           measureColumns();
           var cursor = toGalleryStart.hidden && pagesLoaded < 8 ? null : priorPageCursor || requestedCursor;
-          data.items.forEach(function (item) { addTile(item, batch, cursor); });
+          appendGalleryItems(data.items, batch, cursor);
           grid.appendChild(batch);
           entrance?.gallery(grid, Boolean(INITIAL_ITEM));
         }
@@ -1587,6 +1637,39 @@
     return rebuildGallery();
   }
 
+  function appendGalleryItems(items, batch, cursor) {
+    if (state.sort !== 'folder') {
+      items.forEach(function (item) { addTile(item, batch, cursor); });
+      return;
+    }
+    var base = window.StreamFolders?.selectedPath() || '';
+    var tileBatch = document.createDocumentFragment();
+    items.forEach(function (item) {
+      var album = item.album || '';
+      if (!lastFolderGroup || lastFolderGroup.album !== album) {
+        if (lastFolderGroup) lastFolderGroup.tiles.appendChild(tileBatch);
+        var relative = base && album.startsWith(base + '/') ? album.slice(base.length + 1) : album === base ? '' : album;
+        var parts = relative.split('/');
+        var name = parts.pop() || base.split('/').pop() || 'Library root';
+        var section = el('li', { class: 'gallery-folder-group' });
+        var ribbon = el('h2', { class: 'gallery-folder-ribbon' }, icon('folder'));
+        ribbon.firstElementChild.setAttribute('aria-hidden', 'true');
+        if (parts.length) {
+          var ancestors = el('span', { class: 'folder-ancestors' });
+          ancestors.textContent = parts.join(' / ') + ' /';
+          ribbon.appendChild(ancestors);
+        }
+        var label = el('strong'); label.textContent = name;
+        ribbon.appendChild(label); ribbon.title = relative || name;
+        var tiles = el('ul', { class: 'grid gallery-folder-tiles', 'aria-label': relative || name });
+        section.append(ribbon, tiles); batch.appendChild(section);
+        lastFolderGroup = { album: album, tiles: tiles };
+      }
+      addTile(item, tileBatch, cursor);
+    });
+    if (lastFolderGroup) lastFolderGroup.tiles.appendChild(tileBatch);
+  }
+
   function rebuildGallery(place) {
     if (galleryRefreshSuggested) { galleryRefreshSuggested = false; renderLibrarySummary(); }
     state.loadToken = (state.loadToken || 0) + 1;
@@ -1599,6 +1682,10 @@
     scrollObserver.unobserve(sentinel);
     tileViewportObserver.disconnect(); lazyObserver.disconnect(); autoplayObserver.disconnect(); previewController.clear();
     if (bg) bg.clearTiles();
+    hideEmptyState();
+    lastFolderGroup = null;
+    grid.classList.toggle('by-folder', state.sort === 'folder');
+    header._paintFolderControls();
     grid.replaceChildren();
     state.cursor = null;
     state.done = false;
@@ -1638,6 +1725,7 @@
     if (!event.detail.initial && !event.detail.history && !event.detail.settingsChanged) rememberCurrentEntry();
     if (event.detail.history) rememberGalleryPlace();
     var changedFolder = state.folder !== nextFolder;
+    if (changedFolder) state.subfolder = '';
     state.folder = nextFolder;
     lastCreators = lastAlbums = null;
     if (event.detail.configured) {
@@ -1681,7 +1769,8 @@
     var section = header._containsSection;
     section.appendChild(el('div', { class: 'menu-divider' }));
     classes.forEach(function (cls) {
-      var item = el('button', { type: 'button', class: 'menu-item', 'data-has': cls, 'aria-pressed': 'false' }, '<span>' + cls + '</span>');
+      var item = el('button', { type: 'button', class: 'menu-item', 'data-has': cls, 'aria-pressed': 'false' });
+      item.textContent = cls;
       item.addEventListener('click', function () {
         state.has = cls;
         refreshContainsHighlight();
@@ -1692,8 +1781,15 @@
   }
 
   function showEmptyState() {
+    hideEmptyState();
     var empty = el('div', { class: 'empty', id: 'empty-state' },
       '<div class="empty-mark"></div><h2>Nothing here yet</h2>');
+    if (state.sort === 'folder' && state.subfolder) {
+      var reason = el('p'); reason.textContent = 'No indexed media matches this view under ' + state.subfolder + '.';
+      var widen = el('button', { type: 'button', class: 'dashboard-next empty-scan-btn' }, 'Browse entire library folder');
+      widen.onclick = function () { state.subfolder = ''; resetAndLoad(); };
+      empty.append(reason, widen); main.appendChild(empty); return;
+    }
     var detail = el('p', { role: 'status' }, 'Scan your media folder to import local files.');
     empty.appendChild(detail);
     var scan = el('button', { type: 'button', class: 'dashboard-next empty-scan-btn' }, 'Scan library now');
@@ -1958,7 +2054,6 @@
   function creatorColor(name) {return window.StreamLayout.color(name,storageGet('stream-artist-palette','default'));}
 
   function addTile(item, parent, restoreCursor) {
-    var creator = item.creator || '(Unsorted)';
     var tile = el('li', { class: 'tile', tabindex: '0', role: 'button', 'aria-label': 'Open ' + item.filename, 'data-item-id': item.id });
     tile.style.background = item.color;
     tile._item = item;
@@ -1977,7 +2072,6 @@
     });
     tile.addEventListener('focusin', function () { hydrateTile(tile); });
     tile.addEventListener('focusout', function () { queueMicrotask(function () { dehydrateTile(tile); }); });
-    tile.style.setProperty('--source-color', creatorColor(creator));
     if (item.type === 'video') {
       tile.classList.add('video-tile');
       if (randomEnabled ? randomLarge(item.id) : videoScale === '2') tile.classList.add('tile-expanded');
@@ -2223,7 +2317,7 @@
     nextBtn.addEventListener('click', function () { stopSlideshow(); navigate(1); });
     slideshowBtn.addEventListener('click', toggleSlideshow);
     statsBtn.addEventListener('click', function () { setVideoStatsEnabled(!videoStatsEnabled); });
-    viewerSettingsBtn.addEventListener('click', window.StreamSettings.open);
+    viewerSettingsBtn.addEventListener('click', function () { window.StreamSettings.open('playback', viewerSettingsBtn); });
     speed.addEventListener('change', function () { var video = mediaWrap.querySelector('video'); if (video) { video.defaultPlaybackRate = Number(speed.value); video.playbackRate = Number(speed.value); } });
 
     editBtn.addEventListener('click', function () {
@@ -2407,6 +2501,28 @@
     if (item.objects && item.objects.length) rows += infoRow('Detected', item.objects.join(', '));
     if (item.hasText) rows += infoRow('Text found', item.ocrText);
     lightbox.infoList.innerHTML = rows || '<dt>No details available</dt>';
+    if (isAdmin && item.availability === 'available') {
+      lightbox.infoList.appendChild(el('dt', {}, 'Media repairs'));
+      var repairCell = el('dd');
+      function addRepair(label, kind) {
+        var button = el('button', { type: 'button', class: 'dashboard-next' }, label);
+        button.onclick = async function () {
+          button.disabled = true;
+          try {
+            var response = await fetch('/api/notifications/repair-path', { method: 'POST',
+              headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId: item.id, kind: kind }) });
+            var result = await response.json();
+            if (!response.ok) throw Error(result.error || 'Could not start repair.');
+            showToast('Repair requested. Follow it in Dashboard → Media repairs.');
+          } catch (error) { showToast(error.message); }
+          finally { button.disabled = false; }
+        };
+        repairCell.appendChild(button);
+      }
+      addRepair('Rebuild this preview', 'scan');
+      if (item.type === 'video') addRepair('Prepare playback copy', 'playback');
+      lightbox.infoList.appendChild(repairCell);
+    }
     if(isAdmin)fetch('/api/activity?item='+encodeURIComponent(item.id)).then(function(r){return r.json();}).then(function(data){if(lb.item?.id!==item.id||!data.stats)return;var stats=data.stats;lightbox.infoList.insertAdjacentHTML('beforeend',infoRow('Viewer opens',stats.opens)+infoRow('Hovers',stats.hovers)+infoRow('Plays',stats.plays)+infoRow('Watched seconds',Math.round(stats.watch_seconds)));}).catch(function(){});
   }
 
@@ -2490,6 +2606,7 @@
   function fetchNeighbors(id) {
     var params = new URLSearchParams();
     if (state.folder) params.set('folder', state.folder);
+    if (state.sort === 'folder' && state.subfolder) params.set('subfolder', state.subfolder);
     params.set('sort', state.sort);
     if (state.sort === 'random' || state.sort === 'less-seen') params.set('seed', state.seed);
     if (state.type) params.set('type', state.type);

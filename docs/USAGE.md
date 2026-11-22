@@ -24,7 +24,7 @@ setup codes and logs private. [Access and privacy](../SECURITY.md)
 
 The welcome and tile entrance run once in this browser after sign-in.
 Opening a new tab while still signed in keeps the gallery ready to browse.
-To turn off the animations, choose **Settings → Preferences → Appearance →
+To turn off the animations, choose **Settings → Gallery → Appearance →
 Animations and effects → Off**.
 
 ## The top bar
@@ -34,8 +34,7 @@ Animations and effects → Off**.
 | Current folder name | Switch folders, scan one folder, or view its last scan result |
 | Node | Open another saved VidStream machine |
 | Search | Find filenames, folder names, artist labels, and available recognition tags |
-| View | Change the grid, filters, sorting, and preview behavior |
-| Settings | Choose themes, schedule scans, check for updates, and manage this machine |
+| Settings | Change gallery filters and playback, edit host folders, or switch to indexing, storage, and account settings. On touchscreens, swipe left or right across a category. |
 | Dashboard | Follow scans, inspect resources, repair files, and check storage |
 
 In a single-root setup, album and artist selectors can appear when the
@@ -60,21 +59,20 @@ Very deep gallery positions restore from a nearby page of catalog records.
 Use **Start of folder** if you want to jump back to the beginning. Per-tab
 position checkpoints clear on sign-out.
 
-To add a new host directory, use **Start-Here → Add a media folder** while
-the server is running. A machine with the **Server** role can add folders.
-The launcher saves the mount and prints how to apply it. Applying the new
-mount briefly recreates the container with its existing data and cache.
+In a guided installation, open **Settings → Host & folders → Browse host** to pick a directory on the Docker machine. If the picker only shows your current library, choose **Allow a directory in the web folder picker** in Start-Here on the host. For a NAS or DAS with many collections, approve the parent media directory once, then pick its children in the browser. Only the folders you add become gallery libraries.
+
+Move a folder up or down to set its position. **Save to compose.yaml** writes the host configuration. **Apply and restart** makes the new mounts available and briefly interrupts playback. Removing a mount from this list leaves its source files on disk. Start-Here also retains its terminal folder picker.
 A **Node** keeps serving its selected library, and you can change its role
 under **Settings → Nodes → Machine role**. [Folder setup](MOUNTED_FOLDERS.md)
 
-For a manual single-root setup, **Settings → Folders** can name shortcuts
+For a manual single-root setup, **Settings → Host & folders** can name shortcuts
 inside that root. Enter paths relative to the mounted media directory.
 A shortcut filters the catalog. A Docker mount determines which host files
 the app can access. [Folder shortcuts](FOLDERS.md)
 
 ## Make the grid feel right
 
-Open **View** to tune the gallery on this browser.
+Open **Settings → Gallery** to tune this browser’s layout, sorting and folder view.
 
 | Option | What it does |
 | --- | --- |
@@ -82,7 +80,7 @@ Open **View** to tune the gallery on this browser.
 | Whole frame / Fill tiles | Shows the full frame or fills the tile by cropping |
 | A video's resize control | Makes that individual preview larger |
 | Randomly enlarge videos / Reshuffle | Adds a mixed-size arrangement across the grid |
-| Artist outlines | Adds fine artist-colored borders, hover outlines, or shuffled colors |
+| Browse by folder | Groups media by its actual folder. A slim divider shows each relative path. Choose a subfolder to include it and its descendants, or choose Parent folder to move up. |
 | Sort order | Chooses newest, oldest, filename order, shuffle, and other available views |
 | Favorites, Pinned, Bookmarks | Filters to the flags you saved |
 | Faces, Pets, Text | Filters to available local recognition results |
@@ -96,17 +94,17 @@ use recorded activity. In Continue watching, an opened video seeks to its
 saved position.
 
 Open a tile and use **Best**, **Pin**, or **Bookmark** in the viewer. To see
-those picks again, open **View** and select the matching filter. Search can
+those picks again, open **Settings → Gallery** and select the matching filter. Search can
 include extracted text and object tags
 when those optional features have been enabled and processed.
 
-For themes and visual effects, open **Settings → Preferences → Appearance**.
+For themes and visual effects, open **Settings → Gallery → Appearance**.
 Reduced-motion preferences apply. Several visual and playback choices are
 browser-specific, so your phone can have a different setup from your desktop.
 
 ## Preview a video before opening it
 
-**View → Video previews → Preview source → Optimized** uses the server's
+**Settings → Playback → Video previews → Preview source → Optimized** uses the server's
 prepared clips. For a short video, the opening preview loops. For a video
 longer than one minute, the preview plays the opening and then up to five
 seconds at 1:00, 2:00, and every following minute. The badge shows the sample's
@@ -155,7 +153,7 @@ appears in **Dashboard → Media repairs** for review and retry.
 Open **Info** for metadata, technical details, and the permanent media ID.
 **Stats for nerds** shows available resolution, frame, buffering, and playback
 source details. You can enable it by default and set the viewer's background
-blur under **Settings → Preferences → Video player**.
+blur under **Settings → Playback → Video player**.
 
 **Download original** retrieves the source when original downloads are enabled.
 Media addresses use the owner session for that instance.
@@ -173,7 +171,7 @@ continues that scan while the app remains running. A container restart ends
 the live scan and retains completed work already saved to the catalog and
 cache. Server logs are at the bottom of Dashboard.
 
-Open **Settings → Scan scheduling** to choose the behavior for this server.
+Open **Settings → Indexing** to choose the behavior for this server.
 
 | Setting | Choices and timing |
 | --- | --- |
@@ -189,12 +187,12 @@ watching and scheduled scans off, start a scan after adding or changing media.
 A completed catalog opens after an update when its media roots still match.
 New mounts or an older scan signature that cannot be verified can require a
 reconciliation pass. Matching files can reuse prior completed processing.
-**Refresh metadata & previews** in View forces a more expensive refresh.
+**Refresh metadata & previews** under **Settings → Playback** forces a more expensive refresh.
 [Large-library details](PERFORMANCE.md)
 
 ## Fix the files that need attention
 
-**Dashboard → Media repairs** lists failed imports and compatible-copy jobs.
+**Dashboard → Media repairs** lists failed imports and compatible-copy jobs. To work on a file immediately, enter its path relative to the media mount, including its top-level folder name. On an indexed item, open the player’s **Info** panel to start work on that file directly. The repair worker can run during a scan or while indexing is paused. Requests for a file already being written wait for that file’s active stage. Other folders can continue scanning.
 Select a file to open **Repair details**. Use Back, Escape, or your browser's
 Back action to return through the pages. General storage and app notifications
 stay in Dashboard's Notifications panel.
@@ -216,6 +214,14 @@ For a whole-library decode audit, use the separate media-audit tool. Its
 optional conversion mode validates a viewing copy before archiving the
 original beside it. Read the [audit and repair guide](MEDIA_AUDIT.md) before
 running it on a large source collection.
+
+## Manage the Docker host
+
+On a guided installation, **Settings → Host & folders** also lets you set RAM, swap and network access, restart the service, schedule a start after a stop, or prepare a move. For a scheduled start, leave the host machine and its helper running. To start an installation that has been stopped indefinitely, open Start-Here on that machine and choose **Start existing VidStream**.
+
+**Settings → Storage & backup → Create catalog backup** downloads a consistent SQLite snapshot after you select the download link. For a full move, choose **Host & folders → Prepare to move**. After the webapp goes offline, look for **READY TO COPY** and the matching job ID in `.vidstream-host-actions.log` beside `compose.yaml`. Copy the saved Compose file and `vidstream-local` together. Your source media lives separately and must be accessible at the destination.
+
+For a fresh machine, **Prepare a setup file for another machine → Download compose.yaml** makes a template with the selected paths and resource limits. Place it beside Start-Here on the destination, ensure the chosen media paths exist there, and choose **Start existing VidStream**. This creates a fresh installation. Use the full move procedure above to carry over an existing catalog.
 
 ## Explore Dashboard
 
@@ -261,7 +267,7 @@ the edited version, rebuilds derivatives, and keeps the original in
 those mounts can use temporary viewing controls and edit previews. Include
 hidden edit archives in your media backups.
 
-Other maintenance actions are under **Settings → Library tools**.
+Other maintenance actions are under **Settings → Storage & backup**.
 
 | Tool | How to use it |
 | --- | --- |
@@ -273,8 +279,8 @@ Other maintenance actions are under **Settings → Library tools**.
 | Artist display label | Change the catalog label without renaming the source folder. Clear it to restore the folder label. |
 | Activity retention | Choose a cutoff in days and confirm to delete older individual activity events. Cumulative counts and playback positions are retained. |
 
-**Settings → Preferences → Library → Record media activity** controls optional
-viewing-history recording. **Settings → History** shows recent recorded events.
+**Settings → Account & history → Record media activity** controls optional
+viewing-history recording. **Settings → Account & history** shows recent recorded events.
 
 Optional local recognition can add face/pet presence, OCR text, and duplicate
 suggestions. General object tags need the optional recognition stack and
